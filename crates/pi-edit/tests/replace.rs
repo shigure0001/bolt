@@ -28,7 +28,7 @@ async fn replace_old_text_new_text_and_rendered_preview() {
 	assert!(
 		file
 			.text
-			.contains("[bar.txt]\n1:line one\n2:line TWO\n3:line three")
+			.contains("[bar.txt]\n1|line one\n2|line TWO\n3|line three")
 	);
 	assert!(!file.text.starts_with("[bar.txt#"));
 }

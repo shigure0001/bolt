@@ -501,8 +501,12 @@ fn format_file_text(file: &StagedFile, header: &str) -> String {
 		format!("Deleted {}", file.display)
 	} else {
 		let preview_source = file.preview_diff.as_deref().unwrap_or(&file.diff);
-		let preview =
-			build_compact_diff_preview(preview_source, &CompactDiffOptions::default()).preview;
+		// Hashline anchors use `N:`; every other mode mirrors `read`'s `N|` rows.
+		let options = CompactDiffOptions {
+			bar_separator: file.header == HeaderKind::Path,
+			..Default::default()
+		};
+		let preview = build_compact_diff_preview(preview_source, &options).preview;
 		let mut lines: Vec<&str> = vec![header];
 		lines.extend(file.before_preview.iter().map(String::as_str));
 		let moved = file

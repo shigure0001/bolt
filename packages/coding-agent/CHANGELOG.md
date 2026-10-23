@@ -21,6 +21,8 @@
 - Rewrote the main system prompt, project footer, subagent prompt and default personality in plain prose: no RFC 2119 legend, `§` sections or duplicated `<critical>` blocks; the redundant tool-name inventory is gone in native tool mode and formatting guidance appears only when the TUI renders it
 - Rewrote the built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, ast_grep, ast_edit, debug, find, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
 - `read`'s description now documents the `N|` line prefix and the enclosing-block lines a partial read may add
+- `edit` results in non-hashline modes number rows `N|text`, matching `read` and `grep` output, instead of hashline-style `N:text`
+- The `bash` description says commands run in a built-in bash-compatible shell on every platform (with Windows-specific guidance), and the `glob` description says the pattern goes in `path`
 
 ### Fixed
 

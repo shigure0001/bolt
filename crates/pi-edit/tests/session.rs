@@ -716,7 +716,7 @@ async fn result_text_uses_compact_preview_and_header() {
 		.await
 		.expect("apply");
 	assert!(outcome.text.starts_with("[a.txt]\n"), "{}", outcome.text);
-	assert!(outcome.text.contains("\n2:TWO\n"), "{}", outcome.text);
+	assert!(outcome.text.contains("\n2|TWO\n"), "{}", outcome.text);
 	assert!(outcome.files[0].diff.contains("+2|TWO"), "{}", outcome.files[0].diff);
 	assert_eq!(outcome.files[0].old_text.as_deref(), Some("one\ntwo\nthree\n"));
 	assert_eq!(outcome.files[0].new_text.as_deref(), Some("one\nTWO\nthree\n"));

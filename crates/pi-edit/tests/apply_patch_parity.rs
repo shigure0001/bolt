@@ -689,7 +689,7 @@ async fn patch_file_outcome_text_and_snapshot_parity() {
 		"update: oldText is pre-edit content, newText is post-edit content"
 	);
 	assert_eq!(
-		outcome.text, "[foo.txt]\n1:b",
+		outcome.text, "[foo.txt]\n1|b",
 		"update: oldText is pre-edit content, newText is post-edit content"
 	);
 

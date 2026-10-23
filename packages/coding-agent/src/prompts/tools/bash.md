@@ -1,4 +1,5 @@
 Runs a command in a persistent shell session. Use it for builds, tests, git, package managers and other programs.
+- Commands run in a built-in bash-compatible shell with POSIX syntax on every platform{{#if isWindows}}, including this Windows machine: use forward slashes and POSIX quoting; Windows programs such as `cmd /c …` can still be called directly{{/if}}.{{#if hasShellBuiltins}} Common coreutils (`ls`, `cat`, `grep`, `head`, `tail`, `rm`, `mv` …) are built in.{{/if}}
 - Set `cwd` instead of running `cd`. Chain dependent commands with `&&`.
 {{#if hasEval}}
 - For multi-line scripts, heredocs or logic that needs variables and loops, use `eval` instead.

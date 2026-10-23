@@ -648,6 +648,9 @@ pub struct CompactDiffOptions {
 	pub max_added_run_context: Option<usize>,
 	/// Back-compatible alias for `max_added_run_context`.
 	pub max_unchanged_run:     Option<usize>,
+	/// Number rows as `N|text` (matching `read` output) instead of the
+	/// hashline-style `N:text`.
+	pub bar_separator:         bool,
 }
 
 fn is_preview_separator(line: &str) -> bool {
@@ -744,6 +747,7 @@ pub fn build_compact_diff_preview(diff: &str, options: &CompactDiffOptions) -> C
 	let mut removed_lines = 0_usize;
 	let mut formatted = Vec::new();
 	let mut added_run = Vec::new();
+	let separator = if options.bar_separator { '|' } else { ':' };
 
 	for line in lines {
 		let Some(parsed) = parse_compact_diff_line(line) else {
@@ -755,7 +759,7 @@ pub fn build_compact_diff_preview(diff: &str, options: &CompactDiffOptions) -> C
 		match parsed.kind {
 			DiffPrefix::Added => {
 				added_lines += 1;
-				added_run.push(format!("{}:{}", parsed.line_number, parsed.content));
+				added_run.push(format!("{}{separator}{}", parsed.line_number, parsed.content));
 			},
 			DiffPrefix::Removed => {
 				append_added_run(&mut formatted, &added_run, added_run_context);
@@ -768,7 +772,10 @@ pub fn build_compact_diff_preview(diff: &str, options: &CompactDiffOptions) -> C
 				let new_line_number = parsed.line_number
 					+ i64::try_from(added_lines).unwrap_or(i64::MAX)
 					- i64::try_from(removed_lines).unwrap_or(i64::MAX);
-				append_preview_line(&mut formatted, &format!("{new_line_number}:{}", parsed.content));
+				append_preview_line(
+					&mut formatted,
+					&format!("{new_line_number}{separator}{}", parsed.content),
+				);
 			},
 		}
 	}
@@ -1447,11 +1454,17 @@ mod tests {
 			.map(|index| format!("+{}|line {}", 1 + index, index + 1))
 			.collect::<Vec<_>>()
 			.join("\n");
-		let options =
-			CompactDiffOptions { max_added_run_context: Some(1), max_unchanged_run: Some(3) };
+		let options = CompactDiffOptions {
+			max_added_run_context: Some(1),
+			max_unchanged_run: Some(3),
+			..Default::default()
+		};
 		assert_eq!(build_compact_diff_preview(&diff, &options).preview, "1:line 1\n…\n8:line 8");
-		let alias =
-			CompactDiffOptions { max_added_run_context: None, max_unchanged_run: Some(1) };
+		let alias = CompactDiffOptions {
+			max_added_run_context: None,
+			max_unchanged_run: Some(1),
+			..Default::default()
+		};
 		assert_eq!(build_compact_diff_preview(&diff, &alias).preview, "1:line 1\n…\n8:line 8");
 	}
 

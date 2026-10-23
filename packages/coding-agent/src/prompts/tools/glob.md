@@ -1,4 +1,4 @@
-Finds files and directories by glob pattern, such as `src/**/*.ts`. `path` defaults to the working directory; separate several patterns with `;`. Internal URLs work too (`local://*.md`).
+Finds files and directories by glob pattern. The pattern goes in `path` (there is no separate pattern parameter), e.g. `path: "src/**/*.ts"`; it defaults to the working directory. Separate several patterns with `;`. Internal URLs work too (`local://*.md`).
 - Results are sorted newest first within each directory; directories end with `/`.
 - `.gitignore` is respected and hidden files are included by default. To find an ignored dotfile, set `gitignore: false`.
 {{#if hasFind}}
