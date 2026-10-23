@@ -56,7 +56,7 @@ function createTestSession(cwd: string, overrides: Partial<ToolSession> = {}): T
 		hasUI: false,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated(),
+		settings: Settings.isolated({ "edit.mode": "hashline" }),
 		...overrides,
 	};
 }
@@ -382,7 +382,7 @@ describe("bridge tool resolution beyond the model-facing registry", () => {
 
 	it("substitutes a replace-mode edit into a granted advisor tool map", async () => {
 		// The advisor roster hands the bridge the instances it built for the
-		// advisor's own loop — default `hashline` mode, whose schema is a single
+		// advisor's own loop — `hashline` mode (pinned by createTestSession), whose schema is a single
 		// `input` string. A `pi_edit` frame's `old_string`/`new_string` args fail
 		// substitution the advisor path applies before constructing handlers.
 		const target = path.join(cwd, "sample.txt");
@@ -2043,8 +2043,8 @@ describe("CursorExecHandlers Pi frame translation", () => {
 	it("composes pi_read's offset/limit onto the path as the read tool's range selector", async () => {
 		// `read` takes no range kwargs, so a dropped offset/limit silently returns
 		// the whole file. `offset` is a 1-indexed start and `limit` a line count,
-		// which is exactly the `:N+K` selector — `raw`, since a plain range pads
-		// with context lines the frame never asked for.
+		// which is exactly the `:N+K` selector — `raw`, so the result is gutter-free
+		// file bytes Cursor can write back.
 		const { handlers, calls } = recordingHandlers("read");
 
 		await handlers.piRead({ toolCallId: "c1", args: { path: "a.ts", offset: 5, limit: 20 } } as never);
@@ -2104,11 +2104,9 @@ describe("CursorExecHandlers Pi frame translation", () => {
 	});
 
 	it("returns exactly the lines a pi_read range asked for", async () => {
-		// Producer/consumer contract against the real `ReadTool`: a plain `:N+K`
-		// selector deliberately pads with one leading and three trailing context
-		// lines, so offset 5/limit 20 would hand Cursor lines 4-27 for a request
-		// that named 5-24. The frame has no way to tell the padding apart from
-		// content it asked for.
+		// Producer/consumer contract against the real `ReadTool`: the composed
+		// `:raw:N+K` selector must hand Cursor exactly lines 5-24 for offset 5 /
+		// limit 20, verbatim and with no neighbouring lines.
 		const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "cursor-piread-range-"));
 		try {
 			await Bun.write(

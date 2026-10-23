@@ -17,7 +17,7 @@ import type { SingleResult } from "@oh-my-pi/pi-tui/tools/task";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { createInMemoryAuthStorage } from "./helpers/agent-session-setup";
 
-const deliveryGuidance = "Results auto-deliver; NEVER poll.";
+const deliveryGuidance = "Results are delivered to you automatically when each agent finishes; don't poll.";
 const sessions: AgentSession[] = [];
 const roots: TempDir[] = [];
 const stores: ModelRegistry[] = [];
@@ -166,7 +166,7 @@ describe("SDK async task guidance", () => {
 		const description = requests[1].taskDescription;
 		expect(description).toContain("Inspect the named target");
 		expect(description).toContain(deliveryGuidance);
-		expect(description).toContain("without consuming delivery");
+		expect(description).toContain("without consuming its result");
 		expect(description).toContain("proc://<id>/kill");
 		expect(description).not.toContain("`solutionSpace`");
 	});

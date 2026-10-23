@@ -36,7 +36,7 @@ function textOutput(result: AgentToolResult<unknown>): string {
 }
 
 function createSession(cwd: string): ToolSession {
-	const settings = Settings.isolated();
+	const settings = Settings.isolated({ "edit.mode": "hashline" });
 	cfgToolsOutputMaxColumns.set(settings, COLUMN_CAP);
 	cfgReadSummarizeEnabled.set(settings, false);
 	return {

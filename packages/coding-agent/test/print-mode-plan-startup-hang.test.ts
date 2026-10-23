@@ -50,7 +50,7 @@ describe("print mode + plan.defaultOnStartup (#8272)", () => {
 			hasUI: false,
 			getSessionFile: () => null,
 			getSessionSpawns: () => "*",
-			settings: Settings.isolated(settingsOverrides),
+			settings: Settings.isolated({ ...settingsOverrides, "tools.xdev": true }),
 		};
 		const tools = await createTools(toolSession);
 

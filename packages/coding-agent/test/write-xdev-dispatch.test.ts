@@ -40,19 +40,20 @@ function mountedRenderContext(xdev: XdevState): WriteRenderContext {
 	return { resolveXdevMounted: xdev.resolve };
 }
 
-// xdev mounting is default-on: discoverable tools like ast_edit unmount into
-// xd://, and a plain `write xd://ast_edit` dispatches them. These guard the
-// resolution-device symbols write.ts pulls from ./resolve — a missing import
-// threw `ReferenceError: isResolutionDeviceName is not defined` on *every*
-// xd:// write, in both the executor (approval + execute) and the streaming
-// renderer (surfacing as the error text inside a generic Write frame).
+// xdev mounting is opt-in (`tools.xdev`): with it on, discoverable tools like
+// ast_edit unmount into xd://, and a plain `write xd://ast_edit` dispatches
+// them. These guard the resolution-device symbols write.ts pulls from
+// ./resolve — a missing import threw `ReferenceError:
+// isResolutionDeviceName is not defined` on *every* xd:// write, in both the
+// executor (approval + execute) and the streaming renderer (surfacing as the
+// error text inside a generic Write frame).
 function xdevSession(cwd: string, overrides: Partial<ToolSession> = {}): ToolSession {
 	return {
 		cwd,
 		hasUI: true,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated({}),
+		settings: Settings.isolated({ "tools.xdev": true }),
 		...overrides,
 	};
 }
@@ -677,11 +678,11 @@ describe("read and write route xd:// device URLs", () => {
 });
 
 describe("web_search stays top-level under xdev", () => {
-	it("keeps web_search direct and out of the mounted-name set with default config", async () => {
+	it("keeps web_search direct and out of the mounted-name set with xdev enabled", async () => {
 		const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "write-xdev-websearch-"));
 		try {
 			const session = xdevSession(tempDir);
-			// Default config: tools.xdev is on.
+			// tools.xdev is enabled explicitly by xdevSession.
 			expect(cfgToolsXdev.get(session.settings)).toBe(true);
 			const tools = await createTools(session);
 			// Regression for #5973: models call web_search directly, so it must

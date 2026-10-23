@@ -827,7 +827,7 @@ describe("PluginManager.install with git sources", () => {
 			};
 			const installedManifest = path.join(
 				home,
-				".omp",
+				".bolt",
 				"plugins",
 				"node_modules",
 				"@test",

@@ -1,20 +1,13 @@
-Structural code search via ast-grep. Use when syntax shape matters more than text (calls, declarations, language constructs).
-
-<instruction>
-- Narrow each call to one language. `pat` is ONE AST pattern; separate calls for unrelated patterns.
-- Set `lang` when extension inference is ambiguous (for example, `cpp` for `.h`); `.cu` and `.cuh` infer as C++.
-- `$NAME` captures one node; `$_` matches without binding; `$$$NAME` zero-or-more; `$$$` zero-or-more unbound.
-  - Use `$$$NAME`, NOT `$$NAME` (invalid). Names UPPERCASE, whole node — `prefix$VAR` fails.
-- Same metavariable twice → MUST match identical code (`$A == $A` matches `x == x`, not `x == y`).
-- Patterns MUST parse as single AST node. Non-standalone → wrap: `class $_ { … }`.
-- C++ expression-statement calls need trailing `;`: `ns::doThing($ARG);`, `$CALLEE($ARG);`.
-- TS: tolerate annotations — `async function $NAME($$$ARGS): $_ { $$$BODY }`.
-- Declaration forms are distinct — `function foo`, method `foo()`, `const foo = () => {}`; search the right form before concluding absence.
-- Loosest existence check: `pat: "executeBash"` with narrow `path`.
-</instruction>
-
-<critical>
-- AVOID repo-root scans — narrow `path` first.
-- Parse issues = query failure, not absence: fix pattern or tighten `path` before concluding "no matches".
-{{#if eagerDelegation}}- Broad cross-subsystem exploration → {{#if scoutAvailable}}Task tool + scout{{else}}Task tool{{/if}} subagent first.{{/if}}
-</critical>
+Structural code search with ast-grep. Use it when the shape of the syntax matters more than the text: calls with certain arguments, declarations, language constructs.
+- One language and one pattern per call; make separate calls for unrelated patterns. Set `lang` when the extension is ambiguous (`cpp` for `.h`; `.cu`/`.cuh` are C++).
+- Narrow `path` to the relevant directory; avoid scanning the whole repository.
+- Metavariables: `$NAME` matches one node, `$_` one node without capturing, `$$$NAME` zero or more nodes, `$$$` zero or more without capturing. `$$NAME` is invalid. Names are uppercase and must stand for a whole node; `prefix$VAR` doesn't work.
+- Repeating a metavariable requires identical code: `$A == $A` matches `x == x`, not `x == y`.
+- The pattern must parse as a single AST node. Wrap fragments in context, e.g. `class $_ { … }`.
+- C++ expression statements need the trailing `;`: `$CALLEE($ARG);`.
+- TypeScript: allow for annotations, e.g. `async function $NAME($$$ARGS): $_ { $$$BODY }`.
+- `function foo`, a method `foo()` and `const foo = () => {}` are different forms; search the right one before concluding something doesn't exist. The loosest existence check is a bare identifier such as `pat: "executeBash"` with a narrow `path`.
+- A parse error means the query failed, not that nothing matched. Fix the pattern or narrow `path` before concluding there are no matches.
+{{#if eagerDelegation}}
+- For broad exploration across subsystems, start with a {{#if scoutAvailable}}`scout` {{/if}}subagent via `task`.
+{{/if}}

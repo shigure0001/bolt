@@ -12,7 +12,7 @@ function createTestSession(cwd = "/tmp/test", overrides: Partial<ToolSession> = 
 		hasUI: true,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated({ "astGrep.enabled": true, "tools.xdev": false }),
+		settings: Settings.isolated({ "astGrep.enabled": true, "tools.xdev": false, "edit.mode": "hashline" }),
 		...overrides,
 	};
 }

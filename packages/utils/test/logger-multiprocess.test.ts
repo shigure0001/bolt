@@ -66,7 +66,7 @@ describe("multiprocess file logging", () => {
 		seed.stdin.end();
 		expect(await seed.exited).toBe(0);
 		const seedLog = (await fs.readdir(logsDir)).find(name => name.endsWith(`.${seed.pid}.log`));
-		const seedDate = seedLog?.match(/^omp\.(\d{4}-\d{2}-\d{2})\./)?.[1];
+		const seedDate = seedLog?.match(/^bolt\.(\d{4}-\d{2}-\d{2})\./)?.[1];
 		if (!seedDate) throw new Error("probe did not create a dated log");
 		const baseDate = new Date(`${seedDate}T12:00:00`);
 		const localDate = (daysAgo: number): string => localDayBefore(baseDate, daysAgo);
@@ -74,16 +74,16 @@ describe("multiprocess file logging", () => {
 		const expiredNames: string[] = [];
 		for (const pid of exitedPids) {
 			for (let daysAgo = -1; daysAgo <= 5; daysAgo++) {
-				const name = `omp.${localDate(daysAgo)}.${pid}.log`;
+				const name = `bolt.${localDate(daysAgo)}.${pid}.log`;
 				await Bun.write(path.join(logsDir, name), name);
 				await fs.utimes(path.join(logsDir, name), 2, 2);
 				(daysAgo > 0 && daysAgo < 5 ? retainedNames : expiredNames).push(name);
 			}
-			const rolloverName = `omp.${localDate(0)}.${pid}.log.1`;
+			const rolloverName = `bolt.${localDate(0)}.${pid}.log.1`;
 			await Bun.write(path.join(logsDir, rolloverName), rolloverName);
 			await fs.utimes(path.join(logsDir, rolloverName), 2, 2);
 			retainedNames.push(rolloverName);
-			await Bun.write(path.join(logsDir, `.omp.${pid}-audit.json`), "{}");
+			await Bun.write(path.join(logsDir, `.bolt.${pid}-audit.json`), "{}");
 		}
 
 		for (let restart = 0; restart < 2; restart++) {
@@ -111,13 +111,13 @@ describe("multiprocess file logging", () => {
 		const now = new Date();
 		const localDate = (daysAgo: number): string => localDayBefore(now, daysAgo);
 		const expired = [
-			`omp.${localDate(30)}.log`,
-			`omp.${localDate(30)}.log.1`,
-			`omp.${localDate(30)}.log.gz`,
-			`omp.${localDate(30)}.log.2.gz`,
+			`bolt.${localDate(30)}.log`,
+			`bolt.${localDate(30)}.log.1`,
+			`bolt.${localDate(30)}.log.gz`,
+			`bolt.${localDate(30)}.log.2.gz`,
 			".0123456789abcdef0123456789abcdef01234567-audit.json",
 		];
-		const retained = [`omp.${localDate(1)}.log`, `omp.${localDate(1)}.log.gz`, ".fedcba9876543210-audit.json"];
+		const retained = [`bolt.${localDate(1)}.log`, `bolt.${localDate(1)}.log.gz`, ".fedcba9876543210-audit.json"];
 		for (const name of [...expired, ...retained]) await Bun.write(path.join(logsDir, name), name);
 		const thirtyDaysAgoSec = (Date.now() - 30 * 24 * 60 * 60 * 1000) / 1000;
 		await fs.utimes(path.join(logsDir, expired[4]!), thirtyDaysAgoSec, thirtyDaysAgoSec);

@@ -67,13 +67,14 @@ function stripWriteContentWithPotentialLooseHeader(content: string): { text: str
 }
 
 /**
- * Strip hashline display prefixes from write content.
+ * Strip read display prefixes from write content.
  *
- * Only active when hashline edit mode is enabled — the model sees `[PATH#HASH]`
- * headers plus `LINE:` prefixes in read output and sometimes copies them into write content.
+ * Active whenever `read` numbers its rows (hashline mode, or `readLineNumbers`): the
+ * model sees `[PATH#HASH]` headers plus `LINE:` / `LINE|` prefixes in read output and
+ * sometimes copies them into write content.
  */
 export function stripWriteContent(session: ToolSession, content: string): { text: string; stripped: boolean } {
-	if (!resolveFileDisplayMode(session).hashLines) {
+	if (!resolveFileDisplayMode(session).lineNumbers) {
 		return { text: content, stripped: false };
 	}
 	return stripWriteContentWithPotentialLooseHeader(content);

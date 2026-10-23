@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { TempDir } from "@oh-my-pi/pi-utils";
+import { APP_NAME, TempDir } from "@oh-my-pi/pi-utils";
 
 // Regression: `omp config set collab.autoStart control` on a fresh Windows profile over WinRM
 // exited 0 with no output and never wrote config.yml. The CLI entry is a floating `runCli()`
@@ -87,7 +87,7 @@ async function runConfigSet(tempDir: TempDir, settingsInit: SettingsInitMode): P
 		new Response(proc.stdout).text(),
 		new Response(proc.stderr).text(),
 	]);
-	return { exitCode, stdout, stderr, configPath: path.join(home, ".omp", "agent", "config.yml") };
+	return { exitCode, stdout, stderr, configPath: path.join(home, ".bolt", "agent", "config.yml") };
 }
 
 // Each case cold-starts the CLI graph in a child process; the budget covers that transpile.
@@ -98,7 +98,7 @@ describe("one-shot CLI command settlement", () => {
 
 		expect(run.exitCode, run.stderr).toBe(1);
 		// Names the stalled subcommand so automation logs show what failed, without its arguments.
-		expect(run.stderr).toContain(`\`omp config\` ${DIAGNOSTIC}`);
+		expect(run.stderr).toContain(`\`${APP_NAME} config\` ${DIAGNOSTIC}`);
 		expect(run.stderr).not.toContain("collab.autoStart");
 		expect(run.stdout).toBe("");
 		expect(fs.existsSync(run.configPath)).toBe(false);

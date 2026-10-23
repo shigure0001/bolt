@@ -1,2 +1,3 @@
-SHOULD `edit` existing files; `write` for required new files or whole-file replacement. NEVER create docs or emojis unless requested.
-`archive.ext:member`: ZIP/tar families and `.asar` writable, others read-only. `db.sqlite:table`: insert; `db.sqlite:table:key`: JSON update, empty content deletes.
+Creates a file or replaces its entire contents. Use `edit` for changes to existing files. Don't create documentation files unless the user asks for them.
+- `archive.zip:path/in/archive` writes a member of a ZIP, tar-family or `.asar` archive; other archive formats are read-only.
+- `file.db:table` inserts a row from JSON `content`; `file.db:table:key` updates that row, and empty `content` deletes it.

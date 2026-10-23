@@ -29,7 +29,7 @@ function textOutput(result: AgentToolResult<ReadToolDetails>): string {
 }
 
 function createSession(cwd: string): ToolSession {
-	const settings = Settings.isolated();
+	const settings = Settings.isolated({ "edit.mode": "hashline" });
 	// Structural summarization would answer whole-file reads from the summarizer
 	// instead of the range path under test.
 	cfgReadSummarizeEnabled.set(settings, false);

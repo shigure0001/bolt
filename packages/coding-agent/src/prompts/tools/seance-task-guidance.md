@@ -1,2 +1,1 @@
-Historical consults: use `agent: "seance"` with `sourceSession` (id/path); optional `model` overrides the saved source model. The source stays unchanged.
-If the saved model is absent/unavailable, set `model` explicitly.
+- To consult a past session, use `agent: "seance"` with `sourceSession` (a session id or path). The source session is not modified. It runs on the session's saved model; set `model` to override it, or when that model is no longer available.

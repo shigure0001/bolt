@@ -2,8 +2,8 @@
  * Agent discovery from filesystem.
  *
  * Discovers agent definitions from OMP-native task-agent roots:
- *   - ~/.omp/agent/agents/*.md (user-level)
- *   - .omp/agents/*.md (project-level)
+ *   - ~/.bolt/agent/agents/*.md (user-level)
+ *   - .bolt/agents/*.md (project-level)
  *   - <ext>/agents/*.md for every OMP extension package wired through
  *     `listOmpExtensionRoots` (CLI `--extension` roots, `extensions:` in
  *     settings, and enabled npm/link plugins under `<plugins>/node_modules/`).
@@ -20,7 +20,7 @@
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { logger } from "@oh-my-pi/pi-utils";
+import { CONFIG_DIR_NAME, logger } from "@oh-my-pi/pi-utils";
 import { isProviderEnabled, isUserSourceEnabled } from "../capability";
 import type { EffectiveExtensionRoots } from "../capability/types";
 import { findAllNearestProjectConfigDirs, getConfigDirs } from "../config";
@@ -31,7 +31,7 @@ import { loadBundledAgents, parseAgent } from "./agents";
 import type { AgentSource } from "@oh-my-pi/pi-tui/tools/task";
 import type { AgentDefinition } from "./types";
 
-const TASK_AGENT_CONFIG_SOURCE = ".omp";
+const TASK_AGENT_CONFIG_SOURCE = CONFIG_DIR_NAME;
 
 /** Result of agent discovery */
 export interface DiscoveryResult {
@@ -75,7 +75,7 @@ async function loadAgentsFromDir({ dir, source, ignoreModel }: AgentDirectory): 
 
 /**
  * Discover agents from filesystem and merge with bundled agents.
- * Precedence (highest wins): project `.omp/agents`, user `.omp/agents`,
+ * Precedence (highest wins): project `.bolt/agents`, user `.bolt/agents`,
  * OMP extension-package agents from the effective `extensions` setting,
  * installed npm/link plugins, Claude marketplace plugin agents (project scope
  * before user), then bundled.

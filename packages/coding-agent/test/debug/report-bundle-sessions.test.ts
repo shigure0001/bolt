@@ -39,7 +39,7 @@ async function archiveMembers(archivePath: string): Promise<string[]> {
 async function setupReportDirectory(): Promise<string> {
 	cleanupRoot = await fs.mkdtemp(path.join(os.tmpdir(), "omp-report-"));
 	const xdgStateHome = path.join(cleanupRoot, "state");
-	await fs.mkdir(path.join(xdgStateHome, "omp"), { recursive: true });
+	await fs.mkdir(path.join(xdgStateHome, "bolt"), { recursive: true });
 	process.env.XDG_STATE_HOME = xdgStateHome;
 	setAgentDir(fallbackAgentDir);
 	return cleanupRoot;

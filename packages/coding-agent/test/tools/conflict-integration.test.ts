@@ -14,7 +14,7 @@ function createTestSession(cwd: string, overrides: Partial<ToolSession> = {}): T
 		enableLsp: false,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated(),
+		settings: Settings.isolated({ "edit.mode": "hashline" }),
 		...overrides,
 	} as unknown as ToolSession;
 }

@@ -83,10 +83,10 @@ describe("runUpdateCommand version source", () => {
 		"updates a standalone binary from the build service without asking npm",
 		async () => {
 			const dir = await isolatePath();
-			const ompPath = path.join(dir, "omp");
-			await Bun.write(ompPath, "#!/bin/sh\necho omp/1.0.0\n");
+			const ompPath = path.join(dir, "bolt");
+			await Bun.write(ompPath, "#!/bin/sh\necho bolt/1.0.0\n");
 			await fs.chmod(ompPath, 0o755);
-			const next = "#!/bin/sh\necho omp/999.0.0\n";
+			const next = "#!/bin/sh\necho bolt/999.0.0\n";
 			const { target, fileName } = await currentBuildHost();
 			process.env.PI_BUILD_URL = "https://build.test";
 			const check = `https://build.test/api/products/omp/latest/${target}?channel=stable&from_version=${VERSION}`;

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The native addon cache (`~/.bolt/natives`, `$XDG_DATA_HOME/bolt/natives`), crash logs and OAuth callback state now live under the `bolt` directories instead of `omp`
+
 ### Fixed
 
 - Fixed a UTF-8 char-boundary panic when parsing `stateDiagram-v2` lines where `>` follows a multibyte character ([#16749](https://github.com/can1357/oh-my-pi/pull/16749) by [@berney](https://github.com/berney))

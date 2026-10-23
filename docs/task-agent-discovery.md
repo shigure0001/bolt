@@ -75,7 +75,7 @@ modelRoles:
 
 `@review` resolves through `modelRoles.review`. Each `modelRoles.<role>` value stores a concrete model selector and may append a thinking suffix such as `:high` (`src/config/model-resolver.ts`). Changing that mapping affects subsequent task resolutions without editing agent definitions. Task/eval preflight reloads the current global, project, and explicit overlay settings before rediscovering agents, so agent files and their role aliases added during a live session resolve from one refreshed configuration state.
 
-With the default batched task schema, supply shared `context` and per-item `task` and `solutionSpace`. `solutionSpace` describes how open-ended the assignment is, rather than its size. Set `agent` only when choosing a non-default agent:
+With the default batched task schema, supply shared `context` and a per-item `task`. The optional `solutionSpace` describes how open-ended the assignment is, rather than its size. Set `agent` only when choosing a non-default agent:
 
 ```json
 {

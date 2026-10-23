@@ -25,13 +25,13 @@ it("updates async guidance when wait, messaging, or background execution availab
 		for (const waitTool of [true, false]) {
 			waitActive = waitTool;
 			const description = tool.description;
-			expect(description).toContain("Results auto-deliver");
-			expect(description.includes("Call `wait`")).toBe(waitTool);
+			expect(description).toContain("Results are delivered to you automatically");
+			expect(description.includes("call `wait`")).toBe(waitTool);
 			expect(description.includes("write agent://")).toBe(ircEnabled);
 			expect(description).toContain("read proc://");
 		}
 	}
 	cfgAsyncEnabled.override(settings, false);
-	expect(tool.description).not.toContain("Results auto-deliver");
+	expect(tool.description).not.toContain("Results are delivered to you automatically");
 	expect(tool.description).not.toContain("read proc://");
 });

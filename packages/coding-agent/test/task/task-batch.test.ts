@@ -222,11 +222,11 @@ describe("task.batch schema gating", () => {
 		]);
 		const session = createSession({ settings: { "task.batch": true, "async.enabled": true } });
 		const tool = await TaskTool.create(session);
-		const navigation = "nested `/reports/0/data`";
+		const navigation = "nested: `/reports/0/data`";
 
 		const optedIn = tool.description;
 		expect(optedIn).toContain(navigation);
-		expect(optedIn).toContain("- `reporter` (STRUCTURED; schema result): Reports a verdict");
+		expect(optedIn).toContain("- `reporter` (STRUCTURED: returns schema output): Reports a verdict");
 		expect(optedIn).not.toContain("outputSchema");
 		expect(optedIn).not.toContain("schemaMode");
 
@@ -236,7 +236,7 @@ describe("task.batch schema gating", () => {
 		cfgTaskDisabledAgents.override(session.settings, []);
 		cfgTaskStructured.override(session.settings, true);
 		const settingOn = tool.description;
-		expect(settingOn).toContain("`outputSchema` parsed payload, even invalid");
+		expect(settingOn).toContain("With `outputSchema`, the parsed payload is stored even if invalid");
 		expect(settingOn).not.toContain("STRUCTURED");
 	});
 });
@@ -347,7 +347,7 @@ describe("task.batch validation", () => {
 		expect(text).not.toContain("was missing");
 	});
 
-	it("advertises solutionSpace as required but still spawns a model call that omits it", async () => {
+	it("treats solutionSpace as optional and spawns a model call that omits it", async () => {
 		mockDiscovery();
 		const spawned: Array<string | undefined> = [];
 		vi.spyOn(executorModule, "runSubprocess").mockImplementation(async options => {
@@ -356,7 +356,9 @@ describe("task.batch validation", () => {
 		});
 		const tool = await TaskTool.create(createSession({ settings: { "async.enabled": false, "task.batch": true } }));
 		const items = getSchemaProperties(tool).tasks;
-		expect(isRecord(items) && isRecord(items.items) ? items.items.required : undefined).toContain("solutionSpace");
+		expect(isRecord(items) && isRecord(items.items) ? items.items.required : undefined).not.toContain(
+			"solutionSpace",
+		);
 
 		const mock = createMockModel({
 			responses: [

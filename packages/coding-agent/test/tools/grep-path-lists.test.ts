@@ -23,7 +23,12 @@ function createTestSession(cwd: string, overrides: Partial<ToolSession> = {}): T
 		hasUI: false,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated({ "astGrep.enabled": true, "astEdit.enabled": true, "tools.xdev": false }),
+		settings: Settings.isolated({
+			"astGrep.enabled": true,
+			"astEdit.enabled": true,
+			"tools.xdev": false,
+			"edit.mode": "hashline",
+		}),
 		...overrides,
 	};
 }
@@ -992,9 +997,9 @@ describe("tool path arrays", () => {
 		});
 		const text = getText(result);
 
-		expect(text).toMatch(/ 1:#if FLAG/);
-		expect(text).toMatch(/\*2:needle/);
-		expect(text).toMatch(/ 3:#endif/);
+		expect(text).toMatch(/ 1\|#if FLAG/);
+		expect(text).toMatch(/\*2\|needle/);
+		expect(text).toMatch(/ 3\|#endif/);
 		await removeWithRetries(tmp);
 	});
 });

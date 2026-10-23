@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `APP_NAME` is now `bolt` and `CONFIG_DIR_NAME` is `.bolt`, so config, sessions, logs, caches and XDG directories no longer overlap with `omp`
+
 ## [18.12.6] - 2026-10-21
 
 ### Added

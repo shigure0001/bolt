@@ -422,7 +422,7 @@ fn legacy_recovery_path(context: &Context) -> PathBuf {
 		.get("PI_CONFIG_DIR")
 		.map(|value| value.trim())
 		.filter(|value| !value.is_empty())
-		.unwrap_or(".omp");
+		.unwrap_or(".bolt");
 	context
 		.home
 		.join(config_directory)

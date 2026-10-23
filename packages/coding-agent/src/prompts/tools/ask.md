@@ -1,7 +1,4 @@
-Ask only for materially different tradeoffs the user must decide. Default: act using code/config/docs/history and conventions. Several viable choices: pick conservative/standard, proceed, state choice.
-
-<instruction>
-- Batch related questions; 2–5 distinct options each; short labels, tradeoffs in `description`.
-- `recommended` auto-adds " (Recommended)"; `multi: true` permits multiple selections.
-- NEVER supply "Other": UI adds "Other (type your own)". Clarifying custom input? Answer first; re-ask unresolved questions.
-</instruction>
+Asks the user one or more multiple-choice questions and waits for the answers. Use it only for decisions that are genuinely the user's, where the options lead to materially different outcomes. If the code, config, docs or conventions answer the question, act on them instead; if several options are reasonable, pick the conventional one, proceed, and mention it.
+- Batch related questions into one call. Give each 2–5 distinct options with short labels, and put the tradeoffs in `description`.
+- `recommended` marks the suggested option (the UI appends " (Recommended)"). `multi: true` allows several selections.
+- Don't add an "Other" option; the UI always offers a free-text answer. If the user's free-text answer leaves something unresolved, answer what you can and ask again only about the rest.

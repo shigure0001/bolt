@@ -36,7 +36,7 @@ function createSession(cwd: string): ToolSession {
 		getSessionFile: () => path.join(cwd, "session.jsonl"),
 		getSessionSpawns: () => "*",
 		getArtifactsDir: () => path.join(cwd, "artifacts"),
-		settings: Settings.isolated(),
+		settings: Settings.isolated({ "edit.mode": "hashline" }),
 	} as unknown as ToolSession;
 }
 
@@ -45,7 +45,7 @@ function createSession(cwd: string): ToolSession {
 // the guard off, a hunk whose range fell inside an elided region was instead
 // "auto-repaired" — the syntax probe kept the row the range had selected and
 // spliced the body into the neighbouring call, silently and with valid syntax.
-describe("read → edit seen-line guard under default settings", () => {
+describe("read → edit seen-line guard in hashline mode", () => {
 	let cwd: string;
 	let file: string;
 

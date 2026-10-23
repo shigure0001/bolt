@@ -49,7 +49,7 @@ const DISABLE_ALL_BUILTIN_SKILLS = {
 
 // Every provider resolves user-level roots from `os.homedir()` (HOME on POSIX,
 // USERPROFILE on Windows) and the agent dir; point both at an empty temp home
-// so real `~/.omp/plugins`, `~/.claude/plugins`, and `~/.agents/skills`
+// so real `~/.bolt/plugins`, `~/.claude/plugins`, and `~/.agents/skills`
 // installs never leak into these tests. On POSIX, Bun fixes `os.homedir()` at
 // process start, so setting HOME alone is not enough; spy on it as well.
 const isolatedEnvKeys = [
@@ -77,7 +77,7 @@ beforeAll(async () => {
 	}
 	delete process.env.CLAUDE_CONFIG_DIR;
 	delete Bun.env.CLAUDE_CONFIG_DIR;
-	setAgentDir(path.join(isolatedHome, ".omp", "agent"));
+	setAgentDir(path.join(isolatedHome, ".bolt", "agent"));
 });
 
 beforeEach(() => {

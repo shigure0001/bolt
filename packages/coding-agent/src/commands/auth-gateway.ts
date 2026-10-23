@@ -3,6 +3,7 @@
  */
 
 import { Args, Command, Flags, renderCommandHelp } from "@oh-my-pi/pi-utils/cli";
+import { APP_NAME } from "@oh-my-pi/pi-utils/dirs";
 import {
 	AUTH_GATEWAY_ACTIONS,
 	type AuthGatewayAction,
@@ -61,7 +62,7 @@ export default class AuthGateway extends Command {
 	async run(): Promise<void> {
 		const { args, flags } = await this.parse(AuthGateway);
 		if (!args.action) {
-			renderCommandHelp("omp", "auth-gateway", AuthGateway);
+			renderCommandHelp(APP_NAME, "auth-gateway", AuthGateway);
 			return;
 		}
 		const cmd: AuthGatewayCommandArgs = {

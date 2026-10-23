@@ -38,7 +38,7 @@ function shownLines(output: string): number[] {
 	return [...output.matchAll(/^(\d+)[:|]/gm)].map(match => Number(match[1]));
 }
 
-describe("in-memory range reads keep the requested lines", () => {
+describe("in-memory range reads return exactly the requested lines", () => {
 	let tmpDir: string;
 	let read: (target: string) => Promise<string>;
 
@@ -69,7 +69,7 @@ describe("in-memory range reads keep the requested lines", () => {
 		await removeWithRetries(tmpDir);
 	});
 
-	it("drops a leading context line that would push the requested start past the byte budget", async () => {
+	it("pages from the requested start when the byte budget cuts the range", async () => {
 		files["six.txt"] = ["l1", "l2", "A".repeat(30_000), "B".repeat(30_000), "C".repeat(30_000), "l6", ""].join("\n");
 
 		const output = await read("remote://host/six.txt:4-6");
@@ -80,19 +80,10 @@ describe("in-memory range reads keep the requested lines", () => {
 		expect(output).toContain("[Showing lines 4-4 of 6 (50.0KB limit). Use :5 to continue]");
 	});
 
-	it("drops a leading context line that alone exceeds the byte budget", async () => {
-		files["wide-context.txt"] = ["l1", "A".repeat(60_000), "wanted-3", "wanted-4", ""].join("\n");
+	it("adds no context lines around a bounded range", async () => {
+		files["fits.txt"] = ["l1", "A".repeat(30_000), "wanted-3", "wanted-4", "l5", ""].join("\n");
 
-		const output = await read("remote://host/wide-context.txt:3-4");
-
-		expect(shownLines(output)).toEqual([3, 4]);
-		expect(output).not.toContain("Line 2 is");
-	});
-
-	it("keeps the leading context line when the requested start still fits", async () => {
-		files["fits.txt"] = ["l1", "A".repeat(30_000), "wanted-3", "wanted-4", ""].join("\n");
-
-		expect(shownLines(await read("remote://host/fits.txt:3-4"))).toEqual([2, 3, 4]);
+		expect(shownLines(await read("remote://host/fits.txt:3-4"))).toEqual([3, 4]);
 	});
 
 	it("reports the byte budget as the limit of a byte-truncated page", async () => {

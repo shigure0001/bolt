@@ -7,7 +7,7 @@ import {
 	setRunStatus,
 } from "@oh-my-pi/pi-coding-agent/utils/run-status";
 import * as titleGenerator from "@oh-my-pi/pi-coding-agent/utils/title-generator";
-import { setTerminalHeadless } from "@oh-my-pi/pi-utils";
+import { APP_NAME, setTerminalHeadless } from "@oh-my-pi/pi-utils";
 
 // OSC 7501 Program Status Protocol reports, as the terminal parses them:
 // https://mitchellh.com/writing/program-status-osc7501
@@ -61,13 +61,13 @@ describe("run status OSC 7501 reporting", () => {
 		setRunStatus({ state: "error", msg: " \n " });
 
 		expect(writes).toEqual([
-			report("state=working:app=omp"),
+			report(`state=working:app=${APP_NAME}`),
 			report(
-				`state=blocked:kind=question:app=omp:msg=${Buffer.from("Which branch? main or dev?").toString("base64")}`,
+				`state=blocked:kind=question:app=${APP_NAME}:msg=${Buffer.from("Which branch? main or dev?").toString("base64")}`,
 			),
-			report("state=done:app=omp"),
-			report(`state=error:app=omp:msg=${Buffer.from("boom").toString("base64")}`),
-			report("state=error:app=omp"),
+			report(`state=done:app=${APP_NAME}`),
+			report(`state=error:app=${APP_NAME}:msg=${Buffer.from("boom").toString("base64")}`),
+			report(`state=error:app=${APP_NAME}`),
 		]);
 	});
 
@@ -93,7 +93,7 @@ describe("run status OSC 7501 reporting", () => {
 		writes.length = 0;
 		initProgramStatus();
 		setRunStatus({ state: "idle" });
-		expect(writes).toEqual([report("state=idle:app=omp")]);
+		expect(writes).toEqual([report(`state=idle:app=${APP_NAME}`)]);
 	});
 
 	it("clears the record when turned off and reports the current status when turned back on", () => {
@@ -104,7 +104,7 @@ describe("run status OSC 7501 reporting", () => {
 		setRunStatus({ state: "blocked", kind: "permission" });
 		setProgramStatusEnabled(true);
 
-		expect(writes).toEqual([CLEAR, report("state=blocked:kind=permission:app=omp")]);
+		expect(writes).toEqual([CLEAR, report(`state=blocked:kind=permission:app=${APP_NAME}`)]);
 	});
 
 	it("re-sends a working record after a suspend but never repeats a done result", () => {
@@ -114,9 +114,9 @@ describe("run status OSC 7501 reporting", () => {
 		resendProgramStatus();
 
 		expect(writes).toEqual([
-			report("state=working:app=omp"),
-			report("state=working:app=omp"),
-			report("state=done:app=omp"),
+			report(`state=working:app=${APP_NAME}`),
+			report(`state=working:app=${APP_NAME}`),
+			report(`state=done:app=${APP_NAME}`),
 		]);
 	});
 });

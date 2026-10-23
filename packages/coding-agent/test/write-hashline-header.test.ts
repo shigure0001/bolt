@@ -9,9 +9,7 @@ import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { WriteTool } from "@oh-my-pi/pi-coding-agent/tools/write";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
-import { cfgEditMode } from "@oh-my-pi/pi-coding-agent/edit/settings";
-
-function createSession(cwd: string): ToolSession {
+function createSession(cwd: string, editMode: "hashline" | "replace" = "hashline"): ToolSession {
 	return {
 		cwd,
 		hasUI: false,
@@ -19,7 +17,7 @@ function createSession(cwd: string): ToolSession {
 		getSessionSpawns: () => "*",
 		getArtifactsDir: () => path.join(cwd, "artifacts"),
 		allocateOutputArtifact: async () => ({ id: "artifact-1", path: path.join(cwd, "artifact-1.log") }),
-		settings: Settings.isolated(),
+		settings: Settings.isolated({ "edit.mode": editMode }),
 		enableLsp: false,
 	};
 }
@@ -111,8 +109,7 @@ describe("write tool hashline header", () => {
 
 	it("omits the hashline header when the edit mode is not hashline", async () => {
 		const filePath = path.join(tmpDir, "plain.txt");
-		const session = createSession(tmpDir);
-		cfgEditMode.set(session.settings, "replace");
+		const session = createSession(tmpDir, "replace");
 		const tool = new WriteTool(session);
 		const content = "no anchors here\n";
 
@@ -124,8 +121,7 @@ describe("write tool hashline header", () => {
 
 	it("reports UTF-8 bytes, not JavaScript string length", async () => {
 		const filePath = path.join(tmpDir, "notes.txt");
-		const session = createSession(tmpDir);
-		cfgEditMode.set(session.settings, "replace");
+		const session = createSession(tmpDir, "replace");
 		const tool = new WriteTool(session);
 		const content = "café\n";
 

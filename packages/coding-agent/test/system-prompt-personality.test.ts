@@ -16,7 +16,7 @@ const EMPTY_TREE = {
 };
 
 // Distinctive line from the bundled default preset (prompts/system/personalities/default.md).
-const DEFAULT_PRESET_MARKER = "Evidence-first terse engineer";
+const DEFAULT_PRESET_MARKER = "Lead with the answer or outcome, then the evidence.";
 const OVERRIDE = "Follow ASD-STE100 Simplified Technical English for all responses.";
 
 // PERSONALITY.md contract (issue #8528): `<agentDir>/PERSONALITY.md` replaces
@@ -69,7 +69,7 @@ describe("PERSONALITY.md override", () => {
 		writePersonalityFile(OVERRIDE);
 
 		const rendered = await renderPrompt("default");
-		expect(rendered).toContain("# Personality");
+		expect(rendered).toContain("# Communication");
 		expect(rendered).toContain(OVERRIDE);
 		expect(rendered).not.toContain(DEFAULT_PRESET_MARKER);
 	});
@@ -78,7 +78,7 @@ describe("PERSONALITY.md override", () => {
 		writePersonalityFile(OVERRIDE);
 
 		const rendered = await renderPrompt("none");
-		expect(rendered).not.toContain("# Personality");
+		expect(rendered).not.toContain("# Communication");
 		expect(rendered).not.toContain(OVERRIDE);
 	});
 

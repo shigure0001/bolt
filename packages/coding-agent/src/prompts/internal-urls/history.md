@@ -1,1 +1,1 @@
-`history://<id>`: read-only transcript; bare lists registered agents, not persisted unregistered top-level sessions.
+`history://<id>`: a subagent's read-only transcript. `history://` alone lists registered agents.

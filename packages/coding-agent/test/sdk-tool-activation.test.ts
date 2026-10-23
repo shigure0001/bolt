@@ -92,6 +92,12 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		modelRegistry = new ModelRegistry(await discoverAuthStorage(registryAuthDir));
 	});
 
+	// xd:// mounting is opt-in (`tools.xdev`, default off). Most of this suite
+	// defends the mounted-device activation contract, so sessions opt in here;
+	// tests of the default (unmounted) shape pass their own settings.
+	const xdevSettings = (overrides: Record<string, unknown> = {}): Settings =>
+		Settings.isolated({ "tools.xdev": true, ...overrides });
+
 	// Shared options for every session. `rules: []` and `workspaceTree` short-circuit
 	// the two slow startup scans (rule discovery + native workspace walk, ~100ms each)
 	// that are irrelevant to tool activation: these tests assert only which tools are
@@ -103,7 +109,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		agentDir: tempDir,
 		modelRegistry,
 		sessionManager: SessionManager.inMemory(),
-		settings: Settings.isolated(),
+		settings: xdevSettings(),
 		model: getBundledModel("openai", "gpt-4o-mini"),
 		disableExtensionDiscovery: true,
 		skills: [],
@@ -164,6 +170,26 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			await session.setActiveToolPresentation(session.getActiveToolNames(), []);
 			expect(session.getMountedXdevToolNames()).not.toContain("default_active_tool");
 			expect(session.getToolByName("xd://default_active_tool")?.name).toBe("default_active_tool");
+		} finally {
+			await session.dispose();
+		}
+	});
+
+	it("keeps discoverable extension tools top-level when xd:// mounting is not enabled (default)", async () => {
+		const tempDir = makeTempDir();
+
+		const { session } = await createAgentSession({
+			...baseOptions(tempDir),
+			settings: Settings.isolated(),
+			extensions: [toolActivationExtension],
+		});
+
+		try {
+			expect(session.getXdevToolEntries()).toEqual([]);
+			expect(session.getMountedXdevToolNames()).toEqual([]);
+			expect(session.getActiveToolNames()).toContain("default_active_tool");
+			expect(session.getActiveToolNames()).not.toContain("default_inactive_tool");
+			expect(session.systemPrompt.join("\n")).not.toContain("## Tool devices");
 		} finally {
 			await session.dispose();
 		}
@@ -233,7 +259,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 	it("activates the private think tool when external thinking is enabled at runtime", async () => {
 		const tempDir = makeTempDir();
-		const settings = Settings.isolated();
+		const settings = xdevSettings();
 		const { session } = await createAgentSession({
 			...baseOptions(tempDir),
 			model: requireBundledModel("openai", "gpt-5"),
@@ -265,7 +291,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 	it("exposes the private think tool only on transports that can disable native reasoning", async () => {
 		const tempDir = makeTempDir();
-		const settings = Settings.isolated({ externalThinking: true });
+		const settings = xdevSettings({ externalThinking: true });
 		const unsupported = requireBundledModel("xai", "grok-4");
 		const fable = requireBundledModel("anthropic", "claude-fable-5");
 		const responses = requireBundledModel("openai", "gpt-5");
@@ -288,7 +314,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			await session.setModel(fable);
 			expect(session.getToolByName("think")).toBeDefined();
 			expect(session.getActiveToolNames()).toContain("think");
-			expect(session.systemPrompt.join("\n")).toContain("other tools become callable when it completes");
+			expect(session.systemPrompt.join("\n")).toContain("other tools become available when it completes");
 
 			await session.setModel(responses);
 			expect(session.getActiveToolNames()).toContain("think");
@@ -299,7 +325,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 			await session.setModel(unsupported);
 			expect(session.getActiveToolNames()).not.toContain("think");
-			expect(session.systemPrompt.join("\n")).not.toContain("other tools become callable when it completes");
+			expect(session.systemPrompt.join("\n")).not.toContain("other tools become available when it completes");
 		} finally {
 			await session.dispose();
 		}
@@ -307,7 +333,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 	it("forces think and sends reasoning effort off for a Responses turn", async () => {
 		const tempDir = makeTempDir();
-		const settings = Settings.isolated({ externalThinking: true });
+		const settings = xdevSettings({ externalThinking: true });
 		const requestTexts: string[] = [];
 		const sse = (events: unknown[]): Response =>
 			new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), {
@@ -556,7 +582,6 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			expect(session.getEnabledToolNames()).toContain("late_requested_tool");
 			expect(session.getActiveToolNames()).toContain("late_requested_tool");
 			expect(session.getXdevToolEntries().map(entry => entry.name)).not.toContain("late_requested_tool");
-			expect(session.systemPrompt.join("\n")).toContain("late_requested_tool");
 		} finally {
 			await session.dispose();
 		}
@@ -1451,7 +1476,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 		const { session } = await createAgentSession({
 			...baseOptions(tempDir),
-			settings: Settings.isolated({
+			settings: xdevSettings({
 				"bashInterceptor.enabled": true,
 				"bashInterceptor.patterns": [
 					{
@@ -1734,7 +1759,6 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			// default-active tool mounts through the device-only xd:// transport.
 			expect(session.getActiveToolNames()).not.toContain("default_active_tool");
 			expect(session.getXdevToolEntries().map(entry => entry.name)).toContain("default_active_tool");
-			expect(session.systemPrompt.join("\n")).toContain("default_inactive_tool");
 		} finally {
 			await session.dispose();
 		}
@@ -1829,7 +1853,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 	it("keeps an idle device-only write out of the active tool set", async () => {
 		const tempDir = makeTempDir();
 
-		const settings = Settings.isolated();
+		const settings = xdevSettings();
 		cfgPlanEnabled.set(settings, false);
 
 		const { session } = await createAgentSession({
@@ -1998,7 +2022,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 		const { session } = await createAgentSession({
 			...baseOptions(tempDir),
-			settings: Settings.isolated({ "speechgen.enabled": true }),
+			settings: xdevSettings({ "speechgen.enabled": true }),
 		});
 
 		try {
@@ -2049,7 +2073,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		const restrictedDir = makeTempDir();
 		const normalDir = makeTempDir();
 		const configuredSettings = () =>
-			Settings.isolated({
+			xdevSettings({
 				modelRoles: { image: "openai/gpt-image-1" },
 				"generate_image.enabled": true,
 				"speechgen.enabled": true,
@@ -2182,11 +2206,11 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		const restrictedDir = makeTempDir();
 		const { session: normal } = await createAgentSession({
 			...baseOptions(normalDir),
-			settings: Settings.isolated({ "dev.autoqa": true }),
+			settings: xdevSettings({ "dev.autoqa": true }),
 		});
 		const { session: restricted } = await createAgentSession({
 			...baseOptions(restrictedDir),
-			settings: Settings.isolated({ "dev.autoqa": true }),
+			settings: xdevSettings({ "dev.autoqa": true }),
 			toolNames: ["read"],
 			restrictToolNames: true,
 		});
@@ -2225,7 +2249,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 	// instance from `getEditReplaceTool`. The roster is built once at creation.
 	// These two cover both directions of that wiring: the granted session must
 	// still reach a replace-mode instance for `pi_edit` (whose `old_string` /
-	// `new_string` args do not validate against the default `hashline` schema),
+	// `new_string` args do not validate against the `hashline` schema the session pins),
 	// and the restricted one must still be refused.
 	//
 	// The handlers are internal to the session; `streamFn` is where they are
@@ -2271,7 +2295,10 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		fs.writeFileSync(target, "alpha\nbeta\n");
 
 		await withProviderAuth(["cursor"], async () => {
-			const { session } = await createAgentSession(baseOptions(tempDir));
+			const { session } = await createAgentSession({
+				...baseOptions(tempDir),
+				settings: xdevSettings({ "edit.mode": "hashline" }),
+			});
 			try {
 				const handlers = await captureCursorExecHandlers(session, cursorModel);
 				const result = await handlers.piEdit({
@@ -2295,6 +2322,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		await withProviderAuth(["cursor"], async () => {
 			const { session } = await createAgentSession({
 				...baseOptions(tempDir),
+				settings: xdevSettings({ "edit.mode": "hashline" }),
 				model: cursorModel,
 			});
 			try {
@@ -2609,7 +2637,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		await withProviderAuth(["openai"], async () => {
 			const { session } = await createAgentSession({
 				...baseOptions(tempDir),
-				settings: Settings.isolated({ "advisor.enabled": true, "tools.approval": { write: "deny" } }),
+				settings: xdevSettings({ "advisor.enabled": true, "tools.approval": { write: "deny" } }),
 			});
 			try {
 				// The default advisor roster is read-only (read/grep/glob); the
@@ -2641,7 +2669,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		await withProviderAuth(["openai"], async () => {
 			const { session } = await createAgentSession({
 				...baseOptions(tempDir),
-				settings: Settings.isolated({ "advisor.enabled": true, "tools.approval": { write: "allow" } }),
+				settings: xdevSettings({ "advisor.enabled": true, "tools.approval": { write: "allow" } }),
 				toolNames: ["read"],
 			});
 			try {

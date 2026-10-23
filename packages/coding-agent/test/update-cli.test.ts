@@ -39,7 +39,7 @@ import {
 	updateViaShimTakeover,
 } from "@oh-my-pi/pi-coding-agent/cli/update-cli";
 import Update from "@oh-my-pi/pi-coding-agent/commands/update";
-import { $which, removeWithRetries } from "@oh-my-pi/pi-utils";
+import { $which, APP_NAME, removeWithRetries } from "@oh-my-pi/pi-utils";
 import type { CliConfig } from "@oh-my-pi/pi-utils/cli";
 import { getThemeByName, setThemeInstance } from "@oh-my-pi/pi-tui/theme";
 
@@ -186,8 +186,8 @@ describe("parseReportedVersion", () => {
 		// Regression: dropping `-canary.1` made a correctly installed canary
 		// build look like a stale `X.Y.Z` launcher, triggering a needless
 		// binary repair.
-		expect(parseReportedVersion("omp/18.0.6-canary.1")).toBe("18.0.6-canary.1");
-		expect(parseReportedVersion("omp/18.0.5")).toBe("18.0.5");
+		expect(parseReportedVersion("bolt/18.0.6-canary.1")).toBe("18.0.6-canary.1");
+		expect(parseReportedVersion("bolt/18.0.5")).toBe("18.0.5");
 		expect(parseReportedVersion("not a version")).toBeUndefined();
 	});
 
@@ -1178,8 +1178,8 @@ describe("update-cli release binary integrity", () => {
 	it("rejects an altered whole-file download and leaves the installed binary in place", async () => {
 		const dir = await makeTempDir();
 		const targetPath = path.join(dir, binaryName);
-		const installed = "#!/bin/sh\necho omp/17.0.8\n";
-		const altered = "#!/bin/sh\necho omp/17.1.2\n";
+		const installed = "#!/bin/sh\necho bolt/17.0.8\n";
+		const altered = "#!/bin/sh\necho bolt/17.1.2\n";
 		await Bun.write(targetPath, installed);
 		await fs.chmod(targetPath, 0o755);
 		vi.spyOn(console, "log").mockImplementation(() => {});
@@ -1312,7 +1312,7 @@ describe("update-cli binary replacement", () => {
 				expectedVersion: "15.1.8",
 				verifyInstalledVersion: async () => ({ ok: false, path: targetPath }),
 			}),
-		).rejects.toThrow("restored previous omp binary");
+		).rejects.toThrow(`restored previous ${APP_NAME} binary`);
 
 		expect(await Bun.file(targetPath).text()).toBe("old binary");
 		expect(await Bun.file(tempPath).exists()).toBe(false);
@@ -1562,9 +1562,9 @@ describe("update-cli script-shim takeover", () => {
 	}
 
 	const shims: Record<string, string> = {
-		omp: "#!/bin/sh\nnode omp.js\n",
-		"omp.cmd": "@node omp.js %*\n",
-		"omp.ps1": "node omp.js @args\n",
+		bolt: "#!/bin/sh\nnode bolt.js\n",
+		"bolt.cmd": "@node bolt.js %*\n",
+		"bolt.ps1": "node bolt.js @args\n",
 	};
 
 	async function writeShims(dir: string): Promise<void> {
@@ -1575,7 +1575,7 @@ describe("update-cli script-shim takeover", () => {
 
 	/**
 	 * The fake release binaries are `#!/bin/sh` scripts, which Windows cannot
-	 * launch as `omp.exe`. There, "run" the explicit path the takeover verifies
+	 * launch as `bolt.exe`. There, "run" the explicit path the takeover verifies
 	 * by reading the version the script echoes; POSIX hosts execute it for real.
 	 */
 	const verifyBinary =
@@ -1587,19 +1587,19 @@ describe("update-cli script-shim takeover", () => {
 				}
 			: undefined;
 
-	it("installs omp.exe beside the shims and retires them", async () => {
+	it("installs bolt.exe beside the shims and retires them", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
 		// Real executable, no injected verifier: the takeover must verify the
 		// exe by explicit path — $which cached the shim path before it was
 		// renamed away, so a PATH re-resolution would fail here.
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho bolt/${version}\n`;
 
 		const { build, fetchImpl } = offer(exe);
 
-		await updateViaShimTakeover(path.join(dir, "omp.cmd"), build, { fetchImpl, verifyBinary });
+		await updateViaShimTakeover(path.join(dir, "bolt.cmd"), build, { fetchImpl, verifyBinary });
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, "bolt.exe")).text()).toBe(exe);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).exists()).toBe(false);
 		}
@@ -1609,15 +1609,15 @@ describe("update-cli script-shim takeover", () => {
 
 	it("drops bun's launcher metadata when the standalone binary takes the .exe over", async () => {
 		// After the takeover the launcher is no longer bun-managed. A leftover
-		// `omp.bunx` would keep classifying the install as bun-managed and send
+		// `bolt.bunx` would keep classifying the install as bun-managed and send
 		// the next update through `bun install -g`, which cannot overwrite the
 		// running `.exe` and would pin the install to the old version.
 		const dir = await makeTempDir();
-		const targetPath = path.join(dir, "omp.exe");
-		const marker = path.join(dir, "omp.bunx");
+		const targetPath = path.join(dir, "bolt.exe");
+		const marker = path.join(dir, "bolt.bunx");
 		await Bun.write(targetPath, "bun shim");
 		await Bun.write(marker, "bun launcher metadata");
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho bolt/${version}\n`;
 		const { build, fetchImpl } = offer(exe);
 
 		await updateViaBinaryAt(targetPath, build, {
@@ -1631,8 +1631,8 @@ describe("update-cli script-shim takeover", () => {
 
 	it.skipIf(process.platform === "win32")("reports the physical binary path verified after an update", async () => {
 		const dir = await makeTempDir();
-		const targetPath = path.join(dir, "omp");
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const targetPath = path.join(dir, "bolt");
+		const exe = `#!/bin/sh\necho bolt/${version}\n`;
 		await Bun.write(targetPath, "old binary");
 		const logSpy = spyOn(console, "log").mockImplementation(() => {});
 
@@ -1651,14 +1651,14 @@ describe("update-cli script-shim takeover", () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
 		// Executable runs but reports the previous version -> full rollback.
-		const exe = "#!/bin/sh\necho omp/17.2.12\n";
+		const exe = "#!/bin/sh\necho bolt/17.2.12\n";
 		const { build, fetchImpl } = offer(exe);
 
 		await expect(
-			updateViaShimTakeover(path.join(dir, "omp.cmd"), build, { fetchImpl, verifyBinary }),
-		).rejects.toThrow(/still reports 17\.2\.12 \(expected 18\.0\.0\); restored previous omp launcher/);
+			updateViaShimTakeover(path.join(dir, "bolt.cmd"), build, { fetchImpl, verifyBinary }),
+		).rejects.toThrow(/still reports 17\.2\.12 \(expected 18\.0\.0\); restored previous bolt launcher/);
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "bolt.exe")).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}
@@ -1669,7 +1669,7 @@ describe("update-cli script-shim takeover", () => {
 	function renameLockingPs1(): Mock<typeof nodeFs.promises.rename> {
 		const realRename = nodeFs.promises.rename;
 		return spyOn(nodeFs.promises, "rename").mockImplementation(async (from, to) => {
-			if (path.basename(String(from)) === "omp.ps1") {
+			if (path.basename(String(from)) === "bolt.ps1") {
 				throw Object.assign(new Error("EPERM: file is locked"), { code: "EPERM" });
 			}
 			return await realRename(from, to);
@@ -1679,38 +1679,38 @@ describe("update-cli script-shim takeover", () => {
 	it("rewrites an immovable precedence-winning shim as a forwarder to the exe", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
-		const exe = `#!/bin/sh\necho omp/${version}\n`;
+		const exe = `#!/bin/sh\necho bolt/${version}\n`;
 		const renameSpy = renameLockingPs1();
 		const { build, fetchImpl } = offer(exe);
 		try {
-			await updateViaShimTakeover(path.join(dir, "omp.cmd"), build, { fetchImpl, verifyBinary });
+			await updateViaShimTakeover(path.join(dir, "bolt.cmd"), build, { fetchImpl, verifyBinary });
 		} finally {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).text()).toBe(exe);
-		expect(await Bun.file(path.join(dir, "omp")).exists()).toBe(false);
-		expect(await Bun.file(path.join(dir, "omp.cmd")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "bolt.exe")).text()).toBe(exe);
+		expect(await Bun.file(path.join(dir, "bolt")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "bolt.cmd")).exists()).toBe(false);
 		// PowerShell resolves .ps1 before .exe: the locked shim must now exec
 		// the new binary instead of keeping its old body.
-		expect(await Bun.file(path.join(dir, "omp.ps1")).text()).toContain('& "$PSScriptRoot\\omp.exe" @args');
+		expect(await Bun.file(path.join(dir, "bolt.ps1")).text()).toContain('& "$PSScriptRoot\\bolt.exe" @args');
 	});
 
 	it("restores a forwarded shim's original body when verification fails", async () => {
 		const dir = await makeTempDir();
 		await writeShims(dir);
-		const exe = "#!/bin/sh\necho omp/17.2.12\n";
+		const exe = "#!/bin/sh\necho bolt/17.2.12\n";
 		const renameSpy = renameLockingPs1();
 		const { build, fetchImpl } = offer(exe);
 		try {
 			await expect(
-				updateViaShimTakeover(path.join(dir, "omp.cmd"), build, { fetchImpl, verifyBinary }),
-			).rejects.toThrow("restored previous omp launcher");
+				updateViaShimTakeover(path.join(dir, "bolt.cmd"), build, { fetchImpl, verifyBinary }),
+			).rejects.toThrow("restored previous bolt launcher");
 		} finally {
 			renameSpy.mockRestore();
 		}
 
-		expect(await Bun.file(path.join(dir, "omp.exe")).exists()).toBe(false);
+		expect(await Bun.file(path.join(dir, "bolt.exe")).exists()).toBe(false);
 		for (const name in shims) {
 			expect(await Bun.file(path.join(dir, name)).text()).toBe(shims[name]);
 		}

@@ -10,7 +10,7 @@ import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import { ReadTool } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
-import { cfgEditMode } from "@oh-my-pi/pi-coding-agent/edit/settings";
+import type { EditMode } from "@oh-my-pi/pi-tui/tools/edit";
 import { cfgReadSummarizeEnabled } from "@oh-my-pi/pi-coding-agent/tools/settings";
 
 function textOutput(result: AgentToolResult<ReadToolDetails>): string {
@@ -20,8 +20,8 @@ function textOutput(result: AgentToolResult<ReadToolDetails>): string {
 		.join("\n");
 }
 
-function createSession(cwd: string): ToolSession {
-	const settings = Settings.isolated();
+function createSession(cwd: string, editMode: EditMode = "hashline"): ToolSession {
+	const settings = Settings.isolated({ "edit.mode": editMode });
 	cfgReadSummarizeEnabled.set(settings, false);
 	const artifactsDir = path.join(cwd, "artifacts");
 	return {
@@ -165,8 +165,7 @@ describe("read → edit round-trip for out-of-cwd files", () => {
 			const workspaceFile = path.join(cwdDir, "src", fileName);
 			await Bun.write(workspaceFile, "alpha\nbeta\n");
 
-			const session = createSession(cwdDir);
-			cfgEditMode.set(session.settings, testCase.mode);
+			const session = createSession(cwdDir, testCase.mode);
 			const readResult = await new ReadTool(session).execute(`read-workspace-suffix-${testCase.mode}`, {
 				path: fileName,
 			});
@@ -182,8 +181,7 @@ describe("read → edit round-trip for out-of-cwd files", () => {
 		const workspaceFile = path.join(cwdDir, "src", fileName);
 		await Bun.write(workspaceFile, "alpha\nbeta\n");
 
-		const session = createSession(cwdDir);
-		cfgEditMode.set(session.settings, "apply_patch");
+		const session = createSession(cwdDir, "apply_patch");
 		const readResult = await new ReadTool(session).execute("read-workspace-suffix-recreate", { path: fileName });
 		expect(textOutput(readResult)).toContain("alpha");
 

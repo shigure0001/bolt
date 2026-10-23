@@ -133,6 +133,7 @@ async function createDeferredSession() {
 			"compaction.enabled": false,
 			"retry.enabled": false,
 			"todo.enabled": false,
+			"tools.xdev": true,
 		}),
 		disableExtensionDiscovery: true,
 		skills: [],

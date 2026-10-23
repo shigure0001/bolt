@@ -34,7 +34,7 @@ const LEGACY_SUMMARY_OVERRIDES: Record<string, unknown> = {
 };
 
 function createSession(cwd: string, overrides: Record<string, unknown> = {}): ToolSession {
-	const settings = Settings.isolated({ ...LEGACY_SUMMARY_OVERRIDES, ...overrides });
+	const settings = Settings.isolated({ "edit.mode": "hashline", ...LEGACY_SUMMARY_OVERRIDES, ...overrides });
 	const sessionFile = path.join(cwd, "session.jsonl");
 	const sessionDir = path.join(cwd, "session");
 	return {
@@ -253,9 +253,8 @@ describe("read summary", () => {
 		expect(linesFirstText).toContain("delta");
 		expect(linesFirstText).not.toMatch(/^\s*\d+[a-z]{2}\|/m);
 		expect(linesFirstText).not.toMatch(/^\s*\d+\|/m);
-		// Note: explicit ranges expand with surrounding context lines, so we don't
-		// assert on what is excluded — only that the requested range is present
-		// verbatim with no anchor or line-number prefixes.
+		expect(linesFirstText).not.toContain("alpha");
+		expect(linesFirstText).not.toContain("epsilon");
 
 		const rawFirst = await tool.execute("read-summary-compound-raw-lines", { path: `${fixture}:raw:2-4` });
 		const rawFirstText = textOutput(rawFirst);

@@ -281,7 +281,7 @@ describe("RemoteAuthCredentialStore SSE integration", () => {
 		expect(reported.hostname).toBe(os.hostname());
 		// Default identity carries the app label so broker-side attribution can
 		// answer "what did app X use" even for broker-direct installs.
-		expect(reported.providers.every(p => p.app === "omp")).toBe(true);
+		expect(reported.providers.every(p => p.app === "bolt")).toBe(true);
 
 		const anthropic = reported.providers.find(p => p.provider === "anthropic");
 		expect(anthropic).toMatchObject({

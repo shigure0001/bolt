@@ -260,7 +260,7 @@ Eval's `computer` helpers — `computer.window(...)`, `win.screenshot()`, `win.a
 
 ## Whatever the task needs, _it's already in the box_.
 
-Core tools live in the same namespace as `read` and `bash`. Pin the active set with `--tools read,edit,bash,…`; rarely used discoverable tools stay behind `xd://` devices. `read xd://` lists them, and `write xd://<tool>` runs one when `tools.xdev` is enabled.
+Core tools live in the same namespace as `read` and `bash`. Pin the active set with `--tools read,edit,bash,…`. With `tools.xdev` enabled, rarely used discoverable tools move behind `xd://` devices: `read xd://` lists them and `write xd://<tool>` runs one.
 
 **Files & search**
 

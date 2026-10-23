@@ -111,7 +111,7 @@ describe("GrepTool internal URL resolution", () => {
 			hasUI: false,
 			getSessionFile: () => null,
 			getSessionSpawns: () => "*",
-			settings: Settings.isolated({ "grep.contextBefore": 0, "grep.contextAfter": 0 }),
+			settings: Settings.isolated({ "edit.mode": "hashline", "grep.contextBefore": 0, "grep.contextAfter": 0 }),
 			...overrides,
 		};
 	}
@@ -207,7 +207,7 @@ describe("GrepTool internal URL resolution", () => {
 	});
 
 	it("greps the caller-bound full current branch without materializing a session file", async () => {
-		const settings = Settings.isolated({ "grep.contextBefore": 0, "grep.contextAfter": 0 });
+		const settings = Settings.isolated({ "edit.mode": "hashline", "grep.contextBefore": 0, "grep.contextAfter": 0 });
 		cfgCompactionExperimentalContextManagement.set(settings, true);
 		const branch = [
 			{
@@ -650,8 +650,8 @@ describe("GrepTool internal URL resolution", () => {
 
 		const text = getResultText(result);
 		// The base file was targeted (URL selector semantics preserved), not the
-		// sibling literal. Content check is enough — the read tool's context
-		// expansion around the requested range is unrelated to the shadow bug.
+		// sibling literal, and the range is exact.
+		expect(text).not.toContain("url-target line 3");
 		expect(text).toContain("url-target line 1");
 		expect(text).toContain("url-target line 2");
 		expect(text).not.toContain("sibling literal shadow");
@@ -690,7 +690,7 @@ describe("GrepTool internal URL resolution", () => {
 		registerVirtualDocs(new Map([["doc.md", "l1\nneedle a\nl3\nneedle b\nl5\nl6\nl7\nl8\n"]]));
 
 		const session = createSession({
-			settings: Settings.isolated({ "grep.contextBefore": 1, "grep.contextAfter": 3 }),
+			settings: Settings.isolated({ "edit.mode": "hashline", "grep.contextBefore": 1, "grep.contextAfter": 3 }),
 		});
 		const tool = new GrepTool(session);
 

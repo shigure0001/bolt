@@ -32,7 +32,7 @@ describe("grep hashline snapshot tags", () => {
 			hasUI: false,
 			getSessionFile: () => null,
 			getSessionSpawns: () => "*",
-			settings: Settings.isolated(),
+			settings: Settings.isolated({ "edit.mode": "hashline" }),
 		};
 		const filePath = path.join(cwd, "a.txt");
 		await Bun.write(filePath, "needle one\nfiller\n");
@@ -57,7 +57,7 @@ describe("grep hashline snapshot tags", () => {
 			hasUI: false,
 			getSessionFile: () => null,
 			getSessionSpawns: () => "*",
-			settings: Settings.isolated(),
+			settings: Settings.isolated({ "edit.mode": "hashline" }),
 		};
 		const filePath = path.join(cwd, "a.txt");
 		const pinnedMtime = new Date("2024-01-01T00:00:00Z");

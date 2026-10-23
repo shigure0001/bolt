@@ -37,7 +37,7 @@ export const cfgEditMode = register({
 	id: "edit.mode",
 	type: "enum",
 	values: EDIT_MODES,
-	default: "hashline",
+	default: "replace",
 	// Pins the variant: it also skips the per-model hashline fallback (see `utils/edit-mode.ts`).
 	env: "PI_EDIT_VARIANT",
 	ui: {

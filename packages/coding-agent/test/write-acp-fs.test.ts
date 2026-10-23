@@ -32,7 +32,7 @@ function createSession(cwd: string, options: SessionOptions = {}): ToolSession {
 		getSessionId,
 		localProtocolOptions: { getArtifactsDir, getSessionId },
 		allocateOutputArtifact: async () => ({ id: "artifact-1", path: path.join(cwd, "artifact-1.log") }),
-		settings: Settings.isolated(),
+		settings: Settings.isolated({ "edit.mode": "hashline" }),
 		getClientBridge: options.bridge ? () => options.bridge : undefined,
 		getPlanModeState: options.planMode ? () => options.planMode : undefined,
 	};

@@ -91,9 +91,9 @@ describe("generate_image tool gating", () => {
 
 	function specializedToolsPolicy(session: AgentSession): string {
 		const rendered = session.systemPrompt.join("\n");
-		const start = rendered.indexOf("# Specialized Tools");
-		const end = rendered.indexOf("\n# Exploration", start);
-		if (start < 0 || end < 0) throw new Error("Expected the specialized-tools policy section");
+		const start = rendered.indexOf("## Choosing a tool");
+		const end = rendered.indexOf("\n## ", start + 1);
+		if (start < 0 || end < 0) throw new Error("Expected the tool-choice policy section");
 		return rendered.slice(start, end);
 	}
 
@@ -105,7 +105,7 @@ describe("generate_image tool gating", () => {
 			enableMCP: false,
 			modelRegistry,
 			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({ "plan.enabled": false }),
+			settings: Settings.isolated({ "plan.enabled": false, "tools.xdev": true }),
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			disableExtensionDiscovery: true,
 			toolNames,
@@ -142,7 +142,7 @@ describe("generate_image tool gating", () => {
 		expect(names).toContain("generate_image");
 	});
 
-	it("exposes generate_image as an xd:// device (not top-level) in a default session", async () => {
+	it("exposes generate_image as an xd:// device (not top-level) in a default session with xdev on", async () => {
 		// Default session (no explicit --tools) with tools.xdev on: image-gen is a
 		// discoverable custom tool, so it mounts as an xd:// device instead of
 		// shipping its schema top-level.
@@ -152,7 +152,7 @@ describe("generate_image tool gating", () => {
 			agentDir: registryDir,
 			modelRegistry,
 			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({ "generate_image.enabled": true }),
+			settings: Settings.isolated({ "generate_image.enabled": true, "tools.xdev": true }),
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			disableExtensionDiscovery: true,
 		});
@@ -221,7 +221,7 @@ describe("generate_image tool gating", () => {
 			agentDir: registryDir,
 			modelRegistry,
 			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({ "generate_image.enabled": true }),
+			settings: Settings.isolated({ "generate_image.enabled": true, "tools.xdev": true }),
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			disableExtensionDiscovery: true,
 			toolNames: ["read", "generate_image"],
@@ -371,7 +371,7 @@ describe("generate_image tool gating", () => {
 			agentDir: registryDir,
 			modelRegistry,
 			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated({ "plan.enabled": false, "generate_image.enabled": false }),
+			settings: Settings.isolated({ "plan.enabled": false, "generate_image.enabled": false, "tools.xdev": true }),
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			disableExtensionDiscovery: true,
 			enableMCP: false,

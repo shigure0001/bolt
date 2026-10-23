@@ -54,7 +54,7 @@ describe("native image blob lifetime", () => {
 				delete env.OMP_PROFILE;
 				delete env.PI_PROFILE;
 				await Promise.all(
-					["config", "agent", "session-owners", "xdg-config", "data/omp", "state/omp", "cache/omp"].map(dir =>
+					["config", "agent", "session-owners", "xdg-config", "data/bolt", "state/bolt", "cache/bolt"].map(dir =>
 						fs.promises.mkdir(root.join(dir), { recursive: true }),
 					),
 				);

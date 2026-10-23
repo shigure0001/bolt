@@ -29,6 +29,9 @@ class "anthropic" {
 	// back as text (`reasoning_extraction`, issue #6093).
 	classifier-cot-extraction #true
 	thinking-replay-tokens "output"
+	// Claude delegates readily; keep fan-out for genuinely parallel slices and
+	// skip reflexive scouts and single-agent babysitting.
+	delegation-bias "restrained"
 	// verified: billing matched this formula on Opus 4.7+ and Fable 5.1.
 	image-tokenization {
 		regime "anthropic-patch"

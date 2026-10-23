@@ -121,11 +121,8 @@ describe("read tool large artifact handling", () => {
 		await Bun.write(path.join(artifactDir, "0.mcp.log"), byteLimitedRangeArtifact());
 
 		const result = await tool.execute("call-byte-limited-range", { path: "artifact://0:1-100" });
-		const output = getTextOutput(result);
 		const truncation = result.details?.meta?.truncation;
 
-		expect(output).not.toContain("could not fit after preceding context");
-		expect(output).not.toContain("to read that line without context");
 		expect(truncation).toBeDefined();
 		if (!truncation) throw new Error("expected truncation metadata");
 		const shownRange = truncation.shownRange;
@@ -135,17 +132,17 @@ describe("read tool large artifact handling", () => {
 		expect(formatTruncationMetaNotice(truncation)).toContain(`Use :${truncation.nextOffset} to continue`);
 	});
 
-	it("reports an oversized selected line instead of sending a looping continuation selector", async () => {
+	it("previews an oversized selected line without neighbours or a looping continuation selector", async () => {
 		await Bun.write(path.join(artifactDir, "0.mcp.log"), oversizedSelectedLineArtifact());
 
 		const result = await tool.execute("call-oversized-selected", { path: "artifact://0:2-2" });
 		const output = getTextOutput(result);
 
-		expect(output).toContain("leading-context");
-		expect(output).toContain("Line 2 is 68.4KB");
-		expect(output).toContain("50.0KB read budget");
-		expect(output).toContain("artifact://0:raw:2-2");
+		expect(output).toContain("oversized-");
+		expect(output).not.toContain("leading-context");
+		expect(output).not.toContain("trailing-one");
 		const truncation = result.details?.meta?.truncation;
+		expect(truncation?.partialLine).toBe(true);
 		expect(truncation?.totalBytes).toBeGreaterThan(70_000);
 		expect(truncation?.nextOffset).toBeUndefined();
 		if (!truncation) throw new Error("expected truncation metadata");
@@ -160,7 +157,6 @@ describe("read tool large artifact handling", () => {
 
 		expect(output).toContain("oversized-");
 		expect(output).toContain("trailing-two");
-		expect(output).not.toContain("could not fit after preceding context");
 		expect(result.details?.meta?.truncation).toBeUndefined();
 	});
 
@@ -180,9 +176,8 @@ describe("read tool large artifact handling", () => {
 	it("tails an artifact with :-N by counting lines first, then streaming only that window", async () => {
 		const output = getTextOutput(await tool.execute("call-tail", { path: "artifact://0:-3" }));
 
-		// One leading context line joins the requested 398-400 window.
-		expect(output).not.toContain("line-396");
-		expect(output).toContain("line-397");
+		// Exactly the requested 398-400 window.
+		expect(output).not.toContain("line-397");
 		expect(output).toContain("line-398");
 		expect(output).toContain("line-400");
 

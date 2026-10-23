@@ -100,7 +100,7 @@ const PERSONALITY_SPECS: Record<Exclude<Personality, "none">, string> = {
 
 /**
  * Load the user-level PERSONALITY.md override for the system prompt's
- * personality block from `<agentDir>/PERSONALITY.md` (`~/.omp/agent` by
+ * personality block from `<agentDir>/PERSONALITY.md` (`~/.bolt/agent` by
  * default; profile, XDG, and `PI_CODING_AGENT_DIR` aware). Returns null when
  * the file is absent, empty, or unreadable; callers then render the configured
  * preset. Read failures other than a missing file warn instead of failing the
@@ -879,15 +879,14 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		toolNames = tools ? Array.from(tools.keys()) : [...DEFAULT_SYSTEM_PROMPT_TOOL_NAMES];
 	}
 
-	// List mode shows a compact tool-name list; it only applies when descriptors
-	// stay in provider-native tool schemas AND native tool calling is active.
-	// Otherwise render the full functions-namespace catalog in the system prompt.
-	const toolListMode = !inlineToolDescriptors && nativeTools;
+	// Native tool calling with descriptors in provider schemas needs no catalog in
+	// the system prompt; otherwise render the full functions-namespace catalog.
+	const renderCatalog = inlineToolDescriptors || !nativeTools;
 	// Build tool descriptions for system prompt rendering.
 	const toolPromptNames = new Map<string, string>(toolNames.map(name => [name, tools?.get(name)?.wireName ?? name]));
 	// xd://-mounted tools count as present for prompt gates ({{#has tools "lsp"}})
 	// and resolve to their `xd://<name>` URL, the only way to reach them. The
-	// Tool Inventory list stays limited to real defs.
+	// catalog stays limited to real defs.
 	for (const mounted of xdevTools) {
 		if (!toolPromptNames.has(mounted.name)) toolPromptNames.set(mounted.name, `${XD_URL_PREFIX}${mounted.name}`);
 	}
@@ -897,14 +896,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 	// Presence in both toolNames and tools proves it still has a top-level definition.
 	const inventoryToolNames =
 		xdevToolNames.size === 0 ? toolNames : toolNames.filter(name => tools?.has(name) || !xdevToolNames.has(name));
-	const toolInfo = inventoryToolNames.map(name => ({
-		name: toolPromptNames.get(name) ?? name,
-		internalName: name,
-		label: tools?.get(name)?.label ?? "",
-	}));
-	const toolInventory = toolListMode
-		? ""
-		: renderToolInventory(
+	const toolInventory = renderCatalog
+		? renderToolInventory(
 				inventoryToolNames.map(name => {
 					const meta = tools?.get(name);
 					return {
@@ -914,7 +907,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 						examples: meta?.examples,
 					};
 				}),
-			);
+			)
+		: "";
 
 	// Filter skills for the rendered system prompt:
 	// - require an active tool that declares `skill://` read capability (any tool
@@ -957,10 +951,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		customPrompt: resolvedCustomPrompt,
 		appendPrompt: resolvedAppendPrompt ?? "",
 		tools: [...new Set([...toolNames, ...xdevTools.map(mounted => mounted.name)])],
-		toolInfo,
 		toolInventory,
 		inlineToolDescriptors,
-		toolListMode,
 		toolRefs,
 		environment,
 		contextFiles,

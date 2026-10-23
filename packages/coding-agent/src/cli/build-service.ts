@@ -95,7 +95,7 @@ export function resolveBuildHost(platform: NodeJS.Platform, arch: string, musl: 
 	}
 	return {
 		target: `${targetOs}-${targetArch}`,
-		fileName: `${APP_NAME}-${fileOs}-${arch}${platform === "win32" ? ".exe" : ""}`,
+		fileName: `${PRODUCT}-${fileOs}-${arch}${platform === "win32" ? ".exe" : ""}`,
 	};
 }
 

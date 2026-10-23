@@ -148,12 +148,12 @@ export const cfgToolsArtifactMaxBytes = register({
 export const cfgReadLineNumbers = register({
 	id: "readLineNumbers",
 	type: "boolean",
-	default: false,
+	default: true,
 	ui: {
 		tab: "files",
 		group: "Reading",
 		label: "Line Numbers",
-		description: "Prepend line numbers to read tool output by default",
+		description: "Prepend `N|` line numbers to read tool output; hashline mode always shows line anchors",
 	},
 });
 
@@ -779,7 +779,7 @@ export const cfgGithubCacheEnabled = register({
 		tab: "tools",
 		group: "GitHub",
 		label: "GitHub View Cache",
-		description: "Cache rendered issue/PR view output in ~/.omp/cache/github-cache.db so repeated reads are free",
+		description: "Cache rendered issue/PR view output in ~/.bolt/cache/github-cache.db so repeated reads are free",
 	},
 });
 
@@ -849,7 +849,7 @@ export const cfgAskEnabled = register({
 export const cfgToolsIntentTracing = register({
 	id: "tools.intentTracing",
 	type: "boolean",
-	default: true,
+	default: false,
 	env: "PI_INTENT_TRACING",
 	ui: {
 		tab: "tools",
@@ -961,13 +961,13 @@ export const cfgAsyncWidgets = register({
 export const cfgToolsXdev = register({
 	id: "tools.xdev",
 	type: "boolean",
-	default: true,
+	default: false,
 	ui: {
 		tab: "tools",
 		group: "Discovery & MCP",
 		label: "xd:// Tools",
 		description:
-			"Mount rarely-used (discoverable) tools under xd:// device URLs driven via read/write instead of shipping their schemas on every request. Sessions whose explicit tool list grants read but omits write mount devices through a device-only write transport (only local:// scratch stays writable besides devices). Disable to expose every enabled tool top-level.",
+			"Mount rarely-used (discoverable) tools under xd:// device URLs driven via read/write instead of shipping their schemas on every request. Sessions whose explicit tool list grants read but omits write mount devices through a device-only write transport (only local:// scratch stays writable besides devices). Off by default: every enabled tool is exposed top-level.",
 	},
 });
 
@@ -1010,14 +1010,14 @@ export const cfgToolsXdevInlineDevices = register({
 export const cfgDevAutoqa = register({
 	id: "dev.autoqa",
 	type: "boolean",
-	default: true,
+	default: false,
 	env: "PI_AUTO_QA",
 	ui: {
 		tab: "tools",
 		group: "Developer",
 		label: "Auto QA",
 		description:
-			"Automated tool issue reporting (xd://report_issue). On by default; the first report asks for consent, and denying it disables reporting until re-enabled explicitly",
+			"Automated tool issue reporting (xd://report_issue). Off by default; the first report asks for consent, and denying it disables reporting until re-enabled explicitly",
 	},
 });
 

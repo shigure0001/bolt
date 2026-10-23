@@ -7,6 +7,21 @@
 - Anthropic web search and Files API uploads follow `PI_ANTHROPIC_API_VERSION=2026-10-21`; web search omits `temperature` under that version ([#16706](https://github.com/can1357/oh-my-pi/pull/16706) by [@H4vC](https://github.com/H4vC))
 - llama.cpp auto-discovery now also finds local servers on llama-server's new default port 9931 when nothing answers on 8080 ([#16675](https://github.com/can1357/oh-my-pi/pull/16675) by [@bartbroere](https://github.com/bartbroere))
 
+### Changed
+
+- `readLineNumbers` now defaults to on: `read` output shows `N|line` row prefixes even in replace edit mode
+- `edit.mode` now defaults to `replace` (path / old_string / new_string), so `read` and `grep` output carries no hashline anchors by default
+- `tools.intentTracing` now defaults to off: tools no longer take a required `i` intent argument, and the TUI shows the tool label instead
+- `tools.xdev` now defaults to off: LSP, AST, debug and MCP tools are ordinary top-level tools instead of `xd://` devices
+- `dev.autoqa` now defaults to off: no automatic tool-issue reporting unless enabled
+- `read` line ranges (`:N-M`, `:N+K`, `:-N`) now return exactly the requested lines, without extra context lines before and after
+- The task tool's `solutionSpace` field is now optional
+- `delegation-bias` for Claude models is now `restrained`: subagents are reserved for genuinely parallel slices
+- Renamed the CLI from `omp` to `bolt`: the binary is `bolt`, user state lives in `~/.bolt` (XDG: `$XDG_*_HOME/bolt`), project config in `<project>/.bolt`, and `bolt` shares no sessions, memory, history or credentials with an installed `omp`
+- Rewrote the main system prompt, project footer, subagent prompt and default personality in plain prose: no RFC 2119 legend, `§` sections or duplicated `<critical>` blocks; the redundant tool-name inventory is gone in native tool mode and formatting guidance appears only when the TUI renders it
+- Rewrote the built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, ast_grep, ast_edit, debug, find, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
+- `read`'s description now documents the `N|` line prefix and the enclosing-block lines a partial read may add
+
 ### Fixed
 
 - Fixed `omp gc --compress` exiting with "the event loop drained while it was still pending" on Bun 1.3.14 when a session artifact is pretty-printed JSON larger than 1 MiB, and session header probes (gc, session move and transfer) reading whole artifacts on Windows ([#15745](https://github.com/can1357/oh-my-pi/issues/15745), [#16754](https://github.com/can1357/oh-my-pi/pull/16754) by [@wolfiesch](https://github.com/wolfiesch))

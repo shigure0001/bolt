@@ -123,12 +123,9 @@ describe("flushGrievances", () => {
 		expect(isAutoQaEnabled(Settings.isolated({ "dev.autoqa": false }))).toBe(true);
 	});
 
-	it("enables auto QA by default with consent still unset", () => {
-		expect(isAutoQaEnabled(Settings.isolated())).toBe(true);
-	});
-
-	it("vetoes default-on auto QA once the user denied consent", () => {
-		expect(isAutoQaEnabled(Settings.isolated({ "dev.autoqaConsent": "denied" }))).toBe(false);
+	it("stays off until explicitly enabled", () => {
+		expect(isAutoQaEnabled(Settings.isolated())).toBe(false);
+		expect(isAutoQaEnabled(Settings.isolated({ "dev.autoqaConsent": "granted" }))).toBe(false);
 	});
 
 	it("keeps explicitly enabled auto QA on despite denied consent", () => {

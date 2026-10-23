@@ -1,4 +1,2 @@
-Wait only when blocked with nothing else to do.
-Blocks on background jobs/services you started, or on the reply to a message you sent this run; returns on the first result, a message sent to you, or a steering interrupt; a safety cap returns a still-running snapshot.
-Nothing you started running and no reply owed? Returns at once.
-Results and messages auto-deliver. NEVER poll while work remains.
+Blocks until something you are waiting on happens: a background job or service you started finishes, a reply arrives to a message you sent, or the user interrupts. Returns immediately if nothing is pending. A safety cap may return a snapshot of still-running work.
+Results and messages are delivered automatically, so use this only when you have nothing else to do; never poll in a loop.

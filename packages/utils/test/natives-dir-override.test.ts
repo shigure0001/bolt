@@ -53,15 +53,15 @@ describe("native directory override", () => {
 		const cache = path.join(tempRoot, "cache");
 		const data = path.join(tempRoot, "data");
 		const shared = path.join(tempRoot, "shared");
-		await fs.mkdir(path.join(cache, "omp", "profiles", "isolated"), { recursive: true });
-		await fs.mkdir(path.join(data, "omp", "profiles", "isolated"), { recursive: true });
+		await fs.mkdir(path.join(cache, "bolt", "profiles", "isolated"), { recursive: true });
+		await fs.mkdir(path.join(data, "bolt", "profiles", "isolated"), { recursive: true });
 		process.env.XDG_CACHE_HOME = cache;
 		process.env.XDG_DATA_HOME = data;
 		process.env.PI_CONFIG_DIR = ".alternate";
 		process.env.OMP_PROFILE = "isolated";
 		__resetDirsFromEnvForTests();
 		const defaultNatives = path.join(
-			xdgPlatform ? path.join(cache, "omp") : path.join(home, ".alternate"),
+			xdgPlatform ? path.join(cache, "bolt") : path.join(home, ".alternate"),
 			"profiles",
 			"isolated",
 			"natives",
@@ -90,6 +90,6 @@ describe("native directory override", () => {
 		["relative", "relative/natives"],
 	])("keeps the existing cache root when the override is %s", (_label, override) => {
 		process.env.PI_NATIVES_DIR = override;
-		expect(getNativesDir()).toBe(path.join(home, ".omp", "natives"));
+		expect(getNativesDir()).toBe(path.join(home, ".bolt", "natives"));
 	});
 });

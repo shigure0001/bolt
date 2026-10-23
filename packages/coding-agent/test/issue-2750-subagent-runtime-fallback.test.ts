@@ -748,7 +748,7 @@ describe("subagent runtime fallback on a real provider error", () => {
 		await fs.mkdir(path.join(home, "work"), { recursive: true });
 		restoreEnvValue("HOME", home);
 		vi.spyOn(os, "homedir").mockReturnValue(home);
-		setAgentDir(path.join(home, ".omp", "agent"));
+		setAgentDir(path.join(home, ".bolt", "agent"));
 		AgentRegistry.resetGlobalForTests();
 		AgentLifecycleManager.resetGlobalForTests();
 		registerMockApi(MOCK_API_SOURCE);

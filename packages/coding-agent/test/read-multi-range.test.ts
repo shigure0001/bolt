@@ -21,7 +21,7 @@ function textOutput(result: AgentToolResult<ReadToolDetails>): string {
 }
 
 function createSession(cwd: string, bridge?: ClientBridge): ToolSession {
-	const settings = Settings.isolated();
+	const settings = Settings.isolated({ "edit.mode": "hashline" });
 	// Disable structural summarization so multi-range tests assert raw line content
 	// regardless of language heuristics.
 	cfgReadSummarizeEnabled.set(settings, false);
@@ -146,7 +146,7 @@ describe("read tool multi-range selector", () => {
 		);
 
 		const tool = new ReadTool(createSession(tmpDir));
-		// Read only the `def` header (expands by a few trailing context lines).
+		// Read only the `def` header line.
 		// Python has no closing delimiter, so a bracket scan would surface
 		// nothing; tree-sitter surfaces the def's last body line (9) as the
 		// block boundary, behind an ellipsis for the skipped middle.
@@ -167,10 +167,11 @@ describe("read tool multi-range selector", () => {
 		const result = await tool.execute("call-merge", { path: `${filePath}:3-7,6-9` });
 		const text = textOutput(result);
 
-		// All lines from the merged range present
-		for (const i of [3, 4, 5, 6, 7, 8, 9]) {
-			expect(text).toContain(`line ${i}\n`);
-		}
+		// Exactly the merged range: lines 3-9, no padding either side.
+		const bodyLines = text.split("\n").slice(1);
+		expect(bodyLines.map(row => row.slice(row.indexOf(":") + 1))).toEqual(
+			[3, 4, 5, 6, 7, 8, 9].map(i => `line ${i}`),
+		);
 		// No separator because ranges merged into one contiguous block
 		expect(text).not.toContain("…");
 	});

@@ -138,7 +138,11 @@ describe("AgentSession Anthropic native compaction", () => {
 			sessionManager,
 			authStorage,
 			modelRegistry: new ModelRegistry(authStorage, tempDir.join("models.yml")),
-			settings: Settings.isolated({ "compaction.methodOrder": ["remote"], "compaction.keepRecentTokens": 1 }),
+			settings: Settings.isolated({
+				"compaction.methodOrder": ["remote"],
+				"compaction.keepRecentTokens": 1,
+				"tools.intentTracing": true,
+			}),
 			model,
 			disableExtensionDiscovery: true,
 			skills: [],

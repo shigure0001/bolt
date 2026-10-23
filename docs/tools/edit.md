@@ -1,6 +1,6 @@
 # edit
 
-> Applies source edits. The default `hashline` mode consumes one line-anchored patch string and edits existing files directly.
+> Applies source edits. The default `replace` mode takes `path`, `old_string`, `new_string` and optional `replace_all`; `hashline`, `patch`, `apply_patch` and `sloppy` are selectable with `edit.mode`.
 
 ## Source
 - Entry and mode registration: `packages/coding-agent/src/edit/index.ts`
@@ -20,7 +20,7 @@
 1. model-specific configured variant;
 2. `PI_EDIT_VARIANT`;
 3. `edit.mode`;
-4. default `hashline`.
+4. default `replace`.
 
 Supported modes are `hashline`, `apply_patch`, `patch`, `replace`, and `sloppy`. `edit.modelVariants` uses the first case-insensitive substring match against the active model string. `PI_EDIT_VARIANT` pins the mode exactly; for settings-derived `hashline`, `PI_STRICT_EDIT_MODE` disables the model-family fallback to `replace` (Kimi, MiMo, MiniMax, DeepSeek, StepFun, Codex Spark, and GLM 5.3 Flash).
 

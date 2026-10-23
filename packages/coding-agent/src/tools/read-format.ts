@@ -244,40 +244,6 @@ export function formatSummaryElisionFooter(
 }
 export const READ_CHUNK_SIZE = 8 * 1024;
 
-/**
- * Context lines added around an explicit range read. Anchor-stale failures
- * cluster on edits whose anchors land just outside the most recent read
- * window, but the data (`scripts/session-stats/analyze_selector_reads.py`)
- * shows most follow-up reads are disjoint hops, not adjacent extensions —
- * so symmetric padding rarely pays for itself.
- *
- * Leading=1 catches accidental single-line reads where the anchor is the
- * line immediately above the requested start. Trailing=3 buffers the
- * common case where the agent asks for a narrow range and then needs the
- * next few lines to disambiguate an anchor.
- */
-export const RANGE_LEADING_CONTEXT_LINES = 1;
-export const RANGE_TRAILING_CONTEXT_LINES = 3;
-
-/**
- * Expand a [start, end) range with leading/trailing context lines on the
- * sides where the user actually constrained the range. A start of 0 (no
- * explicit offset) does not get leading context — that's already an
- * open-ended read from the top.
- */
-function expandRangeWithContext(
-	requestedStart: number,
-	requestedEnd: number,
-	totalLines: number,
-	expandStart: boolean,
-	expandEnd: boolean,
-): { startLine: number; endLine: number } {
-	return {
-		startLine: expandStart ? Math.max(0, requestedStart - RANGE_LEADING_CONTEXT_LINES) : requestedStart,
-		endLine: expandEnd ? Math.min(totalLines, requestedEnd + RANGE_TRAILING_CONTEXT_LINES) : requestedEnd,
-	};
-}
-
 /** Options shared by the in-memory text builders; `raw` flips the line split to verbatim `\n` segments. */
 export interface InMemoryTextOptions {
 	details?: ReadToolDetails;
@@ -327,25 +293,13 @@ export async function buildInMemoryTextResult(
 	const allLines = rawDisplay ? undefined : splitAddressableFileLines(text);
 	const totalLines = allLines ? allLines.length : countRawLines(text);
 	details.totalLines = totalLines;
-	// User-requested 0-indexed range start. Lines BEFORE this are leading
-	// context (added below if offset is explicit).
+	// User-requested 0-indexed range start; ranges are exact, with no padding
+	// lines before or after the requested window.
 	const requestedStart = offset ? Math.max(0, offset - 1) : 0;
 	const ignoreResultLimits = options.ignoreResultLimits ?? false;
 	const requestedEnd = limit !== undefined ? Math.min(requestedStart + limit, totalLines) : totalLines;
-	// Expand only on sides the user actually constrained: leading context
-	// when offset>1, trailing context when a finite limit was set. Raw mode
-	// never expands — without line numbers the padding is indistinguishable
-	// from requested content, so `raw:31-31` must return line 31 and nothing
-	// else (verbatim-extraction contract).
-	const expanded = expandRangeWithContext(
-		requestedStart,
-		requestedEnd,
-		totalLines,
-		!rawDisplay && offset !== undefined && offset > 1,
-		!rawDisplay && limit !== undefined,
-	);
-	let startLine = expanded.startLine;
-	const endLine = expanded.endLine;
+	const startLine = requestedStart;
+	const endLine = requestedEnd;
 
 	const resultBuilder = toolResult(details);
 	if (options.sourcePath) {
@@ -373,7 +327,7 @@ export async function buildInMemoryTextResult(
 	// Measure the range as a substring of `text` (equal to joining it) so a large range isn't
 	// copied only for `truncateHead` to keep its head. Branches that emit the whole range
 	// re-join it so the result never pins `text` through a substring.
-	let selectedRange = allLines
+	const selectedRange = allLines
 		? sliceLineRange(text, allLines, startLine, endLine)
 		: sliceRawLineRange(
 				text,
@@ -381,20 +335,7 @@ export async function buildInMemoryTextResult(
 				endLine,
 				limit === undefined && endLine === totalLines && text.endsWith("\n"),
 			);
-	let truncation = ignoreResultLimits ? noTruncResult(selectedRange) : truncateHead(selectedRange);
-	// The leading context line must not cost the requested start line: when the byte budget
-	// stops at or inside it, `:<start>` would widen to the same context and repeat this page.
-	// The whole text is in memory, so drop the context and page from the requested line.
-	if (
-		allLines &&
-		startLine < requestedStart &&
-		(truncation.firstLineExceedsLimit ||
-			(truncation.truncated && (truncation.outputLines ?? 0) <= requestedStart - startLine))
-	) {
-		startLine = requestedStart;
-		selectedRange = sliceLineRange(text, allLines, startLine, endLine);
-		truncation = truncateHead(selectedRange);
-	}
+	const truncation = ignoreResultLimits ? noTruncResult(selectedRange) : truncateHead(selectedRange);
 	const startLineDisplay = startLine + 1;
 	const joinSelectedLines = (): string =>
 		(allLines ? allLines.slice(startLine, endLine) : selectedRange.split("\n")).join("\n");

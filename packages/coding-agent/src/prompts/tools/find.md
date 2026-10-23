@@ -1,4 +1,4 @@
-Describe behavior, get implementing files and line ranges. MUST use first for unknown locations; known strings/regex/symbols → `grep`, names → `glob`.
-`query`: plain language, not regex; quoted phrases match whole. `grep_keywords`: likely verbatim terms, `[]` if unsure.
-`path`: one directory or file, host path or internal URL (`omp://`, `omp://<file>.md`, `skill://<name>`, `local://…`); omitted = workspace root. Scope known subsystem; batch related questions. Searches live files, no index; no `:start-end` selector (judges whole files).
-Hits strongest first: `path:start-end score snippet` (workspace-relative, or URL under URL scope); read returned ranges. Scores: absolute comparable 0–1 probability; below ~0.4 = weak evidence, so widen query or use `grep` before concluding absence.
+Finds where a behavior is implemented from a plain-language description and returns files with line ranges. Use it first when you don't know where something lives; use `grep` for known strings, regexes or symbols and `glob` for file names.
+- `query`: plain language, not a regex; quoted phrases must match as a whole. `grep_keywords`: terms likely to appear verbatim in the code, or `[]` if unsure.
+- `path`: one directory or file, or an internal URL (`omp://`, `skill://<name>`, `local://…`); defaults to the workspace root. Scope it to the subsystem when you know it, and batch related questions. It searches the live files (no index) and judges whole files, so it takes no line selector.
+- Results are ordered strongest first as `path:start-end score snippet`; read the returned ranges. Scores are comparable probabilities from 0 to 1. Below about 0.4 the evidence is weak, so broaden the query or use `grep` before concluding something doesn't exist.

@@ -123,15 +123,13 @@ describe("read tool raw range exactness", () => {
 		expect(result.details?.totalLines).toBe(60);
 	});
 
-	it("keeps context padding for numbered range reads", async () => {
-		// Numbered mode intentionally pads (leading anchor buffer + trailing
-		// disambiguation lines) — line numbers make the padding self-describing.
+	it("returns exactly the requested range for numbered range reads", async () => {
 		const result = await tool.execute("call-numbered", { path: `${filePath}:31-31` });
 		const output = getTextOutput(result);
 
 		expect(output).toContain("L31");
-		expect(output).toContain("L30");
-		expect(output).toContain("L32");
+		expect(output).not.toContain("L30");
+		expect(output).not.toContain("L32");
 	});
 
 	it("keeps the continuation when the byte budget stops inside requested buffered content", async () => {
@@ -145,7 +143,6 @@ describe("read tool raw range exactness", () => {
 		const output = getTextOutput(result);
 		const truncation = result.details?.meta?.truncation;
 
-		expect(output).not.toContain("could not fit after preceding context");
 		expect(output).not.toContain(":raw:");
 		expect(truncation).toBeDefined();
 		if (!truncation) throw new Error("expected truncation metadata");
@@ -156,7 +153,7 @@ describe("read tool raw range exactness", () => {
 		expect(formatTruncationMetaNotice(truncation)).toContain(`Use :${truncation.nextOffset} to continue`);
 	});
 
-	it("reports an oversized selected line from a buffered local file with a safe raw recovery selector", async () => {
+	it("previews an oversized selected line from a buffered local file without neighbours or a looping continuation", async () => {
 		const bufferedFile = path.join(testDir, "buffered-oversized.txt");
 		await Bun.write(
 			bufferedFile,
@@ -166,22 +163,15 @@ describe("read tool raw range exactness", () => {
 		const result = await tool.execute("call-buffered-oversized-selected", { path: `${bufferedFile}:2-2` });
 		const output = getTextOutput(result);
 
-		expect(output).toContain("leading-context");
-		expect(output).toContain("Line 2 is 68.4KB");
-		expect(output).toContain("50.0KB read budget");
-		expect(output).toContain(":raw:2-2");
+		expect(output).toContain("oversized-");
+		expect(output).not.toContain("leading-context");
+		expect(output).not.toContain("trailing-one");
 		const truncation = result.details?.meta?.truncation;
+		expect(truncation?.partialLine).toBe(true);
 		expect(truncation?.totalBytes).toBeGreaterThan(70_000);
 		expect(truncation?.nextOffset).toBeUndefined();
 		if (!truncation) throw new Error("expected truncation metadata");
 		expect(formatTruncationMetaNotice(truncation)).not.toContain("Use :2 to continue");
-
-		const recovered = await tool.execute("call-buffered-oversized-raw", { path: `${bufferedFile}:raw:2-2` });
-		const recoveredOutput = getTextOutput(recovered);
-		expect(recoveredOutput).toStartWith("oversized-");
-		expect(recoveredOutput).not.toContain("leading-context");
-		expect(recoveredOutput).not.toContain("trailing-one");
-		expect(recovered.details?.meta?.truncation?.partialLine).toBe(true);
 	});
 
 	it("accounts for the displayed preview when a single raw line exceeds the byte budget", async () => {

@@ -2,6 +2,7 @@
  * Settings declared by this domain (see `config/registry.ts`). Declaration order is the
  * settings-panel order; `config/all-settings.ts` registers every domain.
  */
+import { APP_NAME } from "@oh-my-pi/pi-utils";
 import { register } from "../config/registry";
 
 const HINDSIGHT_RECALL_TYPES_DEFAULT: string[] = ["world", "experience"];
@@ -169,7 +170,7 @@ export const cfgHindsightRetainOverlapTurns = register({
 	default: 2,
 });
 
-export const cfgHindsightRetainContext = register({ id: "hindsight.retainContext", type: "string", default: "omp" });
+export const cfgHindsightRetainContext = register({ id: "hindsight.retainContext", type: "string", default: APP_NAME });
 
 export const cfgHindsightRecallBudget = register({
 	id: "hindsight.recallBudget",

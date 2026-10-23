@@ -27,7 +27,7 @@ import { AuthBrokerClient, AuthBrokerError } from "@oh-my-pi/pi-ai/auth-broker";
 import type { ClientUsageClientSummary } from "@oh-my-pi/pi-ai/usage";
 import { formatProviderName } from "@oh-my-pi/pi-tui/chrome/format";
 import { peakBuckets, renderSparkline } from "@oh-my-pi/pi-tui/components/sparkline";
-import { formatDuration, formatNumber, getProjectDir, sanitizeText } from "@oh-my-pi/pi-utils";
+import { APP_NAME, formatDuration, formatNumber, getProjectDir, sanitizeText } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { ModelRegistry } from "../config/model-registry";
 import { Settings } from "../config/settings";
@@ -1080,7 +1080,7 @@ function formatNoProviderCredentials(provider: string, storedAccounts: UsageAcco
 	const hint =
 		stored.length > 0
 			? `Providers with stored credentials: ${stored.join(", ")}.`
-			: "Run `omp` and use /login to add accounts.";
+			: `Run \`${APP_NAME}\` and use /login to add accounts.`;
 	return `No credentials stored for provider "${provider}". ${hint}\n`;
 }
 
@@ -1379,7 +1379,9 @@ async function runUsageResetCommand(
 		}
 		if (accounts.length === 0) {
 			const names = providers.map(formatResetProviderName).join(" or ");
-			process.stderr.write(chalk.yellow(`No ${names} accounts found. Run \`omp\` and use /login to add one.\n`));
+			process.stderr.write(
+				chalk.yellow(`No ${names} accounts found. Run \`${APP_NAME}\` and use /login to add one.\n`),
+			);
 			process.exitCode = 1;
 			return;
 		}
@@ -1399,7 +1401,7 @@ async function runUsageResetCommand(
 	const lockKey = resetAccountLockKey(target);
 	if (!lockKey) {
 		failUsageReset(
-			`${who}: this login stores no account id or email to fence the spend against other omp processes, so nothing was spent. Run \`omp\` and use /login to sign in to it again.`,
+			`${who}: this login stores no account id or email to fence the spend against other omp processes, so nothing was spent. Run \`${APP_NAME}\` and use /login to sign in to it again.`,
 		);
 		return;
 	}
@@ -1501,7 +1503,7 @@ export async function runUsageCommand(cmd: UsageCommandArgs): Promise<void> {
 			if (rows.length === 0) {
 				const scope = cmd.provider ? ` for provider "${cmd.provider}"` : "";
 				process.stderr.write(
-					chalk.yellow(`No OAuth accounts found${scope}. Run \`omp\` and use /login to add accounts.\n`),
+					chalk.yellow(`No OAuth accounts found${scope}. Run \`${APP_NAME}\` and use /login to add accounts.\n`),
 				);
 				process.exitCode = 1;
 				return;
@@ -1665,7 +1667,7 @@ export async function runUsageCommand(cmd: UsageCommandArgs): Promise<void> {
 			} else if (storedAccounts.length > 0) {
 				message = "No usage data. Stored credentials are for providers without a usage endpoint.\n";
 			} else {
-				message = "No credentials found. Run `omp` and use /login to add accounts.\n";
+				message = `No credentials found. Run \`${APP_NAME}\` and use /login to add accounts.\n`;
 			}
 			process.stderr.write(chalk.yellow(message));
 			process.exitCode = 1;

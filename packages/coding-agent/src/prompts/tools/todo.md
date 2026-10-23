@@ -1,5 +1,6 @@
-`todo` NEVER takes a turn of its own: emit it in the same response as your next real tool call (parallel tool calls), `init` beside the first read or action, `done`/`start` beside the next action or check. A response whose only call is `todo` wastes a full model round trip.
-Tasks identified by verbatim content, NEVER generated IDs (task-1). Unique, stable task/phase names; lost text: view, NEVER guess.
-Before work, init for 3+ steps, requested task sets, or new instructions. MUST list EVERY user item separately (phased/numbered/bulleted/N); NEVER omit or remember leftovers.
-After successful mutation: no active means earliest pending starts (phase order); multiple active means only earliest stays. Blocked NEVER starts automatically; unblock returns pending. Done out of order may rewind pointer but NEVER reopen completed. Mark done immediately; follow phase order.
-External waits (user/agent/service): block with optional reason suppresses stop reminder, starts next pending. Unblock when actionable; append a clearing task for agent-actionable blocker.
+Tracks a task list that the user sees. Use it for work with three or more steps, for a list of items the user asked for, and when new instructions arrive mid-task.
+- Put every item the user asked for on the list separately, so nothing is forgotten.
+- Items are identified by their exact text, not by generated IDs. Keep item and phase names unique and stable; if you lose track of the wording, use `view`.
+- Send todo updates in the same response as your next real tool call (for example `init` alongside your first read, `done` alongside the next action). A response containing only a todo call wastes a round trip.
+- Mark items done as soon as they're finished. When nothing is in progress, the earliest pending item starts automatically, in phase order. Completed items stay completed.
+- When an item is waiting on the user, an agent or a service, `block` it with a reason; the next pending item starts. `unblock` it when it can proceed. If you can clear the blocker yourself, append a task for that.

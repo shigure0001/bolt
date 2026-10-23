@@ -4,6 +4,7 @@ import * as path from "node:path";
 import {
 	$env,
 	$which,
+	APP_NAME,
 	isBunTestRuntime,
 	isCompiledBinary,
 	isExecutable,
@@ -127,8 +128,8 @@ export function resolveExecutablePath(): string {
 			// Prefer the original launcher when invoked with an absolute path
 			isFullyQualifiedPath(argv0) ? argv0 : null,
 			!isPath ? $which(argv0, { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }) : null,
-			// Generic fallback to finding "omp" on PATH
-			$which("omp", { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),
+			// Generic fallback to finding the app binary on PATH
+			$which(APP_NAME, { requireAbsolutePaths: true, cache: WhichCachePolicy.Bypass }),
 		];
 		for (const candidate of candidates) {
 			if (candidate && isExecutable(candidate)) {
@@ -200,7 +201,7 @@ export function workerEnvFromParent(overlay?: Record<string, string>): Record<st
 
 /**
  * `LD_LIBRARY_PATH` overlay that lets a dlopen'd native addon find its C++
- * runtime. The ONNX addons installed on demand under `~/.omp/agent/cache/**`
+ * runtime. The ONNX addons installed on demand under `~/.bolt/agent/cache/**`
  * are `process.dlopen`'d and need `libstdc++.so.6` / `libgcc_s.so.1`; because
  * each addon carries its own `DT_RUNPATH`, an RPATH on our executable cannot
  * satisfy them, so the path has to come from the environment. On distros where

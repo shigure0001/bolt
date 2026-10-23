@@ -132,7 +132,7 @@ fn remote_start_is_unsupported_without_creating_storage() {
 		start_blocking(&core, CancelToken::default()).unwrap(),
 		StartOutcome::Unsupported
 	));
-	assert!(!home.join(".omp").exists());
+	assert!(!home.join(".bolt").exists());
 	fs::remove_dir_all(home).unwrap();
 }
 
@@ -146,7 +146,7 @@ fn wsl_env_is_unsupported_without_creating_storage() {
 		start_blocking(&core, CancelToken::default()).unwrap(),
 		StartOutcome::Unsupported
 	));
-	assert!(!home.join(".omp").exists());
+	assert!(!home.join(".bolt").exists());
 	fs::remove_dir_all(home).unwrap();
 }
 
@@ -265,7 +265,7 @@ async fn cancellation_prevents_start_and_wait_claims_once() {
 	let mut cancel = CancelToken::default();
 	cancel.emplace_abort_token().abort(AbortReason::User);
 	assert!(start_blocking(&core, cancel).is_err());
-	assert!(!home.join(".omp").exists());
+	assert!(!home.join(".bolt").exists());
 
 	let callback = home.join("callback.url");
 	fs::write(&callback, b"omp-test://callback?code=one").unwrap();

@@ -19,6 +19,28 @@ function openAiModel(id: string): Model<"openai-responses"> {
 	} satisfies ModelSpec<"openai-responses">);
 }
 
+function claudeModel(id: string): Model<"anthropic-messages"> {
+	return buildModel({
+		id,
+		name: id,
+		api: "anthropic-messages",
+		provider: "anthropic",
+		baseUrl: "https://api.anthropic.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 200_000,
+		maxTokens: 8_192,
+	} satisfies ModelSpec<"anthropic-messages">);
+}
+
+describe("resolveDelegationBias for Claude", () => {
+	it("resolves Claude models to restrained through the anthropic class rule", () => {
+		expect(resolveDelegationBias(claudeModel("claude-sonnet-4-5"))).toBe("restrained");
+		expect(resolveDelegationBias(claudeModel("claude-opus-4-8"))).toBe("restrained");
+	});
+});
+
 describe("resolveDelegationBias cache", () => {
 	afterEach(() => vi.restoreAllMocks());
 

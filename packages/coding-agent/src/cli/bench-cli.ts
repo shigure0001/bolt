@@ -20,7 +20,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@oh-my-pi/pi-tui";
-import { formatDuration, formatNumber, prompt } from "@oh-my-pi/pi-utils";
+import { APP_NAME, formatDuration, formatNumber, prompt } from "@oh-my-pi/pi-utils";
 import chalk from "@oh-my-pi/pi-utils/chalk";
 import { formatModelSelectorValue } from "@oh-my-pi/pi-tui/overlays/model-selector";
 import { formatModelStringWithRouting } from "../config/model-resolver";
@@ -1190,7 +1190,7 @@ export async function runBenchCommand(command: BenchCommandArgs, deps: BenchDepe
 			if (!preflightKey) {
 				const failure: BenchRunFailure = {
 					ok: false,
-					error: `No credentials for provider "${model.provider}". Run \`omp\` and use /login, or set the provider API key.`,
+					error: `No credentials for provider "${model.provider}". Run \`${APP_NAME}\` and use /login, or set the provider API key.`,
 				};
 				results.push(failure);
 				if (!json) print(formatRunLine(failure, 0, runs, { tagKind }));

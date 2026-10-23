@@ -57,7 +57,7 @@ describe("issue 4812: pi-natives release process-stale diagnosis", () => {
 		for (const resident of [reporting("16.3.10"), { __piNativesV16_3_10: () => {}, grep: () => {} }]) {
 			await withCandidate(stamped("16.3.11"), candidate => {
 				expect(() => validateLoadedBindings(ctx, resident, candidate)).toThrow("16.3.10");
-				expect(() => validateLoadedBindings(ctx, resident, candidate)).toThrow("restart omp");
+				expect(() => validateLoadedBindings(ctx, resident, candidate)).toThrow("restart bolt");
 				expect(() => validateLoadedBindings(ctx, resident, candidate)).toThrow("Disk is already consistent");
 				expect(() => validateLoadedBindings(ctx, resident, candidate)).not.toThrow("reinstall to re-sync");
 			});
@@ -72,7 +72,7 @@ describe("issue 4812: pi-natives release process-stale diagnosis", () => {
 				"from a different release than this loader",
 			);
 			expect(() => validateLoadedBindings(ctx, stale, candidate)).toThrow("reinstall to re-sync");
-			expect(() => validateLoadedBindings(ctx, stale, candidate)).not.toThrow("restart omp");
+			expect(() => validateLoadedBindings(ctx, stale, candidate)).not.toThrow("restart bolt");
 		});
 	});
 

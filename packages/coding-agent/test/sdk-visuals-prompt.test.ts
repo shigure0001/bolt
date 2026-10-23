@@ -45,7 +45,7 @@ describe("visuals guidance in the system prompt", () => {
 		const tui = await promptFor({ hasUI: true, tuiTranscript: true });
 		expect(tui).toContain("```mermaid");
 		expect(tui).toContain("```svg");
-		expect(tui).toContain("charts it underneath");
+		expect(tui).toContain("charted automatically under the table");
 
 		// rpc-ui: a UI for dialogs, but replies are read by the client as text.
 		const rpc = await promptFor({ hasUI: true });
@@ -53,7 +53,7 @@ describe("visuals guidance in the system prompt", () => {
 		for (const prompt of [rpc, subagent]) {
 			expect(prompt).not.toContain("```mermaid");
 			expect(prompt).not.toContain("```svg");
-			expect(prompt).not.toContain("charts it underneath");
+			expect(prompt).not.toContain("charted automatically under the table");
 		}
 	});
 });

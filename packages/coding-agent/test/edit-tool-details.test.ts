@@ -21,7 +21,7 @@ function makeSession(cwd: string, settings: Record<string, unknown> = {}): ToolS
 		getArtifactsDir: () => null,
 		getSessionId: () => null,
 		getPlanModeState: () => undefined,
-		settings: Settings.isolated(settings),
+		settings: Settings.isolated({ "edit.mode": "hashline", ...settings }),
 	} as unknown as ToolSession;
 }
 

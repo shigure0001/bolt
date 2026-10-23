@@ -10,7 +10,7 @@
 import type { Stats } from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import { getStatsDbPath, isEnoent, logger } from "@oh-my-pi/pi-utils";
+import { CONFIG_DIR_NAME, getStatsDbPath, isEnoent, logger } from "@oh-my-pi/pi-utils";
 import { getTimeRangeConfig } from "./aggregator";
 import { initDb } from "./db";
 import type { GainDashboardStats, GainSourceTotals, GainTimeSeriesPoint } from "./shared-types";
@@ -68,7 +68,7 @@ function matchesProject(cwd: string | undefined, project: string): boolean {
 export function normalizeProjectPath(p: string): string | null {
 	const clean = canonicalProjectPath(p);
 	if (TEMP_PATH_RE.test(clean)) return null;
-	if (/\/\.omp\/wt\//u.test(clean)) return null;
+	if (clean.includes(`/${CONFIG_DIR_NAME}/wt/`)) return null;
 
 	const worktreePatterns = [
 		/^(.+)\/\.wt\/[^/]+(?:\/.*)?$/u,

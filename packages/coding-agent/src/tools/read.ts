@@ -124,8 +124,6 @@ import {
 	markMarkdownContentType,
 	prependHashlineHeader,
 	prependSuffixResolutionNotice,
-	RANGE_LEADING_CONTEXT_LINES,
-	RANGE_TRAILING_CONTEXT_LINES,
 	READ_CHUNK_SIZE,
 	readHashlineHeaderContext,
 	toReadTruncationStats,
@@ -286,35 +284,12 @@ interface ReadLineWindow {
 	collectedBytes: number;
 	selectedBytes: number;
 	stoppedByByteLimit: boolean;
-	/** First source line that could not fit in the remaining byte budget. */
-	byteLimitLine?: { index: number; byteLength: number };
 	firstLinePreview?: { text: string; bytes: number };
 	firstLineByteLength?: number;
 	/** Whether the fully scanned source ended in a newline. */
 	hasTrailingNewline: boolean;
 	/** False when `stopScanAfterCollect` cut the scan short — `totalFileLines` is then a lower bound. */
 	reachedEof: boolean;
-}
-
-function omittedRequestedLine(
-	line: ReadLineWindow["byteLimitLine"],
-	requestedStart: number,
-	rawSelector: boolean,
-	leadingContext: number,
-	collectedLineCount: number,
-): ReadLineWindow["byteLimitLine"] {
-	if (rawSelector || !line || leadingContext === 0) return undefined;
-	return line.index === requestedStart && collectedLineCount === leadingContext ? line : undefined;
-}
-
-function formatOmittedRequestedLineNotice(
-	line: NonNullable<ReadLineWindow["byteLimitLine"]>,
-	maxBytes: number,
-	rawTarget: string,
-): string {
-	return `[Line ${line.index + 1} is ${formatBytes(
-		line.byteLength,
-	)} and could not fit after preceding context in the ${formatBytes(maxBytes)} read budget. Use ${rawTarget} to read that line without context (byte-capped if it exceeds the budget), or widen the requested range to increase the budget.]`;
 }
 
 /** Column-cap cuts of one read: the cap and the first-to-last cut line, for the `:raw` recovery notice. */
@@ -394,12 +369,10 @@ function collectLineWindowFromBuffer(
 				doneCollecting = true;
 			} else if (window.lines.length === 0 && lineByteLength > maxBytes) {
 				window.stoppedByByteLimit = true;
-				window.byteLimitLine = { index, byteLength: lineByteLength };
 				doneCollecting = true;
 				window.firstLineByteLength ??= lineByteLength;
 			} else if (window.lines.length > 0 && window.collectedBytes + separatorBytes + lineByteLength > maxBytes) {
 				window.stoppedByByteLimit = true;
-				window.byteLimitLine = { index, byteLength: lineByteLength };
 				doneCollecting = true;
 			} else {
 				window.lines.push(rawSegments[index] ?? "");
@@ -465,9 +438,8 @@ async function streamLinesFromFile(
 	let position = seek?.byte ?? 0;
 	let collectedBytes = 0;
 	let selectedBytes = 0;
-	let stoppedByByteLimit = false;
-	let byteLimitLine: { index: number; byteLength: number } | undefined;
 	let doneCollecting = false;
+	let stoppedByByteLimit = false;
 	let reachedEof = true;
 	let fileHandle: fs.FileHandle | null = null;
 	let currentLineLength = 0;
@@ -540,14 +512,12 @@ async function streamLinesFromFile(
 				doneCollecting = true;
 			} else if (collectedLines.length === 0 && currentLineLength > maxBytes) {
 				stoppedByByteLimit = true;
-				byteLimitLine = { index: lineIndex, byteLength: currentLineLength };
 				doneCollecting = true;
 				if (firstLineByteLength === undefined) {
 					firstLineByteLength = currentLineLength;
 				}
 			} else if (collectedLines.length > 0 && collectedBytes + separatorBytes + currentLineLength > maxBytes) {
 				stoppedByByteLimit = true;
-				byteLimitLine = { index: lineIndex, byteLength: currentLineLength };
 				doneCollecting = true;
 			} else {
 				const lineText = decodeLine();
@@ -661,7 +631,6 @@ async function streamLinesFromFile(
 		collectedBytes,
 		selectedBytes,
 		stoppedByByteLimit,
-		byteLimitLine,
 		firstLinePreview,
 		firstLineByteLength,
 		reachedEof,
@@ -700,8 +669,8 @@ async function resolveFileTailSelector(
 		return { sel: resolveTailSelector(parsed, totalLines) };
 	}
 
-	// The window starts at most `count` lines plus leading context before EOF.
-	const wanted = parsed.count + RANGE_LEADING_CONTEXT_LINES + 1;
+	// The window starts at most `count` lines before EOF.
+	const wanted = parsed.count + 1;
 	const keep = wanted <= TAIL_SEEK_MAX_LINES ? wanted : 0;
 	// `starts[k % keep]` holds the byte offset of line `k` (k >= 1) for the last `keep` lines.
 	const starts = new Float64Array(keep);
@@ -1027,10 +996,12 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 	};
 	readonly label = "Read";
 	readonly loadMode = "essential";
-	/** Rendered per access so the hashline guidance follows a live `edit.mode` change. */
+	/** Rendered per access so the line-display guidance follows live `edit.mode` / `readLineNumbers` changes. */
 	get description(): string {
+		const display = resolveFileDisplayMode(this.session);
 		return prompt.render(readDescription, {
-			IS_HL_MODE: resolveFileDisplayMode(this.session).hashLines,
+			IS_HL_MODE: display.hashLines,
+			LINE_NUMBERS: display.lineNumbers && !display.hashLines,
 			BINARY_VIEWS: cfgIdaAvailable.get(this.session.settings),
 		});
 	}
@@ -2374,24 +2345,17 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						}
 					}
 
-					// User-requested 0-indexed range start. Lines BEFORE this become
-					// leading context (added below if offset is explicit). Raw mode
-					// never adds context: without line numbers the padding is
-					// indistinguishable from requested content, so `raw:31-31` must
-					// return line 31 and nothing else.
+					// User-requested 0-indexed range start; ranges are exact, with no
+					// padding lines before or after the requested window.
 					const rawSelector = isRawSelector(sel);
 					const requestedStart = offset ? Math.max(0, offset - 1) : 0;
-					const expandStart = !rawSelector && offset !== undefined && offset > 1;
-					const expandEnd = !rawSelector && limit !== undefined;
-					let leadingContext = expandStart ? Math.min(requestedStart, RANGE_LEADING_CONTEXT_LINES) : 0;
-					const trailingContext = expandEnd ? RANGE_TRAILING_CONTEXT_LINES : 0;
-					let startLine = requestedStart - leadingContext;
-					let startLineDisplay = startLine + 1;
+					const startLine = requestedStart;
+					const startLineDisplay = startLine + 1;
 
 					const DEFAULT_LIMIT = this.#defaultLimit;
 					const effectiveLimit = limit ?? DEFAULT_LIMIT;
-					let maxLinesToCollect = Math.min(effectiveLimit + leadingContext + trailingContext, DEFAULT_MAX_LINES);
-					let selectedLineLimit = effectiveLimit + leadingContext + trailingContext;
+					const maxLinesToCollect = Math.min(effectiveLimit, DEFAULT_MAX_LINES);
+					const selectedLineLimit = effectiveLimit;
 					// Scale byte budget with line limit so the configured line count actually fits
 					// (~512 bytes/line, never below the shared default). Pages that would otherwise
 					// spill also stop at the spill threshold: past it the page would be middle-elided
@@ -2428,22 +2392,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 										seek: tailSeekTo?.(firstLine),
 									},
 								);
-					let maxBytesForRead = budgetFor(startLine, maxLinesToCollect);
+					const maxBytesForRead = budgetFor(startLine, maxLinesToCollect);
 
-					let lineWindow = await collectWindow(startLine, maxLinesToCollect, maxBytesForRead, selectedLineLimit);
-
-					// Leading context is optional padding. If the byte budget stopped
-					// before any requested line, retry from the requested start so an
-					// oversized context line cannot hide the page that was asked for.
-					if (leadingContext > 0 && lineWindow.stoppedByByteLimit && lineWindow.lines.length < leadingContext) {
-						leadingContext = 0;
-						startLine = requestedStart;
-						startLineDisplay = startLine + 1;
-						maxLinesToCollect = Math.min(effectiveLimit + trailingContext, DEFAULT_MAX_LINES);
-						selectedLineLimit = effectiveLimit + trailingContext;
-						maxBytesForRead = budgetFor(startLine, maxLinesToCollect);
-						lineWindow = await collectWindow(startLine, maxLinesToCollect, maxBytesForRead, selectedLineLimit);
-					}
+					const lineWindow = await collectWindow(startLine, maxLinesToCollect, maxBytesForRead, selectedLineLimit);
 
 					const {
 						lines: collectedLines,
@@ -2451,7 +2402,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						collectedBytes,
 						selectedBytes,
 						stoppedByByteLimit,
-						byteLimitLine,
 						firstLinePreview,
 						firstLineByteLength,
 						reachedEof,
@@ -2530,13 +2480,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					) {
 						await warmBlockContext({ path: absolutePath, text: buffered.normalizedText });
 					}
-					const omittedSelectedLine = omittedRequestedLine(
-						byteLimitLine,
-						requestedStart,
-						rawSelector,
-						leadingContext,
-						collectedLines.length,
-					);
 					// A first line larger than the byte budget collects no complete
 					// line, yet the window still renders a byte-capped preview.
 					// Account for that preview so the notice/meta describe the
@@ -2672,14 +2615,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					} else if (!reachedEof) {
 						const nextOffset = startLine + userLimitedLines + 1;
 						outputText = formatBracketAwareText() ?? formatText(selectedContent, startLineDisplay);
-						if (omittedSelectedLine) {
-							const lineNumber = omittedSelectedLine.index + 1;
-							outputText += `\n\n${formatOmittedRequestedLineNotice(
-								omittedSelectedLine,
-								maxBytesForRead,
-								`${selectorBase}:raw:${lineNumber}-${lineNumber}`,
-							)}`;
-						} else if (!rawSelector || limit === undefined || userLimitedLines < limit) {
+						if (!rawSelector || limit === undefined || userLimitedLines < limit) {
 							outputText += `\n\n[More lines in file (${formatBytes(
 								fileSize,
 							)} total; not scanned to EOF). Use ${selectorBase}:${nextOffset} to continue]`;
@@ -2688,14 +2624,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						sourcePath = renderAbsolutePath;
 					} else if (truncation?.truncated) {
 						outputText = formatBracketAwareText() ?? formatText(truncation.content, startLineDisplay);
-						if (omittedSelectedLine) {
-							const lineNumber = omittedSelectedLine.index + 1;
-							outputText += `\n\n${formatOmittedRequestedLineNotice(
-								omittedSelectedLine,
-								maxBytesForRead,
-								`${selectorBase}:raw:${lineNumber}-${lineNumber}`,
-							)}`;
-						}
 						details = { truncation: toReadTruncationStats(truncation) };
 						sourcePath = renderAbsolutePath;
 						truncationInfo = {
@@ -2704,7 +2632,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 								direction: "head",
 								startLine: startLineDisplay,
 								totalFileLines,
-								nextOffset: omittedSelectedLine ? null : undefined,
 								maxBytes: maxBytesForRead,
 							},
 						};
