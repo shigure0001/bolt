@@ -5,6 +5,7 @@
 ### Added
 
 - Added `PI_ANTHROPIC_API_VERSION=2026-10-21` to send Anthropic API version 2026-10-21 to the official Anthropic API; sampling parameters are omitted under that version, which rejects them ([#16706](https://github.com/can1357/oh-my-pi/pull/16706) by [@H4vC](https://github.com/H4vC))
+- Anthropic requests that rename tools on the wire (OAuth's `_` prefix, `escapeBuiltinToolNames`) rewrite backticked tool mentions in the system prompt and tool descriptions to the wire names (`` `read` `` → `` `_read` ``), so the prompt names the tools the model sees; on OAuth one system line after the required Claude Code header says Claude Code runs inside the harness described below
 
 ### Fixed
 

@@ -1,7 +1,7 @@
 /**
  * The local text read path materializes a file once and derives every view from
  * those bytes: the binary sniff, the rendered window and its byte accounting,
- * bracket context, and the whole-file snapshot hash. These tests pin the parts
+ * and the whole-file snapshot hash. These tests pin the parts
  * of that contract a plausible rewrite would silently break — the decode the
  * snapshot tag is hashed from, exact on-disk byte counts, the raw terminal
  * newline sentinel, and the absence of a second whole-file read.
@@ -114,7 +114,7 @@ describe("read tool single-pass file access", () => {
 	});
 
 	it("does not re-read a file it already materialized", async () => {
-		// Bracket context and the snapshot hash each used to pull the whole file
+		// The snapshot hash used to pull the whole file
 		// through `Bun.file(path).text()`, so a ranged read of one file opened it
 		// four times. Any reintroduced whole-file re-read trips this counter.
 		const filePath = path.join(tmpDir, "counted.ts");

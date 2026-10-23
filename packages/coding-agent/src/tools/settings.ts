@@ -38,7 +38,7 @@ export const cfgToolsArtifactSpillThreshold = register({
 export const cfgToolsArtifactTailBytes = register({
 	id: "tools.artifactTailBytes",
 	type: "number",
-	default: 20,
+	default: 7.5,
 	ui: {
 		tab: "tools",
 		group: "Output Limits",
@@ -48,8 +48,9 @@ export const cfgToolsArtifactTailBytes = register({
 			{ value: "1", label: "1 KB", description: "~250 tokens" },
 			{ value: "2.5", label: "2.5 KB", description: "~625 tokens" },
 			{ value: "5", label: "5 KB", description: "~1.25K tokens" },
+			{ value: "7.5", label: "7.5 KB", description: "Default; ~1.9K tokens" },
 			{ value: "10", label: "10 KB", description: "~2.5K tokens" },
-			{ value: "20", label: "20 KB", description: "Default; ~5K tokens" },
+			{ value: "20", label: "20 KB", description: "~5K tokens" },
 			{ value: "50", label: "50 KB", description: "~12.5K tokens" },
 			{ value: "100", label: "100 KB", description: "~25K tokens" },
 			{ value: "200", label: "200 KB", description: "~50K tokens" },
@@ -60,7 +61,7 @@ export const cfgToolsArtifactTailBytes = register({
 export const cfgToolsArtifactHeadBytes = register({
 	id: "tools.artifactHeadBytes",
 	type: "number",
-	default: 20,
+	default: 2.5,
 	ui: {
 		tab: "tools",
 		group: "Output Limits",
@@ -70,10 +71,10 @@ export const cfgToolsArtifactHeadBytes = register({
 		options: [
 			{ value: "0", label: "0 KB", description: "Disabled; tail-only truncation" },
 			{ value: "1", label: "1 KB", description: "~250 tokens" },
-			{ value: "2.5", label: "2.5 KB", description: "~625 tokens" },
+			{ value: "2.5", label: "2.5 KB", description: "Default; ~625 tokens" },
 			{ value: "5", label: "5 KB", description: "~1.25K tokens" },
 			{ value: "10", label: "10 KB", description: "~2.5K tokens" },
-			{ value: "20", label: "20 KB", description: "Default; ~5K tokens" },
+			{ value: "20", label: "20 KB", description: "~5K tokens" },
 			{ value: "50", label: "50 KB", description: "~12.5K tokens" },
 			{ value: "100", label: "100 KB", description: "~25K tokens" },
 			{ value: "200", label: "200 KB", description: "~50K tokens" },
@@ -553,7 +554,7 @@ export const cfgFindEnabled = register({
 export const cfgDebugEnabled = register({
 	id: "debug.enabled",
 	type: "boolean",
-	default: true,
+	default: false,
 	ui: {
 		tab: "tools",
 		group: "Available Tools",
@@ -1004,6 +1005,40 @@ export const cfgToolsXdevInlineDevices = register({
 		label: "xd:// Inline Devices",
 		description:
 			"When xd:// Prompt Docs is Built-ins Only, inline dynamic devices whose names match these glob patterns (for example mcp__context_mode_*). Catalog Only ignores this setting.",
+	},
+});
+
+/** Tools registered but kept off the request until the model loads them with `load_tools`. */
+export const DEFAULT_DEFERRED_TOOLS: readonly string[] = [
+	"task",
+	"eval",
+	"lsp",
+	"ast_edit",
+	"ast_grep",
+	"ask",
+	"wait",
+	"todo",
+	"web_search",
+	"find",
+	"debug",
+	"github",
+	"checkpoint",
+	"rewind",
+	"security_scan",
+	"ida",
+	"mcp__*",
+];
+
+export const cfgToolsDeferred = register({
+	id: "tools.deferred",
+	type: "array",
+	default: DEFAULT_DEFERRED_TOOLS,
+	ui: {
+		tab: "tools",
+		group: "Discovery & MCP",
+		label: "Deferred Tools",
+		description:
+			"Glob patterns of enabled tools kept off each request until the model loads them with load_tools; the request carries one catalog line per deferred tool instead of its schema. Tools named in an explicit tool list (subagent definitions, --tools) are never deferred. Empty: every enabled tool is sent up front.",
 	},
 });
 

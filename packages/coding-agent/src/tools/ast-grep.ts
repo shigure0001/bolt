@@ -349,7 +349,10 @@ export class AstGrepTool implements AgentTool<typeof astGrepSchema, AstGrepToolD
 						const isMatch = index === 0;
 						const line = matchLines[index] ?? "";
 						modelOut.push(
-							formatMatchLine(lineNumber, line, isMatch, { useHashLines: hashContext !== undefined }),
+							formatMatchLine(lineNumber, line, isMatch, {
+								useHashLines: hashContext !== undefined,
+								width: lineNumberWidth,
+							}),
 						);
 						displayOut.push(formatCodeFrameLine(isMatch ? "*" : " ", lineNumber, line, lineNumberWidth));
 					}

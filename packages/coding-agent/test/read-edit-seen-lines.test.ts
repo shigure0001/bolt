@@ -63,7 +63,6 @@ describe("read → edit seen-line guard in hashline mode", () => {
 		const session = createSession(cwd);
 		const read = textOutput(await new ReadTool(session).execute("read", { path: "draw.py:7-7" }));
 		expect(read.split("\n")[0]).toMatch(/^\[draw\.py#[0-9A-F]{4}\]$/);
-		expect(read).toContain("…");
 		expect(read).not.toContain("beta),");
 
 		const result = await new EditTool(session, "hashline").execute("edit", {

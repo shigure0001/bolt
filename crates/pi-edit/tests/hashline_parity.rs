@@ -255,7 +255,7 @@ fn compact_diff_preview_matches_all_diff_preview_cases() {
 		(
 			"dedupes blank gap rows left adjacent by omitted removed lines and trims edge separators",
 			"\n 1|alpha\n\n-5|beta\n\n 9|gamma\n\n-12|omitted",
-			"1:alpha\n\n8:gamma",
+			"1:alpha\n…\n8:gamma",
 			0,
 			2,
 		),

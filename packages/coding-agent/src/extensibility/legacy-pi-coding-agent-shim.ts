@@ -646,7 +646,7 @@ export function createFindToolDefinition(cwd: string, options?: FindToolOptions)
 		approval: "read",
 		approvalCacheTargets: params =>
 			tool.approvalCacheTargets?.({
-				path: piJoinPath(stringField(params, "path") ?? ".", stringField(params, "pattern") ?? "*"),
+				pattern: piJoinPath(stringField(params, "path") ?? ".", stringField(params, "pattern") ?? "*"),
 			}),
 		renderCall: (params, optionsArg, themeArg) => {
 			const theme = renderTheme(optionsArg, themeArg);
@@ -682,7 +682,7 @@ export function createFindToolDefinition(cwd: string, options?: FindToolOptions)
 			}
 			return tool.execute(
 				toolCallId,
-				{ path: piJoinPath(searchPath, pattern), hidden: true, gitignore: true, limit },
+				{ pattern: piJoinPath(searchPath, pattern), hidden: true, gitignore: true, limit },
 				signal,
 				onUpdate,
 			);

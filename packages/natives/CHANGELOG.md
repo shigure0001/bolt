@@ -5,6 +5,8 @@
 ### Changed
 
 - The native addon cache (`~/.bolt/natives`, `$XDG_DATA_HOME/bolt/natives`), crash logs and OAuth callback state now live under the `bolt` directories instead of `omp`
+- `grep` searches a pattern neither regex engine can parse as literal text and reports the parse reason in `literalFallback`, instead of silently escaping it
+- Removed the `enclosingBlockBoundaries` and `warmBlockParse` exports; `read` no longer adds enclosing-block context lines
 
 ### Fixed
 

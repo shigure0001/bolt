@@ -31,7 +31,11 @@ import type { ToolSession } from ".";
 import { resolveToolTier } from "./approval";
 import { materializeReadUrlToFile, parseReadUrlTarget } from "./fetch";
 import { createFileRecorder, formatResultPath, resultSnapshotPath } from "./file-recorder";
-import { type FileMatchSection, formatFileMatches } from "@oh-my-pi/pi-tui/tools/grouped-file-output";
+import {
+	type FileMatchSection,
+	formatFileMatches,
+	type GroupedFilesOutput,
+} from "@oh-my-pi/pi-tui/tools/grouped-file-output";
 import { formatMatchLine } from "@oh-my-pi/pi-tui/tools/match-line-format";
 import { isFindEnabled } from "./jfind";
 import {
@@ -61,11 +65,13 @@ import { cfgGrepContextAfter, cfgGrepContextBefore } from "./settings";
 import { cfgTaskDisabledAgents } from "../task/settings";
 
 const searchSchema = type({
-	pattern: type("string"),
-	"path?": "string",
-	"case?": "boolean",
+	pattern: "string",
+	"path?": type("string").describe("file, dir, glob or URL; `;`-separated"),
+	"case?": type("boolean").describe("false = case-insensitive"),
 	"gitignore?": "boolean",
-	"skip?": type("number").or("null"),
+	"skip?": type("number").or("null").describe("files to skip (paging)"),
+	"context?": type("number").describe("lines around each match; 0 = matches only"),
+	"mode?": type("'content' | 'files' | 'count'").describe("files = matching paths; count = matches per file"),
 });
 
 export type GrepToolInput = typeof searchSchema.infer;
@@ -458,6 +464,27 @@ function formatCappedFiles(paths: readonly string[]): string {
 	return rest > 0 ? `${shown} and ${rest} more ${rest === 1 ? "file" : "files"}` : shown;
 }
 
+/**
+ * `files`/`count` output: one row per file (`path` or `path: N`), in page order.
+ * Records each file's count (1 for `files`) so details total match the rows.
+ */
+function summaryRows(
+	files: readonly string[],
+	matchesByFile: ReadonlyMap<string, readonly GrepMatch[]>,
+	withCounts: boolean,
+	counts: Map<string, number>,
+): GroupedFilesOutput {
+	const rows: string[] = [];
+	const modelEnds = new Map<string, number>();
+	for (const file of files) {
+		const count = withCounts ? (matchesByFile.get(file)?.[0]?.matchCount ?? 0) : 1;
+		counts.set(file, count);
+		rows.push(withCounts ? `${file}: ${count}` : file);
+		modelEnds.set(file, rows.length);
+	}
+	return { model: rows, display: rows, modelEnds };
+}
+
 type SearchParams = typeof searchSchema.infer;
 
 /**
@@ -511,13 +538,17 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 			cfgTaskDisabledAgents.get(this.session.settings),
 			this.session.getSessionSpawns?.() ?? "*",
 		);
-		// Every render input is a boolean; pack them so repeat reads skip the template render.
-		const key =
-			(isHlMode ? 1 : 0) |
-			(isLineNumberMode ? 2 : 0) |
-			(hasFind ? 4 : 0) |
-			(eagerDelegation ? 8 : 0) |
-			(scoutAvailable ? 16 : 0);
+		const contextBefore = this.#contextBeforeOverride ?? cfgGrepContextBefore.get(this.session.settings);
+		const contextAfter = this.#contextAfterOverride ?? cfgGrepContextAfter.get(this.session.settings);
+		const key = [
+			isHlMode,
+			isLineNumberMode,
+			hasFind,
+			eagerDelegation,
+			scoutAvailable,
+			contextBefore,
+			contextAfter,
+		].join();
 		if (key !== this.#descriptionKey) {
 			this.#description = prompt.render(grepDescription, {
 				IS_HL_MODE: isHlMode,
@@ -525,6 +556,8 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				hasFind,
 				eagerDelegation,
 				scoutAvailable,
+				contextBefore,
+				contextAfter,
 			});
 			this.#descriptionKey = key;
 		}
@@ -536,7 +569,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 	readonly #contextBeforeOverride?: number;
 	readonly #contextAfterOverride?: number;
 	readonly #totalMatchLimit?: number;
-	#descriptionKey = -1;
+	#descriptionKey = "";
 	#description = "";
 
 	constructor(
@@ -558,7 +591,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 		_onUpdate?: AgentToolUpdateCallback<GrepToolDetails>,
 		_toolContext?: AgentToolContext,
 	): Promise<AgentToolResult<GrepToolDetails>> {
-		const { pattern, path: rawPath, case: caseSensitive, gitignore, skip } = params;
+		const { pattern, path: rawPath, case: caseSensitive, gitignore, skip, context, mode = "content" } = params;
 
 		return untilAborted(signal, async () => {
 			// Preserve the pattern verbatim — leading/trailing whitespace is
@@ -615,9 +648,14 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 							`or pass a UTF-8 text member.`,
 					);
 				}
+				if (context !== undefined && context !== null && !(Number.isFinite(context) && context >= 0)) {
+					throw new ToolError("Context must be a non-negative number");
+				}
+				const contextParam = context === undefined ? undefined : Math.floor(context);
 				const normalizedContextBefore =
-					this.#contextBeforeOverride ?? cfgGrepContextBefore.get(this.session.settings);
-				const normalizedContextAfter = this.#contextAfterOverride ?? cfgGrepContextAfter.get(this.session.settings);
+					contextParam ?? this.#contextBeforeOverride ?? cfgGrepContextBefore.get(this.session.settings);
+				const normalizedContextAfter =
+					contextParam ?? this.#contextAfterOverride ?? cfgGrepContextAfter.get(this.session.settings);
 				const ignoreCase = !(caseSensitive ?? true);
 				const useGitignore = gitignore ?? true;
 				const patternHasNewline = normalizedPattern.includes("\n") || normalizedPattern.includes("\\n");
@@ -684,7 +722,6 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				}
 				const baseDisplayMode = resolveFileDisplayMode(this.session);
 
-				const effectiveOutputMode = GrepOutputMode.Content;
 				const isMultiScope = isDirectory || Boolean(exactFilePaths) || Boolean(multiTargets);
 				const perFileMatchCap = isMultiScope ? MULTI_FILE_PER_FILE_MATCHES : SINGLE_FILE_MATCHES;
 				// Range filtering happens in JS after the native fetch, so out-of-range
@@ -693,12 +730,26 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				// scale the global safety ceiling by the same amplification so ranged
 				// searches keep the baseline file coverage while staying finite.
 				const hasLineRangeFilters = pathSpecs.some(spec => spec.ranges);
-				const nativeMaxCountPerFile = hasLineRangeFilters
-					? Math.max(perFileMatchCap + 1, lineRangeFetchCap(pathSpecs, perFileMatchCap + 1))
-					: perFileMatchCap + 1;
-				const nativeMaxCount = hasLineRangeFilters
-					? Math.ceil(INTERNAL_TOTAL_CAP / (perFileMatchCap + 1)) * nativeMaxCountPerFile
-					: INTERNAL_TOTAL_CAP;
+				// `files`/`count` ask native for one row per file, uncapped, so counts are
+				// exact. A line-range selector needs the matched lines to filter, so it
+				// fetches content and collapses to per-file rows in JS afterwards.
+				const summaryMode = mode !== "content";
+				const nativeSummary = summaryMode && !hasLineRangeFilters;
+				const effectiveOutputMode = nativeSummary
+					? mode === "files"
+						? GrepOutputMode.FilesWithMatches
+						: GrepOutputMode.Count
+					: GrepOutputMode.Content;
+				const nativeMaxCountPerFile = nativeSummary
+					? undefined
+					: hasLineRangeFilters
+						? Math.max(perFileMatchCap + 1, lineRangeFetchCap(pathSpecs, perFileMatchCap + 1))
+						: perFileMatchCap + 1;
+				const nativeMaxCount = nativeSummary
+					? undefined
+					: hasLineRangeFilters
+						? Math.ceil(INTERNAL_TOTAL_CAP / (perFileMatchCap + 1)) * (nativeMaxCountPerFile ?? 0)
+						: INTERNAL_TOTAL_CAP;
 
 				// Run grep
 				let result: GrepResult = {
@@ -709,6 +760,8 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					limitReached: false,
 				};
 				let skippedOversizedCount = 0;
+				// Set when native searched the pattern as literal text because it did not parse as a regex.
+				let literalFallback: string | undefined;
 				// Native sets `limitReached` for the per-file cap too; only the total cap
 				// stops the walk before every file has been surfaced.
 				let totalCapReached = false;
@@ -752,8 +805,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 								undefined,
 							);
 							skippedOversizedCount += targetResult.skippedOversized ?? 0;
+							literalFallback ??= targetResult.literalFallback;
 							limitReached = limitReached || Boolean(targetResult.limitReached);
-							totalCapReached ||= targetResult.matches.length >= nativeMaxCount;
+							totalCapReached ||= nativeMaxCount !== undefined && targetResult.matches.length >= nativeMaxCount;
 							totalMatches += targetResult.totalMatches;
 							filesSearched += targetResult.filesSearched;
 							for (const match of targetResult.matches) {
@@ -801,7 +855,8 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 							undefined,
 						);
 						skippedOversizedCount = result.skippedOversized ?? 0;
-						totalCapReached = result.matches.length >= nativeMaxCount;
+						literalFallback = result.literalFallback;
+						totalCapReached = nativeMaxCount !== undefined && result.matches.length >= nativeMaxCount;
 					}
 				} catch (err) {
 					if (err instanceof Error && /^regex(?: parse)? error/i.test(err.message)) {
@@ -849,6 +904,19 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 						const display = archiveDisplayMap.get(resolveSearchResultPath(searchPath, match.path));
 						if (display) match.path = display;
 					}
+				}
+				if (summaryMode && !nativeSummary) {
+					const perFile = new Map<string, number>();
+					for (const match of result.matches) perFile.set(match.path, (perFile.get(match.path) ?? 0) + 1);
+					result = {
+						...result,
+						matches: [...perFile].map(([filePath, count]) => ({
+							path: filePath,
+							lineNumber: 0,
+							line: "",
+							matchCount: count,
+						})),
+					};
 				}
 
 				const formatPath = (filePath: string): string =>
@@ -983,6 +1051,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					[missingPathsNote, archiveNote, oversizedNote, oversizedScanNote]
 						.filter((s): s is string => Boolean(s))
 						.join("\n") || undefined;
+				const literalNote = literalFallback
+					? `Pattern is not a valid regex (${literalFallback}); searched it as literal text.\n`
+					: "";
 				if (selectedMatches.length === 0) {
 					const details: GrepToolDetails = {
 						scopePath,
@@ -1000,7 +1071,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 						: oversizedNote
 							? `No matches in searched content (multiline search limited large files to their first ${limitMb}MB)`
 							: "No matches found";
-					const text = warningNote ? `${noMatchText}\n${warningNote}` : noMatchText;
+					const text = [literalNote.trimEnd(), noMatchText, warningNote].filter(Boolean).join("\n");
 					// Zero matches is useless regardless of warnings: by the time
 					// compaction runs, the follow-up call has already corrected course.
 					return toolResult(details).text(text).useless().done();
@@ -1018,7 +1089,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 				}
 				const displayLines: string[] = [];
 				const hashContexts = new Map<string, { tag: string; path: string }>();
-				if (baseDisplayMode.hashLines) {
+				if (baseDisplayMode.hashLines && !summaryMode) {
 					const candidates = fileList.filter(relativePath => !archiveDisplaySet.has(relativePath));
 					// Immutable schemes get no host file; mutable URLs (`local://`) bind to their backing file.
 					const snapshotPaths = await Promise.all(
@@ -1067,7 +1138,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 								modelOut.push("...");
 								displayOut.push(`${gutterPad}│...`);
 							}
-							modelOut.push(formatMatchLine(lineNumber, line, isMatch, { useHashLines }));
+							modelOut.push(
+								formatMatchLine(lineNumber, line, isMatch, { useHashLines, width: lineNumberWidth }),
+							);
 							if (!isMatch && line.endsWith("...") && Buffer.byteLength(line) >= DEFAULT_MAX_COLUMN - 6) {
 								(cutLines ??= new Set()).add(lineNumber);
 							}
@@ -1102,7 +1175,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					}
 					return { model: modelOut, display: displayOut, tag: hashContext?.tag };
 				};
-				const matchOutput = formatFileMatches(fileList, isDirectory || isMultiScope, renderMatchesForFile);
+				const matchOutput: GroupedFilesOutput = summaryMode
+					? summaryRows(fileList, matchesByFile, mode === "count", fileMatchCounts)
+					: formatFileMatches(fileList, isDirectory || isMultiScope, renderMatchesForFile);
 				outputLines.push(...matchOutput.model);
 				displayLines.push(...matchOutput.display);
 				const trailer = (shownCapped: readonly string[]): string => {
@@ -1132,7 +1207,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					const reserved = Buffer.byteLength(suffix);
 					truncation = truncateHead(rawOutput, {
 						maxLines: Number.MAX_SAFE_INTEGER,
-						maxBytes: DEFAULT_MAX_BYTES - reserved,
+						maxBytes: DEFAULT_MAX_BYTES - reserved - Buffer.byteLength(literalNote),
 					});
 					const keptLines = truncation.truncated ? (truncation.outputLines ?? 0) : outputLines.length;
 					const shownCapped = isMultiScope
@@ -1144,7 +1219,7 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					// Fewer files named can still mean longer names; re-cut until the notice fits its room.
 					if (Buffer.byteLength(suffix) <= reserved) break;
 				}
-				const output = truncation.content + suffix;
+				const output = literalNote + truncation.content + suffix;
 				const displayText = displayLines.join("\n");
 				let displayTargets: Record<string, string> | undefined;
 				// Only grouped headers start with `#`; code-frame rows start with their gutter.
@@ -1168,7 +1243,9 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 					scopePath,
 					searchPath,
 					cwd: this.session.cwd,
-					matchCount: selectedMatches.length,
+					matchCount: summaryMode
+						? [...fileMatchCounts.values()].reduce((a, b) => a + b, 0)
+						: selectedMatches.length,
 					fileCount: fileList.length,
 					files: fileList,
 					fileMatches: fileList.map(path => ({

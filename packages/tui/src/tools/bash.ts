@@ -44,7 +44,7 @@ export function formatBackgroundNotice(jobId: string, timeoutSec: number | undef
 		timeoutSec === undefined
 			? " (no deadline)"
 			: ` (killed once it has run ${timeoutSec}s in total; \`timeout: 0\` disables the deadline)`;
-	return `Backgrounded as job ${jobId}${deadline}; its output is injected into the conversation as a follow-up the moment it finishes. Do NOT poll for it (no \`sleep\`, \`ps\`, \`pgrep\`, \`top\`, \`pidwait\`, log tailing): every poll is a wasted turn. Do other work, or end your reply and wait to be woken.`;
+	return `Backgrounded as job ${jobId}${deadline}; its result arrives automatically when done (do not poll).`;
 }
 
 /**

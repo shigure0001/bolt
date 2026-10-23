@@ -21,6 +21,7 @@ import {
 	resolveOutputMaxColumns,
 	resolveOutputSinkArtifactMaxBytes,
 	resolveOutputSinkHeadBytes,
+	resolveStreamingInlineBytes,
 } from "../tools/output-meta";
 import { quotePosixArgv } from "../utils/shell-quote";
 import { getOrCreateSnapshot } from "../utils/shell-snapshot";
@@ -518,9 +519,7 @@ async function executeUserShellPty(run: {
 			cancelled: true,
 			timedOut: true,
 			...(await run.dump(
-				run.timeoutMs !== undefined
-					? `Command timed out after ${Math.round(run.timeoutMs / 1000)} seconds`
-					: "Command timed out",
+				formatCommandTimeoutNotice(run.timeoutMs === undefined ? undefined : Math.round(run.timeoutMs / 1000)),
 			)),
 		};
 	}
@@ -536,6 +535,12 @@ async function executeUserShellPty(run: {
 		cancelled: false,
 		...(await run.dump()),
 	};
+}
+
+/** The timeout notice every bash path emits: `Command timed out after 1 second` / `… 30 seconds`. */
+export function formatCommandTimeoutNotice(seconds: number | undefined): string {
+	if (seconds === undefined) return "Command timed out";
+	return `Command timed out after ${seconds} ${seconds === 1 ? "second" : "seconds"}`;
 }
 
 export async function executeBash(command: string, options?: BashExecutorOptions): Promise<BashResult> {
@@ -605,6 +610,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				: undefined,
 		artifactPath: options?.artifactPath,
 		artifactId: options?.artifactId,
+		spillThreshold: resolveStreamingInlineBytes(settings),
 		headBytes: resolveOutputSinkHeadBytes(settings),
 		artifactMaxBytes: resolveOutputSinkArtifactMaxBytes(settings),
 		maxColumns: resolveOutputMaxColumns(settings),
@@ -682,14 +688,18 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 	// mutex-guarded queue and `abort()` kills every in-flight run on it). When
 	// parallel bash calls overlap on the same key, the first one owns the
 	// persistent session; the rest degrade to isolated one-shot shells — the
-	// same path quarantined sessions take.
+	// same path quarantined sessions take — seeded with the busy session's
+	// exported variables as of its last completed command.
 	const sessionBusy = shellSessionsInUse.has(sessionKey);
 	let shellSession = persistentSessionBroken || sessionBusy ? undefined : shellSessions.get(sessionKey);
 	if (!shellSession && !persistentSessionBroken && !sessionBusy) {
 		shellSession = new Shell(shellOptions);
 		shellSessions.set(sessionKey, shellSession);
 	}
-	const executionShell = shellSession ?? new Shell(shellOptions);
+	const sessionExports = sessionBusy ? shellSessions.get(sessionKey)?.exportedEnv() : undefined;
+	const executionShell =
+		shellSession ??
+		new Shell(sessionExports ? { ...shellOptions, sessionEnv: { ...sessionEnv, ...sessionExports } } : shellOptions);
 	const ownsPersistentSession = shellSession !== undefined;
 	if (ownsPersistentSession) {
 		shellSessionsInUse.add(sessionKey);
@@ -785,8 +795,8 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 				// run never returned — any output is stuck in the undrained pipe,
 				// so this is not a confirmed empty run (#10308).
 				notice = nativeOwnsTimeout
-					? `Command timed out after ${seconds} seconds; the shell backend did not respond, so any output above may be incomplete`
-					: `Command timed out after ${seconds} seconds`;
+					? `${formatCommandTimeoutNotice(seconds)}; the shell backend did not respond, so any output above may be incomplete`
+					: formatCommandTimeoutNotice(seconds);
 			}
 			return {
 				exitCode: undefined,
@@ -802,9 +812,9 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 
 		// Handle timeout
 		if (winner.result.timedOut) {
-			const annotation = options?.timeout
-				? `Command timed out after ${Math.round(options.timeout / 1000)} seconds`
-				: "Command timed out";
+			const annotation = formatCommandTimeoutNotice(
+				options?.timeout ? Math.round(options.timeout / 1000) : undefined,
+			);
 			resetSession = true;
 			if (shellSession) {
 				quarantineShellSession(sessionKey, runPromise, abortCleanupPromise);

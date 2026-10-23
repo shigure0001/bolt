@@ -91,7 +91,7 @@ export function hasWaitTool(session: ToolSession): boolean {
 export class WaitTool implements AgentTool<typeof waitSchema, CoordinationDetails> {
 	readonly name = "wait";
 	readonly label = "Wait";
-	readonly summary = "Wait for the next result of a background job or service you started, or a reply you asked for";
+	readonly summary = "Block until a background job, service or subagent reports back";
 	readonly description = prompt.render(waitDescription);
 	readonly parameters = waitSchema;
 	readonly strict = true;

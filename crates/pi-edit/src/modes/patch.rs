@@ -17,7 +17,7 @@ use crate::{
 	fuzzy::{
 		ContextLineResult, ContextMatchStrategy, FindMatchOptions, SequenceMatchStrategy,
 		SequenceSearchResult, find_closest_sequence_match, find_context_line, find_match,
-		seek_sequence,
+		format_occurrence_error, seek_sequence,
 	},
 	notebook::is_notebook_path,
 	store::EditStore,
@@ -855,21 +855,7 @@ fn character_match(
 		if first_match {
 			return Ok(None);
 		}
-		let count = outcome.occurrences.unwrap();
-		let previews = outcome
-			.occurrence_previews
-			.as_deref()
-			.unwrap_or_default()
-			.join("\n\n");
-		let more = if count > 5 {
-			format!(" (showing first 5 of {count})")
-		} else {
-			String::new()
-		};
-		return Err(EditError::apply(format!(
-			"Found {count} occurrences in {path}{more}:\n\n{previews}\n\nAdd more context lines to \
-			 disambiguate."
-		)));
+		return Err(EditError::apply(format_occurrence_error(path, &outcome)));
 	}
 	if outcome.fuzzy_matches.is_some_and(|count| count > 1) {
 		if first_match && outcome.dominant_fuzzy != Some(true) {

@@ -177,7 +177,7 @@ pub enum ErrorKind {
 	InvalidRegexError(fancy_regex::Error, String),
 
 	/// An I/O error occurred.
-	#[error("i/o error: {0}")]
+	#[error("{}", describe_io_error(.0))]
 	IoError(#[from] std::io::Error),
 
 	/// Invalid substitution syntax.
@@ -510,4 +510,21 @@ pub fn unimp<T>(msg: &'static str) -> Result<T, Error> {
 ///   tracked.
 pub fn unimp_with_issue<T>(msg: &'static str, project_issue_id: u32) -> Result<T, Error> {
 	Err(ErrorKind::UnimplementedAndTracked(msg, project_issue_id).into())
+}
+
+/// POSIX wording for common I/O failures: the OS text follows the system
+/// locale (on Windows, `FormatMessage` in the UI language), which mixes
+/// languages into otherwise English shell errors.
+fn describe_io_error(err: &std::io::Error) -> String {
+	use std::io::ErrorKind;
+	let text = match err.kind() {
+		ErrorKind::NotFound => "No such file or directory",
+		ErrorKind::PermissionDenied => "Permission denied",
+		ErrorKind::AlreadyExists => "File exists",
+		ErrorKind::NotADirectory => "Not a directory",
+		ErrorKind::IsADirectory => "Is a directory",
+		ErrorKind::DirectoryNotEmpty => "Directory not empty",
+		_ => return format!("i/o error: {err}"),
+	};
+	text.to_owned()
 }

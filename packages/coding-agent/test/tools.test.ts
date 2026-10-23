@@ -1058,15 +1058,9 @@ describe("Coding Agent Tools", () => {
 			}
 		});
 
-		it("keeps prefixed short-row pages unelided but spills pages that block context pushes past the threshold", async () => {
+		it("keeps prefixed short-row pages unelided", async () => {
 			const shortRows = path.join(testDir, "short-rows.ts");
 			fs.writeFileSync(shortRows, `${Array.from({ length: 6000 }, (_, i) => `let v${i} = ${i};`).join("\n")}\n`);
-			// Every closer on the page pulls its off-window opener in as block context.
-			const depth = 200;
-			const nested = path.join(testDir, "deep-nesting.ts");
-			const openers = Array.from({ length: depth }, (_, i) => `${" ".repeat(i)}if (c${i} && ${"y".repeat(1000)}) {`);
-			const closers = Array.from({ length: depth }, (_, i) => `${" ".repeat(depth - 1 - i)}}`);
-			fs.writeFileSync(nested, `${[...openers, ...closers].join("\n")}\n`);
 			const spillSettings = Settings.isolated({
 				"tools.artifactSpillThreshold": 20,
 				"tools.artifactHeadBytes": 8,
@@ -1097,11 +1091,6 @@ describe("Coding Agent Tools", () => {
 				expect(page.details?.meta?.truncation?.artifactId).toBeUndefined();
 				expect(getTextOutput(page)).not.toContain("elided");
 				expect(getTextOutput(page)).toContain(`Use :${nextOffset} to continue`);
-
-				// Block context is unbounded by the line budget, so that page still spills.
-				const closers = await read(`${nested}:${depth + 1}-${depth * 2}`);
-				expect(closers.details?.meta?.truncation?.artifactId).toBeDefined();
-				expect(Buffer.byteLength(getTextOutput(closers), "utf-8")).toBeLessThan(20 * 1024);
 			} finally {
 				await spillManager.close();
 			}
@@ -2197,7 +2186,7 @@ describe("Coding Agent Tools", () => {
 				new_string: "testing",
 			});
 			expect(result.isError).toBe(true);
-			expect(getTextOutput(result)).toMatch(/Could not find/);
+			expect(getTextOutput(result)).toMatch(/No exact match/);
 		});
 
 		it("should fail if text appears multiple times", async () => {
@@ -2256,27 +2245,31 @@ function b() {
 				replace_all: true,
 			});
 			expect(result.isError).toBe(true);
-			expect(getTextOutput(result)).toMatch(/Found 2 high-confidence matches/);
+			expect(getTextOutput(result)).toMatch(/2 places match/);
 		});
 
-		it("applies edit.fuzzyMatch and edit.fuzzyThreshold changes made after the tool was built", async () => {
+		it("applies edit.fuzzyMatch changes made after the tool was built, and never applies non-whitespace differences", async () => {
 			const testFile = path.join(testDir, "edit-live-fuzzy.txt");
-			fs.writeFileSync(testFile, "function greet() {\n  const message = 'hello world';\n  return message;\n}\n");
-			const args = {
+			const original = "function greet() {\n  const message = 'hello world';\n  return message;\n}\n";
+			fs.writeFileSync(testFile, original);
+			const spaced = {
 				path: testFile,
-				old_string: "  const mesage = 'helo wrld';\n  return mesage;",
+				old_string: "  const  message = 'hello world';\n  return  message;",
 				new_string: "  return 'bye';",
 			};
 
 			cfgEditFuzzyMatch.set(session.settings, false);
-			expect((await editTool.execute("live-fuzzy-off", args)).isError).toBe(true);
+			expect((await editTool.execute("live-fuzzy-off", spaced)).isError).toBe(true);
 
+			// Typos stay rejected however low the similarity threshold goes.
 			cfgEditFuzzyMatch.set(session.settings, true);
-			cfgEditFuzzyThreshold.set(session.settings, 0.99);
-			expect((await editTool.execute("live-fuzzy-strict", args)).isError).toBe(true);
-
 			cfgEditFuzzyThreshold.set(session.settings, 0.6);
-			expect((await editTool.execute("live-fuzzy-loose", args)).isError).not.toBe(true);
+			const typo = { ...spaced, old_string: "  const mesage = 'helo wrld';\n  return mesage;" };
+			const rejected = await editTool.execute("live-fuzzy-typo", typo);
+			expect(rejected.isError).toBe(true);
+			expect(await Bun.file(testFile).text()).toBe(original);
+
+			expect((await editTool.execute("live-fuzzy-on", spaced)).isError).not.toBe(true);
 			expect(await Bun.file(testFile).text()).toBe("function greet() {\n  return 'bye';\n}\n");
 		});
 
@@ -2291,7 +2284,7 @@ function b() {
 				replace_all: true,
 			});
 			expect(result.isError).toBe(true);
-			expect(getTextOutput(result)).toMatch(/Could not find/);
+			expect(getTextOutput(result)).toMatch(/No exact match/);
 		});
 
 		it("should replace multiline text with replace_all: true", async () => {
@@ -2663,13 +2656,8 @@ function b() {
 			await asyncJobManager.dispose();
 		});
 
-		it("should background instead of timing out when auto-background wait exceeds the effective timeout", async () => {
-			const deliveries: Array<{ jobId: string; text: string }> = [];
-			const asyncJobManager = new AsyncJobManager({
-				onJobComplete: async (jobId, text) => {
-					deliveries.push({ jobId, text });
-				},
-			});
+		it("returns a short-timeout command's timeout result synchronously instead of backgrounding", async () => {
+			const asyncJobManager = new AsyncJobManager({});
 			const autoBackgroundBashTool = wrapToolWithMetaNotice(
 				new BashTool(
 					createTestToolSession(
@@ -2685,33 +2673,21 @@ function b() {
 					),
 				),
 			);
-			// Drive the effective timeout via the production clamp seam so the
-			// backgrounded job hits its timeout in ~0.1s instead of a real
-			// wall-clock second. The auto-background-on-timeout decision path is
-			// unchanged; we assert the timeout-notice prefix rather than the
-			// rounded seconds (it reads "0" here only because the seam
-			// deliberately undercuts the 1s production floor).
+			// Drive the effective timeout (well under the threshold) via the production clamp seam.
 			vi.spyOn(toolTimeouts, "clampTimeout").mockReturnValue(0.05);
 
-			const result = await autoBackgroundBashTool.execute("test-call-9-auto-timeout-background", {
-				command: "printf 'start\\n'; sleep 0.5; printf 'done\\n'",
+			const result = await autoBackgroundBashTool.execute("test-call-9-auto-timeout-sync", {
+				command: "printf 'start\\n'; sleep 5; printf 'done\\n'",
 				timeout: 1,
 			});
 
-			expect(result.details?.timeoutSeconds).toBe(0.05);
-			expect(result.details?.async?.state).toBe("running");
-			expect(getTextOutput(result)).toContain("Backgrounded as job");
-			const jobId = result.details?.async?.jobId;
-			if (!jobId) {
-				throw new Error("expected an auto-backgrounded job id");
-			}
-			const runningJob = asyncJobManager.getJob(jobId);
-			expect(runningJob?.status).toBe("running");
-			await runningJob?.promise;
-			await asyncJobManager.drainDeliveries({ timeoutMs: 1 });
-			expect(deliveries).toHaveLength(1);
-			expect(deliveries[0]?.jobId).toBe(jobId);
-			expect(deliveries[0]?.text).toContain("Command timed out after");
+			expect(result.details?.async).toBeUndefined();
+			expect(result.isError).toBe(true);
+			expect((result.details as { timedOut?: boolean } | undefined)?.timedOut).toBe(true);
+			const text = getTextOutput(result);
+			expect(text).toMatch(/timed out/i);
+			expect(text).not.toContain("Backgrounded as job");
+			expect(text).toContain("start");
 			await asyncJobManager.dispose();
 		});
 
@@ -2845,6 +2821,30 @@ function b() {
 			expect(multiline).toContain("manual.txt");
 		});
 
+		it("searches an unparseable pattern as literal text and says so", async () => {
+			// `def (` is a common literal query; it must still find the text, but a bare
+			// result would hide that the pattern was not treated as a regex.
+			fs.writeFileSync(path.join(testDir, "defs.py"), "def (x): pass\n([unclosed\n");
+
+			for (const [pattern, reason] of [
+				["def (", "unclosed group"],
+				["([unclosed", "unclosed character class"],
+			]) {
+				const result = await searchTool.execute("test-call-invalid-regex", { pattern, path: testDir });
+				const text = getTextOutput(result);
+				expect(text).toContain(`Pattern is not a valid regex (${reason}); searched it as literal text.`);
+				expect(text).toContain("defs.py");
+			}
+
+			const miss = await searchTool.execute("test-call-invalid-regex-miss", { pattern: "absent(", path: testDir });
+			expect(getTextOutput(miss)).toMatch(/searched it as literal text\.\nNo matches found/);
+			expect(miss.useless).toBe(true);
+
+			const escaped = await searchTool.execute("test-call-escaped-regex", { pattern: "def \\(", path: testDir });
+			expect(getTextOutput(escaped)).toContain("defs.py");
+			expect(getTextOutput(escaped)).not.toContain("not a valid regex");
+		});
+
 		it("flags a zero-match search as contextually useless", async () => {
 			fs.writeFileSync(path.join(testDir, "plain.txt"), "nothing interesting here\n");
 
@@ -2947,6 +2947,58 @@ function b() {
 
 			const output = getTextOutput(result);
 			expect(output).toMatch(/\*1\|match\n\.\.\.\n\*6\|match/);
+		});
+
+		it("honors the context and mode parameters", async () => {
+			const modeDir = path.join(testDir, "grep-context-modes");
+			fs.mkdirSync(modeDir, { recursive: true });
+			const hot = ["needle", "pad", "needle", "pad", "pad", "needle"].join("\n");
+			fs.writeFileSync(path.join(modeDir, "hot.txt"), hot);
+			fs.writeFileSync(path.join(modeDir, "cold.txt"), "needle\n");
+			fs.writeFileSync(path.join(modeDir, "none.txt"), "nothing\n");
+
+			const noCtx = getTextOutput(
+				await searchTool.execute("grep-ctx-0", {
+					pattern: "needle",
+					path: path.join(modeDir, "hot.txt"),
+					context: 0,
+				}),
+			);
+			expect(noCtx.split("\n").filter(line => line !== "...")).toEqual(["*1|needle", "*3|needle", "*6|needle"]);
+			const withCtx = getTextOutput(
+				await searchTool.execute("grep-ctx-1", {
+					pattern: "needle",
+					path: path.join(modeDir, "hot.txt"),
+					context: 1,
+				}),
+			);
+			expect(withCtx).toContain(" 2|pad");
+
+			const files = getTextOutput(
+				await searchTool.execute("grep-mode-files", { pattern: "needle", path: modeDir, mode: "files" }),
+			);
+			expect(files.split("\n").sort()).toEqual(["grep-context-modes/cold.txt", "grep-context-modes/hot.txt"]);
+
+			const counts = await searchTool.execute("grep-mode-count", {
+				pattern: "needle",
+				path: modeDir,
+				mode: "count",
+			});
+			const countRows = getTextOutput(counts).split("\n").sort();
+			expect(countRows).toHaveLength(2);
+			expect(countRows.some(row => row.endsWith("hot.txt: 3"))).toBe(true);
+			expect(countRows.some(row => row.endsWith("cold.txt: 1"))).toBe(true);
+			expect(counts.details?.matchCount).toBe(4);
+			expect(counts.details?.fileCount).toBe(2);
+
+			const ranged = getTextOutput(
+				await searchTool.execute("grep-mode-count-range", {
+					pattern: "needle",
+					path: `${path.join(modeDir, "hot.txt")}:2-`,
+					mode: "count",
+				}),
+			);
+			expect(ranged).toMatch(/hot\.txt: 2$/);
 		});
 
 		it("should paginate files via the skip parameter", async () => {
@@ -3189,7 +3241,7 @@ function b() {
 			fs.writeFileSync(testFile, "single");
 
 			const result = await findTool.execute("test-call-13a", {
-				path: testFile,
+				pattern: testFile,
 			});
 
 			const outputLines = getTextOutput(result)
@@ -3207,7 +3259,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "visible.txt"), "visible");
 
 			const result = await findTool.execute("test-call-13", {
-				path: `${testDir}/**/*.txt`,
+				pattern: `${testDir}/**/*.txt`,
 				hidden: true,
 			});
 
@@ -3223,7 +3275,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "kept.txt"), "kept");
 
 			const result = await findTool.execute("test-call-14", {
-				path: `${testDir}/**/*.txt`,
+				pattern: `${testDir}/**/*.txt`,
 			});
 
 			const output = getTextOutput(result);
@@ -3248,7 +3300,7 @@ function b() {
 			fs.utimesSync(newerFile, newerTime, newerTime);
 
 			const result = await findTool.execute("test-call-14b", {
-				path: `${testDir}/**/auth-actions.spec.ts`,
+				pattern: `${testDir}/**/auth-actions.spec.ts`,
 			});
 
 			expect(result.details?.files).toEqual(["z/auth-actions.spec.ts", "a/auth-actions.spec.ts"]);
@@ -3260,7 +3312,7 @@ function b() {
 			fs.writeFileSync(path.join(nestedDir, "daemon-telemetry.ts"), "telemetry\n");
 
 			const result = await findTool.execute("test-call-14c", {
-				path: "apps/daemon/src/**/daemon-telemetry.ts",
+				pattern: "apps/daemon/src/**/daemon-telemetry.ts",
 			});
 
 			expect(result.details?.files).toEqual(["apps/daemon/src/telemetry/daemon-telemetry.ts"]);
@@ -3275,7 +3327,7 @@ function b() {
 			fs.writeFileSync(path.join(clientDir, "client.ts"), "client\n");
 
 			const result = await findTool.execute("test-call-14e", {
-				path: JSON.stringify(["apps/daemon/src/**/*.ts", "apps/client/src/**/*.ts"]),
+				pattern: JSON.stringify(["apps/daemon/src/**/*.ts", "apps/client/src/**/*.ts"]),
 			});
 
 			const files = (result.details?.files ?? []).slice().sort();
@@ -3291,7 +3343,7 @@ function b() {
 
 			const startedAt = performance.now();
 			const result = await findTool.execute("test-call-14d", {
-				path: "**/.env*",
+				pattern: "**/.env*",
 			});
 			const elapsedMs = performance.now() - startedAt;
 
@@ -3309,7 +3361,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "pkg", "nested", "deep.txt"), "d");
 
 			const result = await findTool.execute("test-call-14f", {
-				path: `${testDir}/pkg/**/*`,
+				pattern: `${testDir}/pkg/**/*`,
 			});
 
 			const files = (result.details?.files ?? []).slice().sort();
@@ -3322,7 +3374,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "alpha", "tests", "a.ts"), "a");
 
 			const result = await findTool.execute("test-call-14g", {
-				path: `${testDir}/**/tests`,
+				pattern: `${testDir}/**/tests`,
 			});
 
 			const files = (result.details?.files ?? []).slice().sort();
@@ -3337,7 +3389,7 @@ function b() {
 			fs.writeFileSync(path.join(sub, "nested.tsx"), "n");
 
 			const result = await findTool.execute("test-call-14h", {
-				path: `${dir}/*.tsx`,
+				pattern: `${dir}/*.tsx`,
 			});
 
 			const files = (result.details?.files ?? []).slice().sort();

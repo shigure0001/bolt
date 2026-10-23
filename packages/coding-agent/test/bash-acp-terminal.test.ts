@@ -328,7 +328,7 @@ describe("BashTool ACP terminal routing", () => {
 
 		expect(result.isError).toBe(true);
 		expect(result.details?.timedOut).toBe(true);
-		expect(result.content.find(block => block.type === "text")?.text).toContain("Command timed out after 1 seconds");
+		expect(result.content.find(block => block.type === "text")?.text).toContain("Command timed out after 1 second");
 		expect(killSpy).toHaveBeenCalledTimes(1);
 		expect(releaseSpy).toHaveBeenCalledTimes(1);
 		expect(currentOutputAfterKill).toBeGreaterThan(0);
@@ -360,7 +360,7 @@ describe("BashTool ACP terminal routing", () => {
 
 		expect(result.isError).toBe(true);
 		expect(result.details?.timedOut).toBe(true);
-		expect(result.content.find(block => block.type === "text")?.text).toContain("Command timed out after 1 seconds");
+		expect(result.content.find(block => block.type === "text")?.text).toContain("Command timed out after 1 second");
 		expect(killSpy).toHaveBeenCalledTimes(1);
 		expect(releaseSpy).toHaveBeenCalledTimes(1);
 	}, 8000);

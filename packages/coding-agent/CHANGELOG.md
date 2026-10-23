@@ -6,6 +6,7 @@
 
 - Anthropic web search and Files API uploads follow `PI_ANTHROPIC_API_VERSION=2026-10-21`; web search omits `temperature` under that version ([#16706](https://github.com/can1357/oh-my-pi/pull/16706) by [@H4vC](https://github.com/H4vC))
 - llama.cpp auto-discovery now also finds local servers on llama-server's new default port 9931 when nothing answers on 8080 ([#16675](https://github.com/can1357/oh-my-pi/pull/16675) by [@bartbroere](https://github.com/bartbroere))
+- `load_tools` and `tools.deferred`: tools matching the `tools.deferred` globs (default: task, eval, lsp, ast_edit, ast_grep, ask, wait, todo, web_search, find, debug, github, checkpoint, rewind, security_scan, ida and all MCP tools) stay registered but off the request; `load_tools` lists them one line each and activates the ones the model names, which are then ordinary tools for the rest of the session. Explicit tool lists (subagent definitions, `--tools`) and restricted selections such as plan mode are never deferred
 
 ### Changed
 
@@ -20,9 +21,44 @@
 - Renamed the CLI from `omp` to `bolt`: the binary is `bolt`, user state lives in `~/.bolt` (XDG: `$XDG_*_HOME/bolt`), project config in `<project>/.bolt`, and `bolt` shares no sessions, memory, history or credentials with an installed `omp`
 - Rewrote the main system prompt, project footer, subagent prompt and default personality in plain prose: no RFC 2119 legend, `§` sections or duplicated `<critical>` blocks; the redundant tool-name inventory is gone in native tool mode and formatting guidance appears only when the TUI renders it
 - Rewrote the built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, ast_grep, ast_edit, debug, find, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
-- `read`'s description now documents the `N|` line prefix and the enclosing-block lines a partial read may add
+- `read` ranges no longer add enclosing-block lines: every read shows exactly the requested lines, and the footer matches what is shown
 - `edit` results in non-hashline modes number rows `N|text`, matching `read` and `grep` output, instead of hashline-style `N:text`
-- The `bash` description says commands run in a built-in bash-compatible shell on every platform (with Windows-specific guidance), and the `glob` description says the pattern goes in `path`
+- The `bash` description says commands run in a built-in bash-compatible shell on every platform (with Windows-specific guidance)
+- `glob` takes its pattern in `pattern` (was `path`)
+- `bash` calls whose `timeout` is at most the auto-background threshold finish or time out inline instead of moving to a background job a second before the deadline; the background-job notice is one sentence
+- `grep` patterns that are not valid regex are still searched as literal text, but the result now says so (`Pattern is not a valid regex (unclosed group); searched it as literal text.`) instead of silently reporting matches or "No matches found"
+- `edit`'s duplicate-match error lists the matched lines and shows one merged `N|` preview with `*` on each match (as `grep` marks matches) and right-aligned line numbers; an edit applied through the whitespace-insensitive fallback reports the line it matched
+- `load_tools` catalog lines end at a clause or word boundary instead of mid-word, and `memory://` is advertised only when the memory backend has something to read
+- `edit` previews show a single hidden line instead of an unnumbered gap row and mark longer gaps with `…`; result headers and errors show paths relative to cwd, like `write`; the no-match error suggests re-reading a file that may have changed
+- The `bash` description states the inline output limit (`tools.artifactSpillThreshold`) and that a call made while the shell is busy runs in a fresh shell; the system prompt says to commit, push or rewrite git history only when asked, and the per-turn date/cwd reminder drops its "do not repeat" line
+- The `bash` description explains background jobs in one rule (`async`, auto-background, result delivery, `wait`) and states the default `timeout`; `wait` and `lsp` catalog summaries are complete phrases; `edit`'s no-match error says when `old_string` carries copied `N|` line prefixes
+- `includeModelInPrompt` now defaults to off: the workstation block no longer lists the model id
+- `edit` (replace mode) applies a fuzzy match only when it differs from `old_string` by whitespace or quote/dash spelling; any other difference is reported and nothing is written, whatever `edit.fuzzyThreshold` says. The no-match error shows the closest text's line, its first differing line labeled `old_string:` / `file:`, and the cause-specific fix (several close places, a non-whitespace difference, or copy it again), without the internal similarity threshold
+- An edit preview marks every skipped run between hunks with `…` (it used to jump straight from one hunk's context to the next)
+- `tools.artifactHeadBytes` and `tools.artifactTailBytes` now default to 2.5 KB and 7.5 KB (were 20 KB each). `bash` output over their sum (10 KB) keeps that head and tail inline instead of up to 50 KB, cut at whole lines around the `[…N ln elided…]` marker; the full text stays in its `artifact://` id
+- `read` of a JSON file takes a literal `&` inside `?q=` (only `&raw=`, `&compact=`, `&offset=`, `&limit=` start options), so jq string literals need no `%26`
+- A ranged read of a large artifact or other located file appends only `Backing file: <path> (size)`; the paging and search hints stay on bare reads
+- `grep`'s description states the configured context widths; the workstation block names the VCS and branch (`VCS: git on \`main\``, or `none`)
+- A `wait` result no longer carries a "Delivery: not auto-delivered; recovered by this snapshot" line; only a repeated result is flagged
+- `load_tools` summaries keep a short complete first sentence (such as "Search the web.") instead of cutting the next one mid-phrase
+- `grep` takes `context` (lines around each match) and `mode` (`content`, `files`, `count`); `read`'s not-found error suggests close names, names the missing directory, or says the directory holds nothing similar
+- `read`'s numbered code outline omits blank rows (their line numbers already show the gap)
+- The `bash` description says each call starts in `cwd` (a `cd` doesn't carry over; variables and functions do) and that `wait` loads through `load_tools` while deferred; the system prompt opens with "You work inside bolt" instead of a second "You are"
+- The system prompt says bolt is an omp fork, treats doc and changelog updates as part of the task, and drops the duplicated parallel-call line and the auto-chart note
+- `debug.enabled` now defaults to off; the DAP debugger tool (the largest tool schema) is opt-in
+- Cut the always-on context to about 4.3k tokens for a default session (from about 15k): a compact system prompt and core tool descriptions, two `ast_edit` examples instead of six, `agent://`/`history://` advertised only while `task` is active, no `<critical>` block repeating the main agent's rules, and no subagent bullets duplicated from the `task` description
+- Clearer parameter descriptions for `ask` (`header`, `preview`, `recommended`), `bash` (`name`, `timeout`), `ast_edit` and `lsp` (`timeout`)
+- The `read`/`grep`/`glob` guidance targets standalone shell reads; filtering a command's output in a pipeline is fine, and `write` no longer discourages new docs (the system prompt's scope rule covers it)
+- A `bash` call made while the session shell is busy (parallel calls, or one overlapping a background job) runs in a separate shell seeded with the session's exported variables as of its last finished command, instead of a bare shell; the notice and the description say so
+- `pwd` prints forward slashes on Windows (no `\\?\` prefix), matching the shell's POSIX paths
+- A timed-out or cancelled `bash` command no longer adds a redundant `error: interrupted` line to its output
+- Plain `grep` and `ast_grep` output right-aligns line numbers within a file (`* 9|`, ` 10|`)
+- Skill descriptions awaiting compression cut at a sentence or clause break (` — `, `; `, `: `, ` (`) and fall back to a word cut with `…` only when there is none, instead of cutting most of them mid-list
+- `load_tools` catalog summaries say what each tool is for (`lsp`: cross-file rename; `task`: independent work in parallel; `todo`: multi-step tasks); the system prompt says to load one as soon as the task needs it, and `load_tools` accepts names written with a provider's wire prefix (`_wait`)
+- The formatting section says why a leading emoji is allowed (the UI shows it as a reaction badge) and why SVG colors use `currentColor`/`var(--fg)` (they follow the theme)
+- `read`'s not-found error says "in the working directory" instead of `in '.'`, and `bash` names its default `cwd` the working directory
+- An empty `glob` result says gitignored files were skipped and that `gitignore: false` includes them; bash timeout notices say "1 second" instead of "1 seconds"; shell I/O errors use POSIX wording (`No such file or directory`, `Permission denied`) instead of the OS's localized message
+- `edit`'s description says a text differing only in whitespace or quote style still matches (was "small whitespace differences are tolerated"); `read`'s `path` parameter description names the line selector (`:50-80`)
 
 ### Fixed
 

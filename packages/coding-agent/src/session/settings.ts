@@ -370,7 +370,7 @@ export const cfgInlineToolDescriptors = register({
 export const cfgIncludeModelInPrompt = register({
 	id: "includeModelInPrompt",
 	type: "boolean",
-	default: true,
+	default: false,
 	ui: {
 		tab: "model",
 		group: "Prompt",

@@ -1,11 +1,11 @@
 {
  "cases": [
   {
-   "name": "respects custom similarity threshold",
+   "name": "a low similarity threshold never applies non-whitespace differences",
    "files": { "threshold.ts": "function foo() {}\n" },
    "args": { "path": "threshold.ts", "old_string": "function bar() {}", "new_string": "function baz() {}" },
    "policy": { "allowFuzzy": true, "fuzzyThreshold": 0.7 },
-   "expect": { "files": { "threshold.ts": "function baz() {}\n" } }
+   "expect": { "error": "differs by more than whitespace", "files": { "threshold.ts": "function foo() {}\n" }, "writes": 0 }
   },
   {
    "name": "preserves empty lines",

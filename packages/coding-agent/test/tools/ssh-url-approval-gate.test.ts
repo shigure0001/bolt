@@ -109,9 +109,9 @@ describe("ssh:// tools are exec-gated through the production approval wrapper", 
 
 	it("glob: an ssh:// path requires approval (exec), a local glob runs (read)", async () => {
 		await expect(
-			tool("glob").execute("g-ssh", { path: "ssh://localhost/etc" }, undefined, undefined, ctx("always-ask")),
+			tool("glob").execute("g-ssh", { pattern: "ssh://localhost/etc" }, undefined, undefined, ctx("always-ask")),
 		).rejects.toThrow(APPROVAL_RE);
-		const ok = await tool("glob").execute("g-local", { path: "*.txt" }, undefined, undefined, ctx("always-ask"));
+		const ok = await tool("glob").execute("g-local", { pattern: "*.txt" }, undefined, undefined, ctx("always-ask"));
 		expect(JSON.stringify(ok.content)).toContain("local.txt");
 	});
 

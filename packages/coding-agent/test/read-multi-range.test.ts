@@ -11,6 +11,7 @@ import type { ReadToolDetails } from "@oh-my-pi/pi-tui/tools/read";
 import { ReadTool } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
 
+import { wrapToolWithMetaNotice } from "@oh-my-pi/pi-coding-agent/tools/output-meta";
 import { cfgReadSummarizeEnabled } from "@oh-my-pi/pi-coding-agent/tools/settings";
 
 function textOutput(result: AgentToolResult<ReadToolDetails>): string {
@@ -76,86 +77,60 @@ describe("read tool multi-range selector", () => {
 		expect(text).toContain("…");
 	});
 
-	it("includes the matching closing bracket line outside a forward range", async () => {
+	const exactly = (text: string): string[] => text.split("\n").slice(1);
+
+	it("returns only the requested line for a block opener, without its closer", async () => {
 		const filePath = path.join(tmpDir, "brackets.ts");
 		await fs.writeFile(
 			filePath,
-			[
-				"function outer() {",
-				"  const one = 1;",
-				"  const two = 2;",
-				"  const three = 3;",
-				"  const four = 4;",
-				"  return one + two + three + four;",
-				"}",
-				"after();",
-			].join("\n"),
+			["function outer() {", "  const one = 1;", "  return one;", "}", "after();"].join("\n"),
 		);
 
 		const tool = new ReadTool(createSession(tmpDir));
 		const text = textOutput(await tool.execute("call-bracket-close", { path: `${filePath}:1-1` }));
 
-		expect(text).toContain("function outer() {");
-		expect(text).toContain("…");
-		expect(text).toContain("}");
-		expect(text).not.toContain("const four");
-		expect(text).not.toContain("return one + two");
+		expect(exactly(text).slice(0, 1)).toEqual(["1:function outer() {"]);
+		expect(text).not.toContain("…");
 	});
 
-	it("includes the matching opening bracket line outside a reverse range", async () => {
+	it("returns only the requested line for a block closer, without its opener", async () => {
 		const filePath = path.join(tmpDir, "brackets.ts");
 		await fs.writeFile(
 			filePath,
-			[
-				"function outer() {",
-				"  const one = 1;",
-				"  const two = 2;",
-				"  const three = 3;",
-				"  const four = 4;",
-				"  return one + two + three + four;",
-				"}",
-				"after();",
-			].join("\n"),
+			["function outer() {", "  const one = 1;", "  return one;", "}", "after();"].join("\n"),
 		);
 
 		const tool = new ReadTool(createSession(tmpDir));
-		const text = textOutput(await tool.execute("call-bracket-open", { path: `${filePath}:7-7` }));
+		const text = textOutput(await tool.execute("call-bracket-open", { path: `${filePath}:4-4` }));
 
-		expect(text.indexOf("function outer() {")).toBeLessThan(text.indexOf("}"));
-		expect(text).toContain("…");
-		expect(text).not.toContain("const one = 1");
-		expect(text).not.toContain("const four = 4");
+		expect(exactly(text).slice(0, 1)).toEqual(["4:}"]);
+		expect(text).not.toContain("function outer");
+		expect(text).not.toContain("…");
 	});
 
-	it("uses tree-sitter syntactic spans for indentation languages (Python)", async () => {
+	it("returns exactly the requested multi-range lines in an indentation language", async () => {
 		const filePath = path.join(tmpDir, "module.py");
 		await fs.writeFile(
 			filePath,
-			[
-				"def greet(name):",
-				"    a = 1",
-				"    b = 2",
-				"    c = 3",
-				"    d = 4",
-				"    e = 5",
-				"    f = 6",
-				"    g = 7",
-				"    return a + b + c + d + e + f + g + len(name)",
-				"trailing = 1",
-			].join("\n"),
+			["def greet(name):", "    a = 1", "    b = 2", "    return a + b + len(name)", "trailing = 1"].join("\n"),
 		);
 
 		const tool = new ReadTool(createSession(tmpDir));
-		// Read only the `def` header line.
-		// Python has no closing delimiter, so a bracket scan would surface
-		// nothing; tree-sitter surfaces the def's last body line (9) as the
-		// block boundary, behind an ellipsis for the skipped middle.
-		const text = textOutput(await tool.execute("call-py-def", { path: `${filePath}:1-1` }));
+		const text = textOutput(await tool.execute("call-py-def", { path: `${filePath}:1-1,3-3` }));
 
-		expect(text).toContain("def greet(name):");
-		expect(text).toContain("…");
-		expect(text).toContain("return a + b + c + d + e + f + g + len(name)");
-		expect(text).not.toContain("trailing = 1");
+		expect(exactly(text)).toEqual(["1:def greet(name):", "", "…", "", "3:    b = 2"]);
+	});
+
+	it("returns exactly lines 2-6 with a footer continuing past them", async () => {
+		const filePath = path.join(tmpDir, "numbered.txt");
+		await fs.writeFile(filePath, makeNumberedContent(20));
+
+		const tool = wrapToolWithMetaNotice(new ReadTool(createSession(tmpDir)));
+		const text = textOutput(await tool.execute("call-exact", { path: `${filePath}:2-6` }));
+
+		expect(exactly(text).slice(0, 5)).toEqual(["2:line 2", "3:line 3", "4:line 4", "5:line 5", "6:line 6"]);
+		expect(text).toContain("Showing lines 2-6 of 20");
+		expect(text).toContain("Use :7 to continue");
 	});
 
 	it("merges overlapping ranges into a single contiguous block", async () => {

@@ -582,11 +582,10 @@ describe("tool path arrays", () => {
 
 		expect(text).toContain("Note: interpreted as 2 paths: missing.txt, packages/grep.txt");
 		expect(text).toContain("shared-needle packages");
-		expect(text).toContain("[Could not read missing.txt: Path 'missing.txt' not found]");
-		expect(details?.notes).toEqual([
-			"Note: interpreted as 2 paths: missing.txt, packages/grep.txt",
-			"Could not read missing.txt: Path 'missing.txt' not found",
-		]);
+		expect(text).toContain("[Could not read missing.txt: Path 'missing.txt' not found");
+		expect(details?.notes?.[0]).toBe("Note: interpreted as 2 paths: missing.txt, packages/grep.txt");
+		expect(details?.notes?.[1]).toStartWith("Could not read missing.txt: Path 'missing.txt' not found");
+		expect(details?.notes).toHaveLength(2);
 		// Alignment contract: an unreadable part gets a null link, the readable peer keeps its resolved fs path (#11732).
 		expect(details?.displayReadTargetLinks).toEqual([null, path.join(tempDir, "packages", "grep.txt")]);
 	});
@@ -707,7 +706,7 @@ describe("tool path arrays", () => {
 		if (!tool) throw new Error("Missing glob tool");
 
 		const result = await tool.execute("find-path-array", {
-			path: "apps/; packages/; phases/",
+			pattern: "apps/; packages/; phases/",
 		});
 		const text = getText(result);
 		const details = result.details as { fileCount?: number; scopePath?: string; files?: string[] } | undefined;
@@ -742,7 +741,7 @@ describe("tool path arrays", () => {
 			["space", "apps/grep.txt packages/grep.txt"],
 		] as const) {
 			const result = await tool.execute(`find-delimited-${name}`, {
-				path: entry,
+				pattern: entry,
 			});
 			const text = getText(result);
 			const details = result.details as { fileCount?: number; scopePath?: string; files?: string[] } | undefined;
@@ -764,7 +763,7 @@ describe("tool path arrays", () => {
 		if (!tool) throw new Error("Missing glob tool");
 
 		const result = await tool.execute("find-delimited-missing", {
-			path: "missing.txt, packages/grep.txt",
+			pattern: "missing.txt, packages/grep.txt",
 		});
 		const text = getText(result);
 		const details = result.details as { fileCount?: number; missingPaths?: string[]; files?: string[] } | undefined;
@@ -784,7 +783,7 @@ describe("tool path arrays", () => {
 		if (!tool) throw new Error("Missing glob tool");
 
 		const result = await tool.execute("find-space-directory", {
-			path: "folder with spaces/",
+			pattern: "folder with spaces/",
 		});
 		const text = getText(result);
 		const details = result.details as { fileCount?: number; scopePath?: string; files?: string[] } | undefined;
@@ -802,7 +801,7 @@ describe("tool path arrays", () => {
 		if (!tool) throw new Error("Missing glob tool");
 
 		const result = await tool.execute("find-quoted-pattern", {
-			path: '"packages/"',
+			pattern: '"packages/"',
 		});
 		const text = getText(result);
 		const details = result.details as { fileCount?: number; scopePath?: string } | undefined;
@@ -824,7 +823,7 @@ describe("tool path arrays", () => {
 			if (!tool) throw new Error("Missing glob tool");
 
 			const result = await tool.execute("find-outside-cwd", {
-				path: outsideDir,
+				pattern: outsideDir,
 			});
 			const text = getText(result);
 			const expectedPath = path.join(outsideDir, "outside.txt").replace(/\\/g, "/");

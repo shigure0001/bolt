@@ -20,6 +20,17 @@ export function resolveAutoBackgroundWaitMs(thresholdMs: number, timeoutMs: numb
 	return Math.max(0, Math.min(thresholdMs, timeoutMs - timeoutBufferMs));
 }
 
+/**
+ * Like {@link resolveAutoBackgroundWaitMs}, but a call whose deadline is within the threshold never
+ * backgrounds: it returns `undefined` (wait for settlement, no threshold timer) so the call completes or
+ * times out synchronously. `0` still means background immediately.
+ */
+export function resolveDeadlineBoundWaitMs(thresholdMs: number, timeoutMs: number | undefined): number | undefined {
+	if (thresholdMs <= 0) return 0;
+	if (timeoutMs !== undefined && timeoutMs <= thresholdMs) return undefined;
+	return thresholdMs;
+}
+
 /** Non-settled outcomes of {@link raceJobSettlement}. */
 export type JobWaitInterrupt = { kind: "running" } | { kind: "steer" } | { kind: "aborted" };
 
@@ -32,7 +43,7 @@ export type JobWaitInterrupt = { kind: "running" } | { kind: "steer" } | { kind:
  */
 export async function raceJobSettlement<C>(
 	completion: Promise<C>,
-	thresholdMs: number,
+	thresholdMs: number | undefined,
 	signal?: AbortSignal,
 	steeringSignal?: AbortSignal,
 ): Promise<C | JobWaitInterrupt> {
@@ -49,8 +60,9 @@ export async function raceJobSettlement<C>(
 	// under fast completion rates. Settle a withResolvers promise from
 	// setTimeout so the finally can clear it regardless of which waiter wins.
 	const { promise: thresholdPromise, resolve: resolveThreshold } = Promise.withResolvers<{ kind: "running" }>();
-	const thresholdTimer = setTimeout(() => resolveThreshold({ kind: "running" }), thresholdMs);
-	const waiters: Array<Promise<C | JobWaitInterrupt>> = [completion, thresholdPromise];
+	const thresholdTimer =
+		thresholdMs === undefined ? undefined : setTimeout(() => resolveThreshold({ kind: "running" }), thresholdMs);
+	const waiters: Array<Promise<C | JobWaitInterrupt>> = thresholdTimer ? [completion, thresholdPromise] : [completion];
 
 	const { promise: abortedPromise, resolve: resolveAborted } = Promise.withResolvers<{ kind: "aborted" }>();
 	const onAbort = () => resolveAborted({ kind: "aborted" });

@@ -137,7 +137,7 @@ function argumentsSummary(toolName: string, value: unknown): string {
 			return [pattern, path].filter(Boolean).join(" · ") || "Search text";
 		}
 		case "glob":
-			return firstString(args, "path") ?? "Map files";
+			return firstString(args, "pattern", "path") ?? "Map files";
 		case "bash":
 			return firstString(args, "command") ?? "Run command";
 		case "write":

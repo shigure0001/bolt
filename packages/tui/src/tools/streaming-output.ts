@@ -29,6 +29,11 @@ const NL = "\n";
 const CR = "\r";
 const ELLIPSIS = "…";
 
+/** Lines in `text`; a trailing newline ends the last line instead of opening an empty one. */
+function lineCountOf(text: string): number {
+	return text.length === 0 ? 0 : countNewlines(text) + (text.endsWith(NL) ? 0 : 1);
+}
+
 // =============================================================================
 // Interfaces
 // =============================================================================
@@ -48,6 +53,10 @@ export interface OutputSummary {
 	elidedBytes?: number;
 	/** Lines elided from the middle when head-retain mode is active. */
 	elidedLines?: number;
+	/** Whole lines shown before the middle-elision marker. */
+	headLines?: number;
+	/** Whole lines shown after the middle-elision marker. */
+	tailLines?: number;
 	/** Bytes dropped by the per-line column cap (sum across all lines). */
 	columnDroppedBytes?: number;
 	/** Number of distinct lines that hit the per-line column cap. */
@@ -888,9 +897,10 @@ export class OutputSink {
 	#bufferBytes = 0;
 	/** The overflowed tail window may exceed its budget until {@link #trimTail} runs. */
 	#tailUntrimmed = false;
+	/** Whether `#buffer` begins at the start of a source line (false after a mid-line cut). */
+	#tailStartsLine = true;
 	#head = "";
 	#headBytes = 0;
-	#headLines = 0; // newline count inside #head
 	#headRetentionDisabled = false;
 	#totalLines = 0; // newline count
 	#totalBytes = 0;
@@ -1092,7 +1102,6 @@ export class OutputSink {
 			if (cappedBytes <= room) {
 				this.#head += capped;
 				this.#headBytes += cappedBytes;
-				this.#headLines += countNewlines(capped);
 				return;
 			}
 			// Split: head takes a UTF-8-safe prefix; remainder flows to tail.
@@ -1100,9 +1109,9 @@ export class OutputSink {
 			if (headSlice.bytes > 0) {
 				this.#head += headSlice.text;
 				this.#headBytes += headSlice.bytes;
-				this.#headLines += countNewlines(headSlice.text);
 				tailChunk = capped.substring(headSlice.text.length);
 				tailBytes = cappedBytes - headSlice.bytes;
+				if (this.#buffer.length === 0) this.#tailStartsLine = headSlice.text.endsWith(NL);
 			}
 		}
 
@@ -1230,6 +1239,13 @@ export class OutputSink {
 		// Avoid creating a giant intermediate string when chunk alone dominates.
 		if (dataBytes >= threshold) {
 			const { text, bytes } = truncateTailBytes(chunk, threshold);
+			const cut = chunk.length - text.length;
+			this.#tailStartsLine =
+				cut > 0
+					? chunk[cut - 1] === NL
+					: this.#buffer.length === 0
+						? this.#tailStartsLine
+						: this.#buffer.endsWith(NL);
 			this.#buffer = text;
 			this.#bufferBytes = bytes;
 			this.#tailUntrimmed = false;
@@ -1251,6 +1267,8 @@ export class OutputSink {
 		const threshold = Math.max(0, this.#spillThreshold - this.#headBytes);
 		if (this.#bufferBytes <= threshold) return;
 		const { text, bytes } = truncateTailBytes(this.#buffer, threshold);
+		const cut = this.#buffer.length - text.length;
+		if (cut > 0) this.#tailStartsLine = this.#buffer[cut - 1] === NL;
 		this.#buffer = text;
 		this.#bufferBytes = bytes;
 	}
@@ -1453,9 +1471,9 @@ export class OutputSink {
 		this.#buffer = capped;
 		this.#bufferBytes = Buffer.byteLength(capped, "utf-8");
 		this.#tailUntrimmed = false;
+		this.#tailStartsLine = true;
 		this.#head = "";
 		this.#headBytes = 0;
-		this.#headLines = 0;
 		this.#headRetentionDisabled = true;
 		this.#totalBytes = Buffer.byteLength(text, "utf-8");
 		this.#totalLines = countNewlines(text);
@@ -1553,49 +1571,63 @@ export class OutputSink {
 	 */
 	#composeBody(): {
 		body: string;
+		totalLines: number;
 		outputBytes: number;
 		outputLines: number;
 		elidedBytes?: number;
 		elidedLines?: number;
+		headLines?: number;
+		tailLines?: number;
 	} {
 		this.#trimTail();
-		const totalLines = this.#sawData ? this.#totalLines + 1 : 0;
 		const headBytes = this.#headBytes;
 		const tailBuf = this.#buffer;
 		const tailBytes = this.#bufferBytes;
-		const headLines = this.#headLines + (headBytes > 0 && !this.#head.endsWith("\n") ? 1 : 0);
-		const tailLines = tailBuf.length > 0 ? countNewlines(tailBuf) + 1 : 0;
+		// A trailing newline ends the last line rather than opening an empty one,
+		// matching `wc -l` and the artifact's own line numbering.
+		const endsWithNewline = (tailBuf.length > 0 ? tailBuf : this.#head).endsWith(NL);
+		const totalLines = this.#sawData ? this.#totalLines + (endsWithNewline ? 0 : 1) : 0;
 
 		// Bytes that survived the column cap. Middle elision operates on these,
 		// so column-dropped bytes don't inflate the "elided from middle" count.
 		const effectiveTotalBytes = Math.max(0, this.#totalBytes - this.#columnDroppedBytes);
 
 		if (headBytes > 0 && effectiveTotalBytes > headBytes + tailBytes) {
-			// Middle was elided. Emit head + marker + tail.
-			const elidedBytes = Math.max(0, effectiveTotalBytes - headBytes - tailBytes);
+			// Middle was elided. Emit whole lines on both sides of the marker: a
+			// partial last head line or first tail line folds into the elided middle.
+			let head = this.#head;
+			const headCut = head.lastIndexOf(NL) + 1;
+			if (headCut > 0 && headCut < head.length) head = head.slice(0, headCut);
+			let tail = tailBuf;
+			const tailCut = this.#tailStartsLine ? -1 : tail.indexOf(NL);
+			if (tailCut >= 0 && tailCut < tail.length - 1) tail = tail.slice(tailCut + 1);
+			const shownHeadBytes = head === this.#head ? headBytes : Buffer.byteLength(head, "utf-8");
+			const shownTailBytes = tail === tailBuf ? tailBytes : Buffer.byteLength(tail, "utf-8");
+			const headLines = lineCountOf(head);
+			const tailLines = lineCountOf(tail);
+			const elidedBytes = Math.max(0, effectiveTotalBytes - shownHeadBytes - shownTailBytes);
 			const elidedLines = Math.max(0, totalLines - headLines - tailLines);
 			const marker = formatMiddleElisionMarker(elidedLines, elidedBytes);
 			const markerBytes = Buffer.byteLength(marker, "utf-8");
-			const headSep = this.#head.endsWith("\n") ? "" : "\n";
-			const tailSep = tailBuf.startsWith("\n") ? "" : "\n";
+			const headSep = head.endsWith("\n") ? "" : "\n";
+			const tailSep = tail.startsWith("\n") ? "" : "\n";
 			return {
-				body: `${this.#head}${headSep}${marker}${tailSep}${tailBuf}`,
-				outputBytes: headBytes + markerBytes + tailBytes + headSep.length + tailSep.length,
+				body: `${head}${headSep}${marker}${tailSep}${tail}`,
+				totalLines,
+				outputBytes: shownHeadBytes + markerBytes + shownTailBytes + headSep.length + tailSep.length,
 				outputLines: headLines + 1 + tailLines,
 				elidedBytes,
 				elidedLines,
+				headLines,
+				tailLines,
 			};
 		}
 		if (headBytes > 0) {
 			// Head + tail combine into the full buffered output (no overlap or elision).
 			const body = `${this.#head}${tailBuf}`;
-			return {
-				body,
-				outputBytes: headBytes + tailBytes,
-				outputLines: body.length > 0 ? countNewlines(body) + 1 : 0,
-			};
+			return { body, totalLines, outputBytes: headBytes + tailBytes, outputLines: lineCountOf(body) };
 		}
-		return { body: tailBuf, outputBytes: tailBytes, outputLines: tailLines };
+		return { body: tailBuf, totalLines, outputBytes: tailBytes, outputLines: lineCountOf(tailBuf) };
 	}
 
 	async dump(notice?: string): Promise<OutputSummary> {
@@ -1608,11 +1640,10 @@ export class OutputSink {
 		// Flush any chunk still held back by the throttle so the live preview
 		// ends with the complete stream.
 		this.#flushPendingChunk();
-		const totalLines = this.#sawData ? this.#totalLines + 1 : 0;
-
 		await this.#finalizeFile();
 
-		const { body, outputBytes, outputLines, elidedBytes, elidedLines } = this.#composeBody();
+		const { body, totalLines, outputBytes, outputLines, elidedBytes, elidedLines, headLines, tailLines } =
+			this.#composeBody();
 		if (elidedBytes !== undefined) this.#truncated = true;
 
 		return {
@@ -1624,6 +1655,8 @@ export class OutputSink {
 			outputBytes,
 			elidedBytes,
 			elidedLines,
+			headLines,
+			tailLines,
 			columnDroppedBytes: this.#columnDroppedBytes > 0 ? this.#columnDroppedBytes : undefined,
 			columnTruncatedLines: this.#columnTruncatedLines > 0 ? this.#columnTruncatedLines : undefined,
 			columnMax: this.#columnTruncatedLines > 0 ? this.#maxColumns : undefined,

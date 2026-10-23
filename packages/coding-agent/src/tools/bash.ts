@@ -19,9 +19,9 @@ import type { ImageContent } from "@oh-my-pi/pi-ai";
 import { PipeStreams } from "@oh-my-pi/pi-natives";
 import { isEnoent, logger, prompt } from "@oh-my-pi/pi-utils";
 import { isPosixShell } from "@oh-my-pi/pi-utils/procmgr";
-import { raceJobSettlement, resolveAutoBackgroundWaitMs } from "../async";
+import { raceJobSettlement, resolveDeadlineBoundWaitMs } from "../async";
 import type { Settings } from "../config/settings";
-import { applyDirenvPreflight, type BashResult, executeBash } from "../exec/bash-executor";
+import { applyDirenvPreflight, type BashResult, executeBash, formatCommandTimeoutNotice } from "../exec/bash-executor";
 import { InternalUrlRouter } from "../internal-urls";
 import { sessionResolveContext } from "../internal-urls/context";
 import { InternalUrlFilesystem, UrlFsError } from "../internal-urls/url-filesystem";
@@ -47,7 +47,7 @@ import { serviceLogs, startService, type ServiceReady } from "../launch/services
 import { isFindEnabled } from "./jfind";
 import { formatArtifactErrorNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
-import { resolveInlineByteCapBudget } from "./output-meta";
+import { resolveStreamingInlineBytes, resolveStreamingInlineCapBudget } from "./output-meta";
 import { resolveToCwd } from "./path-utils";
 import { extractLeadingCdTarget, extractLiteralAndChainSegments, tokenizeShellSegments } from "./shell-tokenize";
 import { ToolAbortError } from "./tool-errors";
@@ -328,7 +328,8 @@ async function saveBashOriginalArtifact(session: ToolSession, originalText: stri
 	}
 }
 
-const BASH_TIMEOUT_DESCRIPTION = `timeout in seconds; 0 disables the command deadline; nonzero values are clamped to ${TOOL_TIMEOUTS.bash.min}-${TOOL_TIMEOUTS.bash.max}`;
+const BASH_TIMEOUT_DESCRIPTION = `seconds (≤${TOOL_TIMEOUTS.bash.max}); 0 = no deadline`;
+const BASH_NAME_DESCRIPTION = "service name";
 
 const bashSchemaBase = type({
 	command: type("string"),
@@ -350,7 +351,7 @@ const bashSchemaWithService = type({
 	"timeout?": type("number").describe(BASH_TIMEOUT_DESCRIPTION),
 	"cwd?": "string",
 	"pty?": "boolean",
-	"name?": "string <= 48",
+	"name?": type("string <= 48").describe(BASH_NAME_DESCRIPTION),
 	"ready?": type({
 		"log?": "string",
 		"port?": "number",
@@ -365,7 +366,7 @@ const bashSchemaWithAsyncAndService = type({
 	"cwd?": "string",
 	"pty?": "boolean",
 	"async?": "boolean",
-	"name?": "string <= 48",
+	"name?": type("string <= 48").describe(BASH_NAME_DESCRIPTION),
 	"ready?": type({
 		"log?": "string",
 		"port?": "number",
@@ -450,7 +451,7 @@ const NO_PIDS = (): readonly number[] => [];
 
 /** Shown when a call overlapped another one (parallel or backgrounded) and could not use the session's shell. */
 const SESSION_SHELL_BUSY_NOTICE =
-	"Ran in a temporary shell while the session shell is busy with another command: session variables and functions were unavailable, and nothing set here persists.";
+	"Ran in a separate shell because the session shell is busy with another command: it saw the session's exported variables but not its other variables or functions, and nothing set here persists.";
 
 function normalizeResultOutput(result: BashResult | BashInteractiveResult): string {
 	return result.output || "";
@@ -612,12 +613,15 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 			defaultTimeoutSec: clampTimeout("bash", undefined, cfgToolsMaxTimeout.get(this.session.settings)),
 			autoBackgroundEnabled: cfgBashAutoBackgroundEnabled.get(this.session.settings),
 			autoBackgroundSeconds: cfgBashAutoBackgroundThresholdMs.get(this.session.settings) / 1000,
+			spillKb: Math.round(resolveStreamingInlineBytes(this.session.settings) / 1024),
 			hasAstGrep: isToolActive("ast_grep", cfgAstGrepEnabled.get(this.session.settings)),
 			hasAstEdit: isToolActive("ast_edit", cfgAstEditEnabled.get(this.session.settings)),
 			hasGrep: isToolActive("grep", cfgGrepEnabled.get(this.session.settings)),
 			hasGlob: isToolActive("glob", cfgGlobEnabled.get(this.session.settings)),
 			hasFind: this.session.isToolActive?.("find") ?? isFindEnabled(this.session),
 			hasRead: isToolActive("read", true),
+			// `wait` sits in the `load_tools` catalog until loaded; say so where bash points at it.
+			waitDeferred: isToolActive("load_tools", false) && !isToolActive("wait", false),
 			// Frozen at the last prompt rebuild (managed sessions). SDK consumers
 			// building a bare ToolSession lack the rebuild lifecycle, so fall back
 			// to the derived form (skillful && skills) instead of dropping the hint.
@@ -701,8 +705,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		}
 		if (result.timedOut === true) {
 			const out = normalizeResultOutput(result);
-			const message =
-				timeoutSec === undefined ? "Command timed out" : `Command timed out after ${timeoutSec} seconds`;
+			const message = formatCommandTimeoutNotice(timeoutSec);
 			throw new ToolError(`${out ? `${out}\n\n[${message}]` : message}${captureNotice}`);
 		}
 		if (result.exitCode === undefined) {
@@ -769,7 +772,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 		// that id instead of saving a second (already-truncated) copy, so the
 		// `[raw output: artifact://N]` footer and the truncation notice agree.
 		const inlineCap = {
-			maxBytes: resolveInlineByteCapBudget(this.session.settings),
+			maxBytes: resolveStreamingInlineCapBudget(this.session.settings),
 			saveArtifact: result.artifactError
 				? undefined
 				: (full: string) => result.artifactId ?? saveBashOriginalArtifact(this.session, full),
@@ -777,8 +780,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 
 		if (isTimeout) {
 			details.timedOut = true;
-			const message =
-				timeoutSec === undefined ? "Command timed out" : `Command timed out after ${timeoutSec} seconds`;
+			const message = formatCommandTimeoutNotice(timeoutSec);
 			// executeBash has already emitted this leading sink notice. PTY output
 			// has not, so provide the LLM-facing annotation exactly once.
 			if (!normalizeResultOutput(result).startsWith(`[${message}]\n`)) {
@@ -1229,7 +1231,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 			autoBgManager &&
 			!autoBgManager.atCapacity
 		) {
-			const autoBackgroundWaitMs = resolveAutoBackgroundWaitMs(
+			const autoBackgroundWaitMs = resolveDeadlineBoundWaitMs(
 				Math.floor(cfgBashAutoBackgroundThresholdMs.get(this.session.settings)),
 				timeoutMs,
 			);

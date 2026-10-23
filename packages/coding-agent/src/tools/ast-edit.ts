@@ -39,17 +39,13 @@ import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { toolResult } from "./tool-result";
 
 const astEditOpSchema = type({
-	pat: type("string").describe("ast pattern"),
-	out: type("string").describe("replacement template"),
+	pat: type("string").describe("ast-grep pattern to match"),
+	out: type("string").describe("replacement; may use the pattern's metavariables"),
 });
 
 const astEditSchema = type({
-	ops: astEditOpSchema.array().atLeastLength(1).describe("rewrite ops"),
-	paths: type("string")
-		.describe("file, directory, glob, or internal URL to rewrite")
-		.array()
-		.atLeastLength(1)
-		.describe("files, directories, globs, or internal URLs to rewrite"),
+	ops: astEditOpSchema.array().atLeastLength(1).describe("pattern → replacement rewrites"),
+	paths: type("string").array().atLeastLength(1).describe("files, directories, globs or internal URLs"),
 });
 
 interface AstEditCallOptions {
@@ -186,7 +182,7 @@ export class AstEditTool implements AgentTool<typeof astEditSchema, AstEditToolD
 		return lines;
 	};
 	readonly label = "AST Edit";
-	readonly summary = "Perform AST-aware code edits (structural refactoring)";
+	readonly summary = "Structural (AST) find-and-replace across many files";
 	readonly description: string;
 	readonly parameters = astEditSchema;
 	readonly strict = true;
@@ -200,38 +196,10 @@ export class AstEditTool implements AgentTool<typeof astEditSchema, AstEditToolD
 			},
 		},
 		{
-			caption: "Delete matching calls",
-			call: {
-				ops: [{ pat: "console.log($$$ARGS)", out: "" }],
-				paths: ["src/**/*.ts"],
-			},
-		},
-		{
-			caption: "Rewrite import source path",
-			call: {
-				ops: [{ pat: 'import { $$$IMPORTS } from "old-package"', out: 'import { $$$IMPORTS } from "new-package"' }],
-				paths: ["src/**/*.ts"],
-			},
-		},
-		{
-			caption: "Modernize to optional chaining (same metavariable enforces identity)",
-			call: {
-				ops: [{ pat: "$A && $A()", out: "$A?.()" }],
-				paths: ["src/**/*.ts"],
-			},
-		},
-		{
 			caption: "Swap two arguments using captures",
 			call: {
 				ops: [{ pat: "assertEqual($A, $B)", out: "assertEqual($B, $A)" }],
 				paths: ["tests/**/*.ts"],
-			},
-		},
-		{
-			caption: "Python — convert print calls to logging",
-			call: {
-				ops: [{ pat: "print($$$ARGS)", out: "logger.info($$$ARGS)" }],
-				paths: ["src/**/*.py"],
 			},
 		},
 	];

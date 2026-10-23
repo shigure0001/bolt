@@ -1,1 +1,1 @@
-`proc://`: background jobs and services. `proc://<id>` shows status and output; writing to it sends stdin (empty content sends Enter). Write to `proc://<id>/kill` (no content) to stop it. `proc://<id>/mode` sets `persist`, `session` or `detached`. `proc://<id>/streams` lists a bash job's pipes and `proc://<id>/streams/<n>` shows what has passed through pipe `n` so far, so you never need to rerun a command to see its intermediate output.
+`proc://<id>`: background job status and output; writing sends stdin, `/kill` stops it.

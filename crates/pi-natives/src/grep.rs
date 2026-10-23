@@ -246,6 +246,9 @@ pub struct GrepResult {
 	pub limit_reached:      Option<bool>,
 	/// Number of files skipped because they exceed the size limit.
 	pub skipped_oversized:  Option<u32>,
+	/// Why the pattern was searched as literal text: set only when it was not a
+	/// valid regex (the parse error), absent for every pattern that compiled.
+	pub literal_fallback:   Option<String>,
 }
 
 enum TypeFilter {
@@ -1185,55 +1188,6 @@ fn sanitize_braces(pattern: &str) -> Cow<'_, str> {
 	}
 }
 
-/// Escape unescaped parentheses after a group-syntax regex error.
-///
-/// Search patterns like `fetchAnthropicProvider(` are common literal snippets,
-/// but the regex engine parses the trailing `(` as the start of a capture
-/// group. When the parser already reported invalid group syntax, escaping any
-/// remaining literal parentheses preserves useful search behavior without
-/// changing valid regexes.
-fn escape_unescaped_parentheses(pattern: &str) -> Cow<'_, str> {
-	let bytes = pattern.as_bytes();
-	if !bytes.contains(&b'(') && !bytes.contains(&b')') {
-		return Cow::Borrowed(pattern);
-	}
-
-	let mut result = String::with_capacity(pattern.len() + 4);
-	let mut modified = false;
-	let mut i = 0;
-
-	while i < bytes.len() {
-		if bytes[i] == b'\\' && i + 1 < bytes.len() {
-			result.push('\\');
-			i += 1;
-			let ch = pattern[i..]
-				.chars()
-				.next()
-				.expect("non-empty slice has a char");
-			result.push(ch);
-			i += ch.len_utf8();
-			continue;
-		}
-
-		let ch = pattern[i..]
-			.chars()
-			.next()
-			.expect("non-empty slice has a char");
-		if matches!(ch, '(' | ')') {
-			result.push('\\');
-			modified = true;
-		}
-		result.push(ch);
-		i += ch.len_utf8();
-	}
-
-	if modified {
-		Cow::Owned(result)
-	} else {
-		Cow::Borrowed(pattern)
-	}
-}
-
 fn build_regex_matcher(
 	pattern: &str,
 	ignore_case: bool,
@@ -1269,40 +1223,58 @@ fn build_pcre_matcher(
 	builder.build(pattern)
 }
 
+/// Reduce a `regex-syntax` diagnostic (a multi-line block echoing the pattern
+/// with a caret) to its `error: <reason>` line; other messages pass through.
+fn regex_error_reason(message: &str) -> &str {
+	message
+		.lines()
+		.rev()
+		.find_map(|line| line.trim().strip_prefix("error: "))
+		.unwrap_or_else(|| message.trim())
+}
+
 fn build_matcher(pattern: &str, ignore_case: bool, multiline: bool) -> Result<CompiledMatcher> {
+	build_matcher_with_fallback(pattern, ignore_case, multiline).map(|(matcher, _)| matcher)
+}
+
+/// Compile `pattern`, returning the matcher and, when the pattern is not a valid
+/// regex, why it is being searched as literal text instead.
+///
+/// Literal text such as `fetchProvider(` is a common query, so an unparseable
+/// pattern still searches. The reason is returned (never dropped) so the caller
+/// can say so: a bare "no matches" would hide that the pattern was not a regex.
+fn build_matcher_with_fallback(
+	pattern: &str,
+	ignore_case: bool,
+	multiline: bool,
+) -> Result<(CompiledMatcher, Option<String>)> {
 	let sanitized = sanitize_braces(pattern);
 	let err = match build_regex_matcher(sanitized.as_ref(), ignore_case, multiline) {
-		Ok(matcher) => return Ok(CompiledMatcher::Rust(matcher)),
+		Ok(matcher) => return Ok((CompiledMatcher::Rust(matcher), None)),
 		Err(err) => err,
 	};
 
 	// PCRE2 supports features the Rust regex engine deliberately omits, such
 	// as lookaround and backreferences.
-	if let Ok(matcher) = build_pcre_matcher(sanitized.as_ref(), ignore_case, multiline) {
-		return Ok(CompiledMatcher::Pcre(matcher));
-	}
+	let pcre_err = match build_pcre_matcher(sanitized.as_ref(), ignore_case, multiline) {
+		Ok(matcher) => return Ok((CompiledMatcher::Pcre(matcher), None)),
+		Err(err) => err,
+	};
 
-	// Targeted retry: a stray `(`/`)` in an otherwise valid regex (e.g.
-	// `fetchProvider(`) — escape the parentheses but keep the rest of the regex
-	// working.
-	let message = err.to_string();
-	if message.contains("unclosed group") || message.contains("unopened group") {
-		let escaped = escape_unescaped_parentheses(sanitized.as_ref());
-		if escaped.as_ref() != sanitized.as_ref() {
-			if let Ok(matcher) = build_regex_matcher(escaped.as_ref(), ignore_case, multiline) {
-				return Ok(CompiledMatcher::Rust(matcher));
-			}
-			if let Ok(matcher) = build_pcre_matcher(escaped.as_ref(), ignore_case, multiline) {
-				return Ok(CompiledMatcher::Pcre(matcher));
-			}
-		}
-	}
+	// Both engines rejected the pattern. Report the Rust parser's reason, except
+	// when it only objects to a PCRE-only feature and PCRE2 found the real
+	// problem.
+	let rust_message = err.to_string();
+	let rust_reason = regex_error_reason(&rust_message);
+	let reason = if rust_reason.contains("look-around") || rust_reason.contains("backreference") {
+		pcre_err.to_string()
+	} else {
+		rust_reason.to_owned()
+	};
 
-	// Final fallback: both engines rejected the pattern, so match it literally
-	// instead of failing the whole search.
 	build_regex_matcher(&regex::escape(pattern), ignore_case, multiline)
-		.map(CompiledMatcher::Rust)
-		.map_err(|_| Error::from_reason(format!("Regex error: {message}")))
+		.map(|matcher| (CompiledMatcher::Rust(matcher), Some(reason.clone())))
+		.map_err(|_| Error::from_reason(format!("Regex error: {reason}")))
 }
 
 // ---------------------------------------------------------------------------
@@ -1515,6 +1487,7 @@ impl<'a> PassState<'a> {
 				.then_some(true),
 			skipped_oversized:  (skipped_oversized > 0)
 				.then(|| crate::utils::clamp_u32(skipped_oversized)),
+			literal_fallback: None,
 		}
 	}
 }
@@ -2257,10 +2230,14 @@ pub(crate) fn grep_sync(
 ) -> Result<GrepResult> {
 	let ignore_case = options.ignore_case.unwrap_or(false);
 	let multiline = options.multiline.unwrap_or(false);
-	match build_matcher(&options.pattern, ignore_case, multiline)? {
+	let (matcher, literal_fallback) =
+		build_matcher_with_fallback(&options.pattern, ignore_case, multiline)?;
+	let mut result = match matcher {
 		CompiledMatcher::Rust(matcher) => grep_sync_with_matcher(options, on_match, ct, &matcher),
 		CompiledMatcher::Pcre(matcher) => grep_sync_with_matcher(options, on_match, ct, &matcher),
-	}
+	}?;
+	result.literal_fallback = literal_fallback;
+	Ok(result)
 }
 
 fn grep_sync_with_matcher<M: Matcher + Sync>(
@@ -2324,6 +2301,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 			files_searched:     0,
 			limit_reached:      None,
 			skipped_oversized:  None,
+			literal_fallback: None,
 		});
 	}
 
@@ -2338,6 +2316,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 				files_searched:     0,
 				limit_reached:      None,
 				skipped_oversized:  None,
+				literal_fallback: None,
 			});
 		}
 
@@ -2360,6 +2339,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 						files_searched:     0,
 						limit_reached:      None,
 						skipped_oversized:  Some(1),
+						literal_fallback: None,
 					});
 				},
 			},
@@ -2373,6 +2353,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 						files_searched:     0,
 						limit_reached:      None,
 						skipped_oversized:  Some(1),
+						literal_fallback: None,
 					});
 				},
 			},
@@ -2384,6 +2365,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 					files_searched:     0,
 					limit_reached:      None,
 					skipped_oversized:  None,
+					literal_fallback: None,
 				});
 			},
 		};
@@ -2421,6 +2403,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 					files_searched:     1,
 					limit_reached:      None,
 					skipped_oversized:  None,
+					literal_fallback: None,
 				});
 			}
 
@@ -2441,6 +2424,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 				files_searched:     1,
 				limit_reached:      None,
 				skipped_oversized:  None,
+				literal_fallback: None,
 			});
 		}
 
@@ -2469,6 +2453,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 				files_searched:     1,
 				limit_reached:      None,
 				skipped_oversized:  None,
+				literal_fallback: None,
 			});
 		}
 
@@ -2513,6 +2498,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 			files_searched: 1,
 			limit_reached: if limit_reached { Some(true) } else { None },
 			skipped_oversized: None,
+			literal_fallback: None,
 		});
 	}
 
@@ -2568,6 +2554,7 @@ fn grep_sync_with_matcher<M: Matcher + Sync>(
 		} else {
 			None
 		},
+		literal_fallback: None,
 	})
 }
 
@@ -2879,7 +2866,7 @@ mod tests {
 
 	#[cfg(unix)]
 	use super::{GrepConfig, GrepOutputMode, grep_sync};
-	use super::{escape_unescaped_parentheses, sanitize_braces};
+	use super::sanitize_braces;
 	#[cfg(unix)]
 	use crate::task;
 
@@ -3245,53 +3232,43 @@ mod tests {
 	}
 
 	#[test]
-	fn preserves_escaped_parentheses() {
-		assert_eq!(escape_unescaped_parentheses(r"foo\(bar\)").as_ref(), r"foo\(bar\)");
-	}
-
-	#[test]
-	fn escapes_literal_parentheses() {
-		assert_eq!(
-			escape_unescaped_parentheses("fetchAnthropicProvider(").as_ref(),
-			r"fetchAnthropicProvider\("
-		);
-		assert_eq!(
-			escape_unescaped_parentheses("fetchAnthropicProvider()").as_ref(),
-			r"fetchAnthropicProvider\(\)"
-		);
-	}
-
-	#[test]
-	fn invalid_regex_falls_back_to_literal() {
-		// Patterns that are not valid regex syntax (unclosed class, dangling
-		// quantifier, stray `)`) must degrade to a literal search rather than
-		// erroring.
-		for (pattern, hay, miss) in [
-			("foo[bar", &b"x foo[bar y"[..], &b"foobar"[..]),
-			("+++", &b"a+++b"[..], &b"ab"[..]),
-			("fail)", &b"(1 fail)"[..], &b"failure"[..]),
+	fn invalid_regex_falls_back_to_literal_and_names_why() {
+		// The fallback keeps `fetchProvider(`-style queries working, but the reason
+		// must come back so the caller can tell the pattern was not a regex.
+		for (pattern, reason, hay, miss) in [
+			("def (", "unclosed group", &b"def (x)"[..], &b"def x"[..]),
+			("([unclosed", "unclosed character class", &b"a ([unclosed b"[..], &b"unclosed"[..]),
+			("fail)", "unopened group", &b"(1 fail)"[..], &b"failure"[..]),
+			("foo[bar", "unclosed character class", &b"x foo[bar y"[..], &b"foobar"[..]),
+			("+++", "repetition operator missing expression", &b"a+++b"[..], &b"ab"[..]),
 		] {
-			let matcher = super::build_matcher(pattern, false, false)
+			let (matcher, why) = super::build_matcher_with_fallback(pattern, false, false)
 				.unwrap_or_else(|e| panic!("`{pattern}` should fall back to literal, got: {e}"));
+			let why = why.unwrap_or_else(|| panic!("`{pattern}` must report the fallback"));
+			assert!(why.contains(reason), "`{pattern}`: expected `{reason}`, got `{why}`");
+			assert!(!why.contains('\n'), "`{pattern}`: reason must be one line: {why}");
 			assert!(matcher.is_match(hay).unwrap(), "`{pattern}` should match {hay:?}");
 			assert!(!matcher.is_match(miss).unwrap(), "`{pattern}` should not match {miss:?}");
 		}
 	}
 
 	#[test]
-	fn stray_parenthesis_preserves_surrounding_regex() {
-		// The targeted retry escapes the stray `(` but keeps `.*` as a regex.
-		let matcher =
-			super::build_matcher("foo.*(bar", false, false).expect("retry with escaped paren");
-		assert!(matcher.is_match(b"fooXYZ(bar").unwrap());
-		assert!(!matcher.is_match(b"foobar").unwrap());
+	fn lookaround_syntax_error_reports_pcre2_reason() {
+		// Rust's engine only says "look-around not supported"; PCRE2 knows the
+		// real problem (here, the unclosed group).
+		let (_, why) = super::build_matcher_with_fallback("(?<=foo", false, false)
+			.unwrap_or_else(|e| panic!("should fall back to literal, got: {e}"));
+		let why = why.expect("fallback reason");
+		assert!(!why.contains("not supported"), "got `{why}`");
 	}
 
 	#[test]
 	fn valid_regex_is_not_escaped() {
 		// A parseable pattern stays a regex: `fo+` matches repeats, which the
-		// literal `fo+` never would.
-		let matcher = super::build_matcher("fo+", false, false).expect("valid regex");
+		// literal `fo+` never would, and no fallback is reported.
+		let (matcher, why) =
+			super::build_matcher_with_fallback("fo+", false, false).expect("valid regex");
+		assert_eq!(why, None);
 		assert!(matcher.is_match(b"foooo").unwrap());
 		assert!(!matcher.is_match(b"bar").unwrap());
 	}
@@ -3438,6 +3415,24 @@ mod tests {
 		assert_eq!(result.matches.len(), 1);
 		assert_eq!(result.matches[0].path, "kept.rs");
 		assert_eq!(result.matches[0].line, "needle kept");
+	}
+
+	#[cfg(unix)]
+	#[test]
+	fn grep_sync_reports_when_an_invalid_pattern_was_searched_literally() {
+		let root = TempDirGuard::new();
+		write_file(&root.path().join("a.py"), "def (x): pass\n");
+
+		let mut config = base_grep_config(root.path());
+		config.pattern = "def (".to_string();
+		let result = grep_sync(config, None, task::CancelToken::default()).expect("literal fallback");
+		assert_eq!(result.total_matches, 1);
+		assert_eq!(result.literal_fallback.as_deref(), Some("unclosed group"));
+
+		let mut config = base_grep_config(root.path());
+		config.pattern = "def .".to_string();
+		let result = grep_sync(config, None, task::CancelToken::default()).expect("valid regex");
+		assert_eq!(result.literal_fallback, None);
 	}
 
 	#[cfg(unix)]
@@ -3958,6 +3953,7 @@ mod tests {
 			limit_reached: limit_reached.then_some(true),
 			skipped_oversized: (skipped_oversized > 0)
 				.then(|| crate::utils::clamp_u32(skipped_oversized)),
+			literal_fallback: None,
 		}
 	}
 

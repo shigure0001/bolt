@@ -58,3 +58,56 @@ describe("read attachment URLs", () => {
 		);
 	});
 });
+
+describe("read missing-path hints", () => {
+	let testDir: string;
+	let tool: ReadTool;
+
+	beforeEach(() => {
+		testDir = fs.mkdtempSync(path.join(os.tmpdir(), "read-missing-"));
+		fs.mkdirSync(path.join(testDir, "src", "lib"), { recursive: true });
+		fs.writeFileSync(path.join(testDir, "src", "foo.tsx"), "x\n");
+		fs.writeFileSync(path.join(testDir, "src", "Bar.ts"), "x\n");
+		fs.writeFileSync(path.join(testDir, "src", "zzz-unrelated-name.md"), "x\n");
+		tool = new ReadTool({
+			cwd: testDir,
+			hasUI: false,
+			getSessionFile: () => null,
+			getSessionSpawns: () => "*",
+			settings: Settings.isolated(),
+		});
+	});
+
+	afterEach(() => {
+		removeSyncWithRetries(testDir);
+	});
+
+	async function readError(target: string): Promise<string> {
+		try {
+			await tool.execute("read-missing", { path: target });
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+		throw new Error(`read of ${target} unexpectedly succeeded`);
+	}
+
+	it("suggests same-stem and one-typo siblings for a mistyped file name", async () => {
+		expect(await readError("src/foo.ts")).toBe("Path 'src/foo.ts' not found. Did you mean: src/foo.tsx?");
+		expect(await readError("src/Baar.ts")).toBe("Path 'src/Baar.ts' not found. Did you mean: src/Bar.ts?");
+	});
+
+	it("names the missing directory and suggests a close sibling directory", async () => {
+		expect(await readError("src/lip/a.ts")).toBe(
+			"Path 'src/lip/a.ts' not found (directory 'src/lip' does not exist). Did you mean: src/lib/?",
+		);
+		expect(await readError("nope/deep/a.ts")).toBe(
+			"Path 'nope/deep/a.ts' not found (directory 'nope' does not exist)",
+		);
+	});
+
+	it("says the directory exists but holds nothing similar", async () => {
+		expect(await readError("src/qqqqqqqq.py")).toBe(
+			"Path 'src/qqqqqqqq.py' not found (nothing similarly named in 'src')",
+		);
+	});
+});

@@ -34,7 +34,6 @@ const DIFF_METADATA_PREFIXES: [&str; 15] = [
 const PATCH_WRAPPER_PREFIXES: [&str; 2] = ["*** Begin Patch", "*** End Patch"];
 const DEFAULT_ADDED_RUN_CONTEXT_LINES: usize = 2;
 const PREVIEW_ELISION_MARKER: &str = "…";
-const PREVIEW_GAP_ROW: &str = "";
 
 /// Rendered diff plus the 1-indexed first changed line in the new text.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -96,7 +95,9 @@ fn parse_source_row_line_number(row: &str) -> Option<u32> {
 	(parsed.prefix != DiffPrefix::Added).then_some(parsed.line_number)
 }
 
-fn normalize_diff_gap_rows(rows: &mut Vec<String>) {
+/// Drops redundant gap rows; a gap hiding exactly one source line shows that
+/// line instead, since a marker would cost as much and hide it.
+fn normalize_diff_gap_rows(rows: &mut Vec<String>, old_lines: &[&str]) {
 	let mut kept = Vec::with_capacity(rows.len());
 	for (index, row) in rows.iter().enumerate() {
 		if row != DIFF_GAP_ROW {
@@ -114,7 +115,15 @@ fn normalize_diff_gap_rows(rows: &mut Vec<String>) {
 			.iter()
 			.filter(|candidate| !candidate.is_empty())
 			.find_map(|candidate| parse_source_row_line_number(candidate));
-		if matches!((before, after), (Some(left), Some(right)) if right > left + 1) {
+		let (Some(left), Some(right)) = (before, after) else {
+			continue;
+		};
+		let hidden = left + 1;
+		if right == hidden + 1
+			&& let Some(text) = usize::try_from(hidden - 1).ok().and_then(|i| old_lines.get(i))
+		{
+			kept.push(format_numbered_diff_line(' ', hidden, text));
+		} else if right > hidden {
 			kept.push(String::new());
 		}
 	}
@@ -184,8 +193,8 @@ fn add_matching_bracket_context_rows(
 	new: &str,
 	source: &BlockContextSource<'_>,
 ) {
+	let old_lines = old.split('\n').collect::<Vec<_>>();
 	if !source.streaming {
-		let old_lines = old.split('\n').collect::<Vec<_>>();
 		let new_lines = new.split('\n').collect::<Vec<_>>();
 		let mut old_visible = Vec::new();
 		let mut new_visible = Vec::new();
@@ -237,7 +246,7 @@ fn add_matching_bracket_context_rows(
 		}
 		insert_bracket_context_rows(rows, context_rows.into_iter().collect());
 	}
-	normalize_diff_gap_rows(rows);
+	normalize_diff_gap_rows(rows, &old_lines);
 }
 
 /// Line diff of two texts, computed once and rendered in either format.
@@ -348,6 +357,8 @@ impl<'a> LineDiff<'a> {
 						new_line_number += 1;
 					}
 					if middle_skip > 0 {
+						// Normalized later into `…`, or into the hidden line when only one is skipped.
+						output.push(DIFF_GAP_ROW.to_owned());
 						old_line_number += u32::try_from(middle_skip).unwrap_or(u32::MAX);
 						new_line_number += u32::try_from(middle_skip).unwrap_or(u32::MAX);
 						for line in &lines_to_show[first_chunk_length..] {
@@ -654,11 +665,11 @@ pub struct CompactDiffOptions {
 }
 
 fn is_preview_separator(line: &str) -> bool {
-	line == PREVIEW_ELISION_MARKER || line == PREVIEW_GAP_ROW
+	line == PREVIEW_ELISION_MARKER
 }
 
 fn append_preview_line(output: &mut Vec<String>, line: &str) {
-	let normalized = if matches!(line, "..." | PREVIEW_ELISION_MARKER | "+…") {
+	let normalized = if matches!(line, "" | "..." | PREVIEW_ELISION_MARKER | "+…") {
 		PREVIEW_ELISION_MARKER
 	} else {
 		line
@@ -1262,7 +1273,9 @@ mod tests {
 				.any(|line| line.ends_with("|...") || line.ends_with("|…"))
 		);
 		let line_four = lines.iter().position(|line| *line == " 4|line 4").unwrap();
-		assert_eq!(lines[line_four + 1], " 16|line 16");
+		// The collapsed run leaves one gap row, rendered as `…` in previews.
+		assert_eq!(lines[line_four + 1], "");
+		assert_eq!(lines[line_four + 2], " 16|line 16");
 		assert!(lines.contains(&"-2|line 2"));
 		assert!(lines.contains(&"+2|line 2 changed"));
 		assert!(lines.contains(&"-18|line 18"));
@@ -1328,8 +1341,9 @@ mod tests {
 			.unwrap();
 		assert!(opener > closer);
 		assert_eq!(lines[closer - 1], "");
-		assert_eq!(lines[closer + 1], "");
-		assert_eq!(lines[opener - 1], "");
+		// A gap hiding one line shows that line instead of a gap row.
+		assert_eq!(lines[closer + 1], " 8|// spacer");
+		assert_eq!(opener, closer + 2);
 		assert_eq!(lines[opener + 1], "");
 		assert!(!lines.windows(2).any(|pair| pair == ["", ""]));
 		assert_ne!(lines.first(), Some(&""));
@@ -1479,7 +1493,7 @@ mod tests {
 			"\n 1|alpha\n\n-5|beta\n\n 9|gamma\n\n-12|omitted",
 			&CompactDiffOptions::default(),
 		);
-		assert_eq!(preview.preview, "1:alpha\n\n8:gamma");
+		assert_eq!(preview.preview, "1:alpha\n…\n8:gamma");
 		assert_eq!(preview.removed_lines, 2);
 	}
 

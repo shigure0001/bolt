@@ -1,1 +1,1 @@
-`agent://<id>`: a subagent's latest completed output (status and progress while it is still running). Nested agent IDs use dots; append `/key/index` to select part of a JSON result. Writing to it sends the agent a message; `agent://all` broadcasts.
+`agent://<id>`: a subagent's output (`/key` selects JSON fields); writing messages it, `agent://all` broadcasts.

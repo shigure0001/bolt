@@ -109,13 +109,20 @@ function keyFor(skill: Pick<Skill, "name" | "description">): string {
 		.digest("hex");
 }
 
-/** A deterministic, bounded routing hint while model compression is pending. */
+/**
+ * A deterministic, bounded routing hint while model compression is pending:
+ * the first sentence, else the longest prefix ending at a clause break (` — `,
+ * `; `, `: `, ` (`), else a word cut with `…`. Commas don't count: they
+ * usually split a list, and a cut there reads as a complete but wrong claim.
+ */
 export function previewSkillDescription(description: string): string {
 	const text = description.replace(/\s+/g, " ").trim();
 	if (text.length <= MAX_PREVIEW_CHARS) return text;
 	const boundary = text.slice(0, MAX_PREVIEW_CHARS - 1);
 	const sentence = boundary.match(/^.*?[.!?](?=\s|$)/)?.[0];
-	if (sentence && sentence.length >= 40) return sentence;
+	if (sentence && sentence.length >= 20) return sentence;
+	const clauseEnd = Math.max(...[" — ", " - ", "; ", ": ", " ("].map(mark => boundary.lastIndexOf(mark)));
+	if (clauseEnd >= 30) return boundary.slice(0, clauseEnd).trimEnd();
 	const word = boundary.slice(0, boundary.lastIndexOf(" ")).trimEnd();
 	return `${word || boundary}…`;
 }

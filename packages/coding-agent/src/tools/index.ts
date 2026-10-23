@@ -77,6 +77,8 @@ import { WriteTool } from "./write";
 import { WaitTool } from "./wait";
 import { isMountableUnderXdev, resolveXdevTool, type XdevState } from "./xdev";
 import { YieldTool } from "./yield";
+import type { DeferredToolEntry, DeferredToolLoadResult } from "./deferred-tools";
+import { LoadToolsTool } from "./load-tools";
 
 import {
 	cfgAskEnabled,
@@ -91,6 +93,7 @@ import {
 	cfgLaunchEnabled,
 	cfgSecurityEnabled,
 	cfgTodoEnabled,
+	cfgToolsDeferred,
 	cfgToolsXdev,
 	cfgWebSearchEnabled,
 } from "./settings";
@@ -373,6 +376,10 @@ export interface ToolSession {
 	isToolActive?: (name: string) => boolean;
 	/** Update the active built-in tool predicate when a session changes tools mid-run. */
 	setActiveToolNames?: (names: Iterable<string>) => void;
+	/** Deferred tools the model can activate with `load_tools` (registered, not yet active). */
+	getDeferredTools?: () => DeferredToolEntry[];
+	/** Activate deferred tools by name for the rest of the session. */
+	loadDeferredTools?: (names: string[]) => Promise<DeferredToolLoadResult>;
 	/** Canonical map containing every registered tool exactly once. */
 	toolRegistry?: Map<string, Tool>;
 	/** `xd://` presentation state backed by {@link toolRegistry}. */
@@ -586,6 +593,7 @@ export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 	reflect: MemoryReflectTool.createIf,
 	learn: LearnTool.createIf,
 	manage_skill: ManageSkillTool.createIf,
+	load_tools: s => new LoadToolsTool(s),
 };
 
 export const HIDDEN_TOOLS: Record<HiddenToolName, ToolFactory> = {
@@ -793,6 +801,7 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		if (name === "task") {
 			return canSpawnAtDepth(cfgTaskMaxRecursionDepth.get(session.settings), session.taskDepth ?? 0);
 		}
+		if (name === "load_tools") return cfgToolsDeferred.get(session.settings).length > 0;
 		return true;
 	};
 	if (includeYield && requestedTools && !requestedTools.includes("yield")) {

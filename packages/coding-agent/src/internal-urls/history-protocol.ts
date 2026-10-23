@@ -44,6 +44,7 @@ import type {
 	InternalUrl,
 	ProtocolHandler,
 	ResolveContext,
+	SchemeHost,
 	SchemeSpec,
 	UrlCompletion,
 } from "./types";
@@ -314,8 +315,9 @@ export class HistoryProtocolHandler implements ProtocolHandler {
 	readonly scheme = "history";
 	readonly spec: SchemeSpec = { backing: "virtual", selectors: "lines", immutable: false, linkable: true };
 
-	promptDoc(): string {
-		return historyPromptDoc.trim();
+	/** Advertised only while `task` is active. */
+	promptDoc(host: SchemeHost): string | undefined {
+		return host.subagentsAvailable ? historyPromptDoc.trim() : undefined;
 	}
 
 	/**

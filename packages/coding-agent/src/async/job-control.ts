@@ -301,12 +301,9 @@ export function buildJobResult(
 		for (const j of completed) {
 			lines.push(`### ${j.id} [${j.type}] — ${j.status}`);
 			lines.push(`Label: ${j.label}`);
-			if (j.status !== "cancelled") {
-				lines.push(
-					alreadyConsumed.has(j.id)
-						? "Delivery: already delivered or recovered."
-						: "Delivery: not auto-delivered; recovered by this snapshot.",
-				);
+			// A result shown here for the first time needs no delivery note; only flag repeats.
+			if (j.status !== "cancelled" && alreadyConsumed.has(j.id)) {
+				lines.push("Already delivered earlier; shown again here.");
 			}
 			if (j.resultText) {
 				lines.push("```", j.resultText, "```");

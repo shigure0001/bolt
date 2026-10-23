@@ -67,7 +67,7 @@ describe("settings-gated tools in a live session", () => {
 		await session.runToolRegistryMutation(async () => {});
 	}
 
-	const GREP_POLICY = "Search file contents with `grep`";
+	const GREP_POLICY = "`grep` searches contents";
 
 	it("removes and restores grep in the request tools and system prompt", async () => {
 		const settings = Settings.isolated({});

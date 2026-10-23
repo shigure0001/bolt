@@ -34,7 +34,6 @@ import readNoteTemplate from "../prompts/system/snapcompact-read-note.md" with {
 import systemFramesNote from "../prompts/system/snapcompact-system-frames-note.md" with { type: "text" };
 import systemStub from "../prompts/system/snapcompact-system-stub.md" with { type: "text" };
 import toolResultNote from "../prompts/system/snapcompact-toolresult-note.md" with { type: "text" };
-import { BRACKET_CONTEXT_ELLIPSIS } from "../tools/read-format";
 
 export type SnapcompactSystemPromptMode = "none" | "agents-md" | "all";
 
@@ -85,12 +84,12 @@ const READ_ROW_PREFIX = `\\d+(?:-\\d+)?${READ_ROW_SEP}`;
 /**
  * Fallback for a read without `rowPrefixes` metadata (results from older
  * sessions, read paths that do not record it): its first two rows, after the
- * notice when no header lifted it, an elision row possibly between them. A raw
- * read never prefixes rows, but its lines can look like them (`200:  OK`), so
- * numbering is proven by the second row continuing the count.
+ * notice when no header lifted it. A raw read never prefixes rows, but its
+ * lines can look like them (`200:  OK`), so numbering is proven by the second
+ * row continuing the count.
  */
 const READ_FIRST_ROWS = new RegExp(
-	`^${READ_NOTICE}(\\d+)(?:-(\\d+))?${READ_ROW_SEP}[^\\n]*\\n(${RegExp.escape(BRACKET_CONTEXT_ELLIPSIS)}\\n)?(\\d+)(?:-\\d+)?${READ_ROW_SEP}`,
+	`^${READ_NOTICE}(\\d+)(?:-(\\d+))?${READ_ROW_SEP}[^\\n]*\\n(\\d+)(?:-\\d+)?${READ_ROW_SEP}`,
 );
 
 /**
@@ -103,9 +102,7 @@ function isNumberedRead(header: string, rest: string, rowPrefixes: boolean | und
 	if (header) return true;
 	const rows = READ_FIRST_ROWS.exec(rest);
 	if (!rows) return false;
-	const last = Number(rows[2] ?? rows[1]);
-	const next = Number(rows[4]);
-	return rows[3] ? next > last + 1 : next === last + 1;
+	return Number(rows[3]) === Number(rows[2] ?? rows[1]) + 1;
 }
 
 /** A count bracket as the encoding draws it, or its `[0]` no-indentation marker. */

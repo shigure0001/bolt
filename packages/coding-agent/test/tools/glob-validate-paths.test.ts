@@ -155,8 +155,8 @@ describe("delimited path expansion", () => {
 });
 
 describe("globToolRenderer", () => {
-	it("accepts a single string paths value before validation", async () => {
-		const args = { paths: "src/**/*.ts" };
+	it("shows the pattern argument in call and result views", async () => {
+		const args = { pattern: "src/**/*.ts" };
 		const renderings = [
 			globToolRenderer.renderCall(args, renderOptions, uiTheme),
 			globToolRenderer.renderResult(

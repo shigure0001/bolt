@@ -991,6 +991,27 @@ function decodeAnthropicToolName(name: string, isOAuthToken: boolean, escapeBuil
 	return name;
 }
 
+/**
+ * Rewrites backticked mentions of tools whose wire name differs (`` `read` `` →
+ * `` `_read` ``) so prompt text names the tools the model actually sees. Only a
+ * mention followed by a closing backtick, whitespace or `(` counts, so longer
+ * identifiers and dotted settings keep their spelling.
+ */
+function wireToolMentionRewriter(
+	tools: readonly Tool[] | undefined,
+	encode: (name: string) => string,
+): ((text: string) => string) | undefined {
+	const renames = new Map<string, string>();
+	for (const tool of tools ?? []) {
+		const wire = encode(tool.name);
+		if (wire !== tool.name) renames.set(tool.name, wire);
+	}
+	if (renames.size === 0) return undefined;
+	const names = [...renames.keys()].map(name => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+	const pattern = new RegExp(`\`(${names.join("|")})(?=[\`\\s(])`, "g");
+	return text => text.replace(pattern, (_match, name: string) => `\`${renames.get(name)}`);
+}
+
 type AnthropicImageSource =
 	| { type: "base64"; media_type: AnthropicImageMediaType; data: string }
 	| { type: "url"; url: string }
@@ -4193,6 +4214,15 @@ export function buildAnthropicSystemBlocks(
 	return blocks.length > 0 ? blocks : undefined;
 }
 
+/**
+ * OAuth requests open with a provider-required Claude Code identity header;
+ * a harness prompt that follows describes its own agent, so one line ties the
+ * two together instead of leaving two competing identities.
+ */
+function identityBridgeNotes(identityHeader: boolean): string[] {
+	return identityHeader ? ["In this session, Claude Code runs inside the harness described below."] : [];
+}
+
 export function normalizeExtraBetas(betas?: string[] | string): string[] {
 	if (!betas) return [];
 	const raw = Array.isArray(betas) ? betas : betas.split(",");
@@ -5401,8 +5431,18 @@ function buildParams(
 	const firstUserMessageText = shouldInjectClaudeCodeInstruction
 		? extractClaudeCodeFirstWireUserMessageText(context.messages)
 		: "";
-	const systemBlocks = buildAnthropicSystemBlocks(context.systemPrompt, {
+	const prefixesToolNames = (isOAuthToken || model.compat.escapeBuiltinToolNames) && (context.tools?.length ?? 0) > 0;
+	const rewriteToolMentions = prefixesToolNames
+		? wireToolMentionRewriter(context.tools, name =>
+				encodeAnthropicToolName(name, isOAuthToken, model.compat.escapeBuiltinToolNames, useUmansGatewayWebSearch),
+			)
+		: undefined;
+	const systemPrompt = rewriteToolMentions ? context.systemPrompt?.map(rewriteToolMentions) : context.systemPrompt;
+	const systemBlocks = buildAnthropicSystemBlocks(systemPrompt, {
 		includeClaudeCodeInstruction: shouldInjectClaudeCodeInstruction,
+		extraInstructions: identityBridgeNotes(
+			shouldInjectClaudeCodeInstruction && normalizeSystemPrompts(systemPrompt).length > 0,
+		),
 		firstUserMessageText,
 		cacheControl,
 		dropCacheControl,
@@ -5432,6 +5472,13 @@ function buildParams(
 			model.compat.escapeBuiltinToolNames,
 			useUmansGatewayWebSearch,
 		);
+		if (rewriteToolMentions) {
+			for (const tool of tools) {
+				if ("description" in tool && typeof tool.description === "string") {
+					tool.description = rewriteToolMentions(tool.description);
+				}
+			}
+		}
 	} else if (isOAuthToken) {
 		tools = [];
 	}

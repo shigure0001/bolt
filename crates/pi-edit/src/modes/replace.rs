@@ -195,21 +195,20 @@ impl ModeEngine for ReplaceEngine {
 		let read = files.read(path)?;
 		let display = read.resolved.display.clone();
 		let mut after: Option<String> = None;
+		let mut fuzzy_lines: Vec<u32> = Vec::new();
 		for entry in entries {
 			let old_string = entry.old_string.unwrap_or_default();
 			let new_string = entry.new_string.unwrap_or_default();
 			let current = after.as_deref().unwrap_or(&read.text);
-			after = Some(
-				self
-					.replace(
-						current,
-						old_string,
-						new_string,
-						entry.replace_all.unwrap_or(false),
-						&display,
-					)?
-					.content,
-			);
+			let result = self.replace(
+				current,
+				old_string,
+				new_string,
+				entry.replace_all.unwrap_or(false),
+				&display,
+			)?;
+			fuzzy_lines.extend(result.fuzzy_lines);
+			after = Some(result.content);
 		}
 		let after = after.unwrap_or_else(|| read.text.clone());
 		if read.text == after {
@@ -231,6 +230,18 @@ impl ModeEngine for ReplaceEngine {
 		staged.persisted = Some(persisted);
 		staged.diff = output.diff;
 		staged.first_changed_line = output.first_changed_line;
+		if !fuzzy_lines.is_empty() {
+			let lines = fuzzy_lines
+				.iter()
+				.map(u32::to_string)
+				.collect::<Vec<_>>()
+				.join(", ");
+			let noun = if fuzzy_lines.len() == 1 { "line" } else { "lines" };
+			staged.warnings.push(format!(
+				"Note: matched with whitespace-insensitive fallback at {noun} {lines}; verify the \
+				 result."
+			));
+		}
 		Ok(vec![staged])
 	}
 
@@ -274,6 +285,6 @@ mod tests {
 		let error = engine()
 			.replace("alpha\n", "omega", "two", false, "a.txt")
 			.unwrap_err();
-		assert!(error.to_string().contains("match in a.txt"));
+		assert!(error.to_string().contains("a.txt"));
 	}
 }

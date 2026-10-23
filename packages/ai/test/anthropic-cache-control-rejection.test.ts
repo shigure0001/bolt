@@ -33,6 +33,7 @@ import {
 import { AnthropicMessagesClient, type AnthropicMessagesClientLike } from "@oh-my-pi/pi-ai/providers/anthropic-client";
 import type { CacheControlEphemeral, MessageCreateParams } from "@oh-my-pi/pi-ai/providers/anthropic-wire";
 import type { AssistantMessage, Context, FetchImpl, Model, ProviderSessionState } from "@oh-my-pi/pi-ai/types";
+import { decodeRequestBodyBytes } from "@oh-my-pi/pi-ai/utils/request-body";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { withOfficialAnthropicEndpoint } from "./helpers";
 
@@ -151,11 +152,15 @@ interface Capture {
 
 /** Records one request's body and beta header, and hands the body back. */
 function recordRequest(capture: Capture, input: Request | URL | string, init: RequestInit | undefined) {
+	const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 	const raw = init?.body;
-	const text = raw instanceof Uint8Array ? new TextDecoder().decode(raw) : String(raw ?? "{}");
+	// Bodies over the compression threshold arrive gzip/zstd-encoded, as the server would see them.
+	const text =
+		raw instanceof Uint8Array
+			? new TextDecoder().decode(decodeRequestBodyBytes(raw, headers.get("content-encoding")))
+			: String(raw ?? "{}");
 	const body = JSON.parse(text) as MessageCreateParams;
 	capture.bodies.push(body);
-	const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
 	capture.betaHeaders.push(headers.get("anthropic-beta") ?? "");
 	return body;
 }

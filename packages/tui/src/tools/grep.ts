@@ -81,6 +81,8 @@ interface GrepRenderArgs {
 	case?: boolean;
 	gitignore?: boolean;
 	skip?: number;
+	context?: number;
+	mode?: string;
 }
 
 const COLLAPSED_TEXT_LIMIT = PREVIEW_LIMITS.COLLAPSED_LINES * 2;
@@ -358,6 +360,8 @@ export const grepToolRenderer = {
 		if (args.case === false) meta.push("case:insensitive");
 		if (args.gitignore === false) meta.push("gitignore:false");
 		if (args.skip !== undefined && args.skip > 0) meta.push(`skip:${args.skip}`);
+		if (args.mode && args.mode !== "content") meta.push(`mode:${args.mode}`);
+		if (args.context !== undefined) meta.push(`context:${args.context}`);
 
 		const text = renderStatusLine(
 			{ icon: "pending", title: "Grep", titleColor: "toolTitle", description: args.pattern || "?", meta },
@@ -573,6 +577,8 @@ function grepNativeHead(args: GrepRenderArgs | undefined, meta?: readonly string
 		if (args.case === false) parts.push("case:insensitive");
 		if (args.gitignore === false) parts.push("gitignore:false");
 		if (args.skip !== undefined && args.skip > 0) parts.push(`skip:${args.skip}`);
+		if (args.mode && args.mode !== "content") parts.push(`mode:${args.mode}`);
+		if (args.context !== undefined) parts.push(`context:${args.context}`);
 	}
 	return { title: "Grep", target: args?.pattern || "?", targetKind: "pattern", meta: parts };
 }

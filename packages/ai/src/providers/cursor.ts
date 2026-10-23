@@ -3137,7 +3137,7 @@ async function handleExecServerMessage(
 			const args = execMsg.message.value;
 			const toolCallId = crypto.randomUUID();
 			synthesizeCursorExecToolCall(output, stream, state, toolCallId, "glob", {
-				path: piJoinPath(args.path, args.pattern),
+				pattern: piJoinPath(args.path, args.pattern),
 				limit: piLimit(args.limit),
 			});
 			const { execResult } = await resolveExecHandler(

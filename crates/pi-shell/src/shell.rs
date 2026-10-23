@@ -179,6 +179,22 @@ pub type ShellExecuteResult = ShellRunResult;
 /// [`Shell::pids`] can read it while the run is in flight.
 type ActiveSpawns = Arc<parking_lot::Mutex<Option<Arc<process::SpawnRegistry>>>>;
 
+/// Exported variables as of the session's last completed run.
+type ExportedEnv = Arc<parking_lot::Mutex<Option<HashMap<String, String>>>>;
+
+/// Variables the shell maintains itself; a shell seeded from a snapshot sets
+/// its own.
+const SHELL_MANAGED_VARS: &[&str] = &["PWD", "OLDPWD", "SHLVL", "_"];
+
+fn exported_vars(shell: &BrushShell) -> HashMap<String, String> {
+	shell
+		.env()
+		.iter_exported()
+		.filter(|(name, var)| var.value().is_set() && !SHELL_MANAGED_VARS.contains(&name.as_str()))
+		.map(|(name, var)| (name.clone(), var.value().to_cow_str(shell).into_owned()))
+		.collect()
+}
+
 /// Publishes a run's registry in [`ActiveSpawns`] for as long as it lives;
 /// dropping it (normal return, error, cancellation, or task abort) clears the
 /// slot.
@@ -202,6 +218,7 @@ pub struct Shell {
 	abort_state:   ShellAbortState,
 	config:        ShellConfig,
 	active_spawns: ActiveSpawns,
+	exported_env:  ExportedEnv,
 }
 
 impl Shell {
@@ -232,6 +249,7 @@ impl Shell {
 			abort_state: ShellAbortState::default(),
 			config,
 			active_spawns: ActiveSpawns::default(),
+			exported_env: ExportedEnv::default(),
 		}
 	}
 
@@ -253,12 +271,21 @@ impl Shell {
 			self.session.clone(),
 			self.abort_state.clone(),
 			self.active_spawns.clone(),
+			self.exported_env.clone(),
 			self.config.clone(),
 			run_config,
 			on_chunk,
 			&mut cancel_token,
 		)
 		.await
+	}
+
+	/// Exported variables as of the last completed run, or `None` before one
+	/// finished. Never blocks on a running command, so a caller that finds the
+	/// session busy can seed a separate shell with the session's exports.
+	#[must_use]
+	pub fn exported_env(&self) -> Option<HashMap<String, String>> {
+		self.exported_env.lock().clone()
 	}
 
 	pub async fn abort(&self) {
@@ -409,6 +436,7 @@ async fn run_shell_session(
 	session: Arc<TokioMutex<Option<ShellSessionCore>>>,
 	abort_state: ShellAbortState,
 	active_spawns: ActiveSpawns,
+	exported_env: ExportedEnv,
 	config: ShellConfig,
 	run_config: ShellRunConfig,
 	on_chunk: Option<Sender<String>>,
@@ -450,7 +478,12 @@ async fn run_shell_session(
 				),
 			};
 			abort_state.set(at).await;
-			run_shell_command(session, &run_config, on_chunk, tokio_cancel, spawn_registry).await
+			let result =
+				run_shell_command(session, &run_config, on_chunk, tokio_cancel, spawn_registry).await;
+			if result.is_ok() {
+				*exported_env.lock() = Some(exported_vars(&session.shell));
+			}
+			result
 		}
 	});
 
@@ -6670,6 +6703,9 @@ replace = [{ pattern = "^.+$", replacement = "PWD" }]
 		};
 
 		let expected = format!("{}\n", tmp_dir.display());
+		// `pwd` prints POSIX separators on Windows.
+		#[cfg(windows)]
+		let expected = expected.replace('\\', "/");
 		let (result, output) =
 			run_command_capture("cd tmp && pwd", Some(&root), Some(minimizer), CancelToken::default())
 				.await;

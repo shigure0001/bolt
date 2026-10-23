@@ -59,13 +59,20 @@ describe("ssh:// tools require exec-tier approval", () => {
 
 	it.each([
 		["find", (session: ToolSession) => new FindTool(session)],
-		["glob", (session: ToolSession) => new GlobTool(session)],
 		["ast_grep", (session: ToolSession) => new AstGrepTool(session)],
 	])("%s: an ssh:// path is exec, local paths stay read", (_name, create) => {
 		const tool = create(createTestToolSession(os.tmpdir()));
 		expect(callApproval(tool, { path: "ssh://icaro/etc" })).toBe("exec");
 		expect(callApproval(tool, { path: "src,ssh://icaro/etc" })).toBe("exec");
 		expect(callApproval(tool, { path: "src" })).toBe("read");
+		expect(callApproval(tool, {})).toBe("read");
+	});
+
+	it("glob: an ssh:// pattern is exec, local patterns stay read", () => {
+		const tool = new GlobTool(createTestToolSession(os.tmpdir()));
+		expect(callApproval(tool, { pattern: "ssh://icaro/etc" })).toBe("exec");
+		expect(callApproval(tool, { pattern: "src,ssh://icaro/etc" })).toBe("exec");
+		expect(callApproval(tool, { pattern: "src" })).toBe("read");
 		expect(callApproval(tool, {})).toBe("read");
 	});
 

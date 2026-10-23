@@ -1,1 +1,1 @@
-`cfg://`: bolt's own settings. Use only when the user asks about or wants to change them. `cfg://<namespace>` lists a namespace; `cfg://<namespace>/<key>` shows value, type, default and source. Writing sets the value for this session only and needs the user's approval (if they don't answer, the write fails; move on). Writing `…/save` persists it; after a session-only write, ask whether to save.
+`cfg://<ns>/<key>`: settings, only when the user asks (writes need approval).

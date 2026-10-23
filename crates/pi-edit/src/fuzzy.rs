@@ -24,8 +24,10 @@ pub const CONTEXT_FUZZY_THRESHOLD: f64 = 0.8;
 pub const PARTIAL_MATCH_MIN_LENGTH: usize = 6;
 /// Minimum pattern-to-line ratio for ambiguous substring matching.
 pub const PARTIAL_MATCH_MIN_RATIO: f64 = 0.3;
-/// Number of surrounding lines in occurrence previews.
-pub const OCCURRENCE_PREVIEW_CONTEXT: usize = 5;
+/// Context rows shown before and after each occurrence in previews.
+pub const OCCURRENCE_PREVIEW_CONTEXT: usize = 1;
+/// Matched rows shown per occurrence before its tail is elided.
+pub const OCCURRENCE_PREVIEW_MAX_MATCH_LINES: usize = 3;
 /// Maximum displayed line length in occurrence previews.
 pub const OCCURRENCE_PREVIEW_MAX_LEN: usize = 80;
 /// Occurrence previews and indices recorded before truncation.
@@ -55,7 +57,9 @@ pub struct MatchOutcome {
 	pub closest:             Option<FuzzyMatch>,
 	pub occurrences:         Option<usize>,
 	pub occurrence_lines:    Option<Vec<u32>>,
-	pub occurrence_previews: Option<Vec<String>>,
+	/// Marked `N|` rows around the recorded occurrences (see
+	/// [`format_occurrence_preview`]).
+	pub occurrence_preview:  Option<String>,
 	pub fuzzy_matches:       Option<usize>,
 	pub dominant_fuzzy:      Option<bool>,
 }
@@ -421,35 +425,62 @@ pub fn similarity(a: &str, b: &str) -> f64 {
 	1.0 - levenshtein_chars(&a_chars, &b_chars) as f64 / max_len as f64
 }
 
-fn format_preview_window(lines: &[&str], center_index: usize) -> String {
-	let start = center_index.saturating_sub(OCCURRENCE_PREVIEW_CONTEXT);
-	let end = lines
-		.len()
-		.min(center_index + OCCURRENCE_PREVIEW_CONTEXT + 1);
-	lines[start..end]
-		.iter()
-		.enumerate()
-		.map(|(offset, line)| {
-			let truncated = if utf16_len(line) > OCCURRENCE_PREVIEW_MAX_LEN {
-				let mut units = 0;
-				let mut text = String::new();
-				for ch in line.chars() {
-					let width = ch.len_utf16();
-					if units + width > OCCURRENCE_PREVIEW_MAX_LEN - 1 {
-						break;
-					}
-					text.push(ch);
-					units += width;
-				}
-				text.push('…');
-				text
+fn truncate_preview_line(line: &str) -> String {
+	if utf16_len(line) <= OCCURRENCE_PREVIEW_MAX_LEN {
+		return line.to_owned();
+	}
+	let mut units = 0;
+	let mut text = String::new();
+	for ch in line.chars() {
+		let width = ch.len_utf16();
+		if units + width > OCCURRENCE_PREVIEW_MAX_LEN - 1 {
+			break;
+		}
+		text.push(ch);
+		units += width;
+	}
+	text.push('…');
+	text
+}
+
+/// `read`-style `N|text` rows around each match start line (1-indexed).
+/// Matched rows carry a `>` marker, others a space. Windows that touch merge,
+/// so no row repeats; disjoint windows are separated by `...`. Matches longer
+/// than [`OCCURRENCE_PREVIEW_MAX_MATCH_LINES`] rows show only their head.
+fn format_occurrence_preview(lines: &[&str], match_lines: &[u32], span: usize) -> String {
+	let shown = span.min(OCCURRENCE_PREVIEW_MAX_MATCH_LINES);
+	let tail_context = if shown == span { OCCURRENCE_PREVIEW_CONTEXT } else { 0 };
+	// Half-open `[start, end)` row-index windows plus the matched rows inside.
+	let mut windows: Vec<(usize, usize)> = Vec::new();
+	let mut matched: Vec<(usize, usize)> = Vec::new();
+	for &line in match_lines {
+		let first = line as usize - 1;
+		let last = (first + shown).min(lines.len());
+		matched.push((first, last));
+		let start = first.saturating_sub(OCCURRENCE_PREVIEW_CONTEXT);
+		let end = (last + tail_context).min(lines.len());
+		match windows.last_mut() {
+			Some(previous) if start <= previous.1 => previous.1 = previous.1.max(end),
+			_ => windows.push((start, end)),
+		}
+	}
+	// Same shape as grep output: `*` marks matched rows, numbers right-aligned.
+	let width = windows.last().map_or(1, |&(_, end)| end.to_string().len());
+	let mut rows: Vec<String> = Vec::new();
+	for (index, &(start, end)) in windows.iter().enumerate() {
+		if index > 0 {
+			rows.push("...".to_owned());
+		}
+		for row in start..end {
+			let marker = if matched.iter().any(|&(first, last)| (first..last).contains(&row)) {
+				'*'
 			} else {
-				(*line).to_owned()
+				' '
 			};
-			format!("  {} | {truncated}", start + offset + 1)
-		})
-		.collect::<Vec<_>>()
-		.join("\n")
+			rows.push(format!("{marker}{:>width$}|{}", row + 1, truncate_preview_line(lines[row])));
+		}
+	}
+	rows.join("\n")
 }
 
 fn overlaps_excluded(start: usize, end: usize, ranges: &[ExcludedRange]) -> bool {
@@ -485,21 +516,22 @@ fn find_exact_match_outcome(
 	let first_index = first_index?;
 	if occurrences > 1 {
 		let content_lines: Vec<&str> = content.split('\n').collect();
-		let mut occurrence_lines = Vec::with_capacity(recorded_indices.len());
-		let mut occurrence_previews = Vec::with_capacity(recorded_indices.len());
-		for index in recorded_indices {
-			let line_number = content[..index]
-				.bytes()
-				.filter(|byte| *byte == b'\n')
-				.count()
-				+ 1;
-			occurrence_lines.push(line_number as u32);
-			occurrence_previews.push(format_preview_window(&content_lines, line_number - 1));
-		}
+		let span = target.trim_end_matches('\n').matches('\n').count() + 1;
+		let occurrence_lines: Vec<u32> = recorded_indices
+			.iter()
+			.map(|&index| {
+				(content[..index]
+					.bytes()
+					.filter(|byte| *byte == b'\n')
+					.count()
+					+ 1) as u32
+			})
+			.collect();
+		let occurrence_preview = format_occurrence_preview(&content_lines, &occurrence_lines, span);
 		return Some(MatchOutcome {
 			occurrences: Some(occurrences),
 			occurrence_lines: Some(occurrence_lines),
-			occurrence_previews: Some(occurrence_previews),
+			occurrence_preview: Some(occurrence_preview),
 			..MatchOutcome::default()
 		});
 	}
@@ -721,6 +753,19 @@ pub fn find_match(content: &str, target: &str, options: &FindMatchOptions<'_>) -
 		fuzzy_matches: Some(result.above_threshold_count),
 		..MatchOutcome::default()
 	}
+}
+
+/// Line-by-line equality after trimming, folding quotes/dashes and dropping
+/// all spaces and tabs.
+fn same_modulo_whitespace(actual: &str, target: &str) -> bool {
+	let strip = |line: &str| normalize_for_fuzzy(line).replace(' ', "");
+	let actual_lines: Vec<&str> = actual.split('\n').collect();
+	let target_lines: Vec<&str> = target.split('\n').collect();
+	actual_lines.len() == target_lines.len()
+		&& actual_lines
+			.iter()
+			.zip(&target_lines)
+			.all(|(actual, target)| strip(actual) == strip(target))
 }
 
 fn matches_at<T>(
@@ -1179,7 +1224,8 @@ fn first_different_line<'a>(old_lines: &'a [&str], new_lines: &'a [&str]) -> (&'
 	(old_lines.first().copied().unwrap_or(""), new_lines.first().copied().unwrap_or(""))
 }
 
-/// Format `EditMatchError.formatMessage` byte-for-byte.
+/// Message for an `old_string` that matched nowhere exactly: where the closest
+/// text sits, its first differing line beside the caller's, and the fix.
 pub fn format_match_error(
 	path: &str,
 	search_text: &str,
@@ -1190,7 +1236,7 @@ pub fn format_match_error(
 ) -> String {
 	let Some(closest) = closest else {
 		return if allow_fuzzy {
-			format!("Could not find a close enough match in {path}.")
+			format!("No exact match for old_string in {path}, and no similar text; read the file again.")
 		} else {
 			format!(
 				"Could not find the exact text in {path}. The old text must match exactly including \
@@ -1199,18 +1245,20 @@ pub fn format_match_error(
 		};
 	};
 	let similarity_percent = (closest.confidence * 100.0).round() as i64;
-	let threshold_percent = (threshold * 100.0).round() as i64;
 	let search_lines: Vec<&str> = search_text.split('\n').collect();
 	let actual_lines: Vec<&str> = closest.actual_text.split('\n').collect();
 	let (old_line, new_line) = first_different_line(&search_lines, &actual_lines);
-	let hint = if allow_fuzzy {
-		if fuzzy_matches.is_some_and(|count| count > 1) {
-			format!(
-				"Found {} high-confidence matches. Provide more context to make it unique.",
-				fuzzy_matches.unwrap_or(0)
-			)
+	let hint = if has_line_number_prefixes(&search_lines) {
+		"old_string starts its lines with `N|` numbers copied from read output; remove them.".to_owned()
+	} else if allow_fuzzy {
+		if let Some(count) = fuzzy_matches.filter(|count| *count > 1) {
+			format!("{count} places match this closely; add surrounding lines so old_string picks one.")
+		} else if closest.confidence >= threshold {
+			"It differs by more than whitespace, so nothing was applied; copy old_string exactly from \
+			 the file (read it again if it may have changed)."
+				.to_owned()
 		} else {
-			format!("Closest match was below the {threshold_percent}% similarity threshold.")
+			"Copy old_string exactly from the file; read it again if it may have changed.".to_owned()
 		}
 	} else {
 		"Fuzzy matching is disabled. Enable 'Edit fuzzy match' in settings to accept high-confidence \
@@ -1218,40 +1266,66 @@ pub fn format_match_error(
 			.to_owned()
 	};
 	let heading = if allow_fuzzy {
-		format!("Could not find a close enough match in {path}.")
+		format!("No exact match for old_string in {path}.")
 	} else {
 		format!("Could not find the exact text in {path}.")
 	};
 	format!(
-		"{heading}\n\nClosest match ({similarity_percent}% similar) at line {}:\n  - {old_line}\n  \
-		 + {new_line}\n{hint}",
+		"{heading}\n\nClosest text starts at line {} ({similarity_percent}% similar); first differing \
+		 line:\n  old_string: {old_line}\n  file:       {new_line}\n{hint}",
 		closest.start_line
 	)
 }
 
-/// Format `formatOccurrenceError` byte-for-byte.
+/// Every non-blank line starts with a `N|` / `N:` display prefix.
+fn has_line_number_prefixes(lines: &[&str]) -> bool {
+	let mut seen = false;
+	for line in lines.iter().filter(|line| !line.trim().is_empty()) {
+		let trimmed = line.trim_start_matches([' ', '>', '*', '+', '-']);
+		let digits = trimmed.bytes().take_while(u8::is_ascii_digit).count();
+		if digits == 0 || !matches!(trimmed.as_bytes().get(digits), Some(b'|' | b':')) {
+			return false;
+		}
+		seen = true;
+	}
+	seen
+}
+
+/// Occurrence error: matched start lines plus one merged, marked preview.
 pub fn format_occurrence_error(path: &str, outcome: &MatchOutcome) -> String {
 	let occurrences = outcome.occurrences.unwrap_or(0);
-	let previews = outcome
-		.occurrence_previews
-		.as_ref()
-		.map_or_else(String::new, |items| items.join("\n\n"));
-	let more = if occurrences > MAX_RECORDED_MATCHES {
-		format!(" (showing first {MAX_RECORDED_MATCHES} of {occurrences})")
+	let lines = outcome
+		.occurrence_lines
+		.as_deref()
+		.unwrap_or_default()
+		.iter()
+		.map(u32::to_string)
+		.collect::<Vec<_>>()
+		.join(", ");
+	let listed = if occurrences > MAX_RECORDED_MATCHES {
+		format!("first {MAX_RECORDED_MATCHES} at lines {lines}")
 	} else {
-		String::new()
+		format!("lines {lines}")
 	};
-	format!(
-		"Found {occurrences} occurrences in {path}{more}:\n\n{previews}\n\nAdd more context lines \
-		 to disambiguate."
-	)
+	let mut message = format!(
+		"Found {occurrences} occurrences in {path} ({listed}); include more surrounding lines in \
+		 old_string to make it unique."
+	);
+	if let Some(preview) = &outcome.occurrence_preview {
+		message.push('\n');
+		message.push_str(preview);
+	}
+	message
 }
 
 /// Result of [`replace_text`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReplaceResult {
-	pub content: String,
-	pub count:   usize,
+	pub content:     String,
+	pub count:       usize,
+	/// Start lines (1-indexed, in the searched text) of matches that were
+	/// not byte-exact: found only by the whitespace/fuzzy fallback.
+	pub fuzzy_lines: Vec<u32>,
 }
 
 /// What [`replace_text`] did.
@@ -1294,11 +1368,13 @@ pub fn replace_text(
 			.count();
 		if exact_count > 0 {
 			return Ok(ReplaceOutcome::Replaced(ReplaceResult {
-				content: normalized_content.replace(normalized_old.as_ref(), normalized_new.as_ref()),
-				count:   exact_count,
+				content:     normalized_content.replace(normalized_old.as_ref(), normalized_new.as_ref()),
+				count:       exact_count,
+				fuzzy_lines: Vec::new(),
 			}));
 		}
 		let mut replacements: Vec<Replacement> = Vec::new();
+		let mut fuzzy_lines: Vec<u32> = Vec::new();
 		loop {
 			let excluded: Vec<ExcludedRange> = replacements
 				.iter()
@@ -1319,10 +1395,13 @@ pub fn replace_text(
 					.as_ref()
 					.is_some_and(|matched| matched.confidence >= threshold)
 				&& outcome.fuzzy_matches.is_none_or(|count| count <= 1);
+			// Replace mode absorbs whitespace and quote/dash spelling only: a
+			// window that differs in any other character is reported, never applied.
 			let matched = outcome
 				.matched
 				.as_ref()
-				.or_else(|| outcome.closest.as_ref().filter(|_| should_use_closest));
+				.or_else(|| outcome.closest.as_ref().filter(|_| should_use_closest))
+				.filter(|matched| same_modulo_whitespace(&matched.actual_text, normalized_old.as_ref()));
 			let adjusted = matched.map(|matched| {
 				adjust_indentation(
 					normalized_old.as_ref(),
@@ -1342,6 +1421,9 @@ pub fn replace_text(
 				}
 				break;
 			}
+			if matched.actual_text != normalized_old.as_ref() {
+				fuzzy_lines.push(matched.start_line);
+			}
 			replacements.push(Replacement {
 				start: matched.start_index,
 				// JavaScript's `substring` clamps this synthetic one-byte span
@@ -1360,9 +1442,11 @@ pub fn replace_text(
 			source_index = replacement.end;
 		}
 		output.push_str(&normalized_content[source_index..]);
+		fuzzy_lines.sort_unstable();
 		return Ok(ReplaceOutcome::Replaced(ReplaceResult {
 			content: output,
-			count:   replacements.len(),
+			count: replacements.len(),
+			fuzzy_lines,
 		}));
 	}
 
@@ -1372,8 +1456,13 @@ pub fn replace_text(
 		excluded_ranges: &[],
 	});
 	let matched = match &outcome.matched {
-		Some(matched) if outcome.occurrences.is_none_or(|count| count <= 1) => matched,
-		_ => return Ok(ReplaceOutcome::Missed(outcome)),
+		Some(matched)
+			if outcome.occurrences.is_none_or(|count| count <= 1)
+				&& same_modulo_whitespace(&matched.actual_text, normalized_old.as_ref()) =>
+		{
+			matched
+		},
+		_ => return Ok(ReplaceOutcome::Missed(MatchOutcome { matched: None, ..outcome })),
 	};
 	let adjusted =
 		adjust_indentation(normalized_old.as_ref(), &matched.actual_text, normalized_new.as_ref());
@@ -1382,7 +1471,12 @@ pub fn replace_text(
 	output.push_str(&normalized_content[..matched.start_index]);
 	output.push_str(&adjusted);
 	output.push_str(&normalized_content[matched.start_index + matched.actual_text.len()..]);
-	Ok(ReplaceOutcome::Replaced(ReplaceResult { content: output, count: 1 }))
+	let fuzzy_lines = if matched.actual_text == normalized_old.as_ref() {
+		Vec::new()
+	} else {
+		vec![matched.start_line]
+	};
+	Ok(ReplaceOutcome::Replaced(ReplaceResult { content: output, count: 1, fuzzy_lines }))
 }
 
 #[cfg(test)]
@@ -1441,7 +1535,7 @@ mod tests {
 		assert!(multiple.matched.is_none());
 		assert_eq!(multiple.occurrences, Some(2));
 		assert_eq!(multiple.occurrence_lines, Some(vec![1, 3]));
-		assert_eq!(multiple.occurrence_previews.as_ref().map(Vec::len), Some(2));
+		assert!(multiple.occurrence_preview.is_some());
 	}
 
 	#[test]
@@ -1470,6 +1564,22 @@ mod tests {
 		let varied =
 			find_match("  a\n    b\n   c\n    d", "  a\n    b\n    c\n    d", &options(true));
 		assert!(varied.matched.is_some());
+	}
+
+	#[test]
+	fn replace_never_applies_non_whitespace_differences() {
+		let content = "export function total(price: number, rate: number): number {\n  return price * (1 + rate);\n}";
+		let target = "export function total(price: number, rate: number): number {\n  return price * (1 - rate);\n}";
+		let ReplaceOutcome::Missed(outcome) = replace_text(content, target, "x", true, false, None).unwrap() else {
+			panic!("an operator change must not be absorbed by fuzzy matching");
+		};
+		assert!(outcome.closest.is_some_and(|closest| closest.confidence >= DEFAULT_FUZZY_THRESHOLD));
+		let ReplaceOutcome::Replaced(spaced) =
+			replace_text("return  price *(1 + rate);", "return price * (1 + rate);", "x", true, false, None).unwrap()
+		else {
+			panic!("whitespace-only differences still match");
+		};
+		assert_eq!(spaced.fuzzy_lines, vec![1]);
 	}
 
 	#[test]
@@ -1660,6 +1770,21 @@ mod tests {
 	}
 
 	#[test]
+	fn match_error_flags_copied_line_number_prefixes() {
+		let closest = FuzzyMatch {
+			actual_text: "def sub(a, b):\n    return a - b".to_owned(),
+			start_index: 0,
+			start_line:  5,
+			confidence:  0.85,
+		};
+		let prefixed = "5|def sub(a, b):\n6|    return a - b";
+		let message = format_match_error("a.py", prefixed, Some(&closest), true, 0.95, None);
+		assert!(message.contains("remove them"), "{message}");
+		let plain = format_match_error("a.py", "def sub(a, c):", Some(&closest), true, 0.95, None);
+		assert!(!plain.contains("remove them"), "{plain}");
+	}
+
+	#[test]
 	fn match_error_matches_typescript_formatter() {
 		let closest = FuzzyMatch {
 			actual_text: "alpha\ngamma".to_owned(),
@@ -1667,46 +1792,64 @@ mod tests {
 			start_line:  4,
 			confidence:  0.874,
 		};
-		assert_eq!(
-			format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), true, 0.95, None),
-			"Could not find a close enough match in src/a.ts.\n\nClosest match (87% similar) at line \
-			 4:\n  - beta\n  + gamma\nClosest match was below the 95% similarity threshold."
-		);
+		let message = format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), true, 0.95, None);
+		assert!(message.starts_with("No exact match for old_string in src/a.ts."));
+		assert!(message.contains("line 4 (87% similar)"), "{message}");
+		assert!(message.contains("  old_string: beta\n  file:       gamma\n"), "{message}");
+		assert!(message.contains("read it again"), "{message}");
 		assert_eq!(
 			format_match_error("src/a.ts", "x", None, false, 0.95, None),
 			"Could not find the exact text in src/a.ts. The old text must match exactly including \
 			 all whitespace and newlines."
 		);
+		let ambiguous = format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), true, 0.95, Some(3));
+		assert!(ambiguous.contains("3 places match"), "{ambiguous}");
+		assert!(!ambiguous.contains("threshold"), "{ambiguous}");
+		let near = FuzzyMatch { confidence: 0.98, ..closest.clone() };
+		let rejected = format_match_error("src/a.ts", "alpha\nbeta", Some(&near), true, 0.95, Some(1));
+		assert!(rejected.contains("differs by more than whitespace"), "{rejected}");
+		let disabled = format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), false, 0.95, None);
+		assert!(disabled.starts_with("Could not find the exact text in src/a.ts."), "{disabled}");
+		assert!(disabled.contains("Fuzzy matching is disabled"), "{disabled}");
+		assert!(format_match_error("src/a.ts", "x", None, true, 0.95, None).contains("no similar text"));
+	}
+
+	#[test]
+	fn occurrence_error_lists_lines_and_marks_non_overlapping_previews() {
+		let content = "def a():\n    return 1\n\ndef b():\n    return 1\n\ndef c():\n    return 2";
+		let outcome = find_match(content, "    return 1", &options(false));
 		assert_eq!(
-			format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), true, 0.95, Some(3)),
-			"Could not find a close enough match in src/a.ts.\n\nClosest match (87% similar) at line \
-			 4:\n  - beta\n  + gamma\nFound 3 high-confidence matches. Provide more context to make \
-			 it unique."
-		);
-		assert_eq!(
-			format_match_error("src/a.ts", "alpha\nbeta", Some(&closest), false, 0.95, None),
-			"Could not find the exact text in src/a.ts.\n\nClosest match (87% similar) at line 4:\n  \
-			 - beta\n  + gamma\nFuzzy matching is disabled. Enable 'Edit fuzzy match' in settings to \
-			 accept high-confidence matches."
-		);
-		assert_eq!(
-			format_match_error("src/a.ts", "x", None, true, 0.95, None),
-			"Could not find a close enough match in src/a.ts."
+			format_occurrence_error("t.py", &outcome),
+			"Found 2 occurrences in t.py (lines 2, 5); include more surrounding lines in old_string \
+			 to make it unique.\n 1|def a():\n*2|    return 1\n 3|\n 4|def b():\n*5|    return 1\n \
+			 6|"
 		);
 	}
 
 	#[test]
-	fn occurrence_error_includes_preview_limit_suffix() {
-		let outcome = MatchOutcome {
-			occurrences: Some(7),
-			occurrence_previews: Some(vec!["preview".to_owned()]),
-			..MatchOutcome::default()
-		};
-		assert_eq!(
-			format_occurrence_error("a.ts", &outcome),
-			"Found 7 occurrences in a.ts (showing first 5 of 7):\n\npreview\n\nAdd more context \
-			 lines to disambiguate."
+	fn occurrence_error_separates_distant_matches_and_caps_listing() {
+		let mut lines: Vec<String> = (1..=30).map(|n| format!("row{n}")).collect();
+		for index in [2, 9, 16, 20, 25, 28] {
+			lines[index] = "dup".to_owned();
+		}
+		let outcome = find_match(&lines.join("\n"), "dup", &options(false));
+		let message = format_occurrence_error("f.txt", &outcome);
+		assert!(message.starts_with(
+			"Found 6 occurrences in f.txt (first 5 at lines 3, 10, 17, 21, 26); include more"
+		));
+		// Distant matches are separate blocks; each keeps its own marked line.
+		assert!(message.contains("  2|row2\n* 3|dup\n  4|row4\n...\n  9|row9\n*10|dup"));
+		assert!(!message.contains("*29|"));
+	}
+
+	#[test]
+	fn replace_text_reports_fuzzy_line_only_for_inexact_matches() {
+		let fuzzy = replaced(
+			replace_text("a\n    foo\n    bar", "foo\nbar", "foo\nbaz", true, false, None).unwrap(),
 		);
+		assert_eq!(fuzzy.fuzzy_lines, vec![2]);
+		let exact = replaced(replace_text("a\n    foo\n    bar", "foo", "baz", true, false, None).unwrap());
+		assert!(exact.fuzzy_lines.is_empty());
 	}
 
 	fn replaced(outcome: ReplaceOutcome) -> ReplaceResult {
@@ -1722,8 +1865,9 @@ mod tests {
 			replace_text("    foo\n    bar", "foo\nbar", "foo\nbaz\nbar", true, false, None).unwrap(),
 		);
 		assert_eq!(result, ReplaceResult {
-			content: "    foo\n    baz\n    bar".to_owned(),
-			count:   1,
+			content:     "    foo\n    baz\n    bar".to_owned(),
+			count:       1,
+			fuzzy_lines: vec![1],
 		});
 
 		let deindented = replaced(
@@ -1744,17 +1888,11 @@ mod tests {
 	fn replace_text_all_exact_and_fuzzy() {
 		assert_eq!(
 			replaced(replace_text("foo foo", "foo", "bar", false, true, None).unwrap()),
-			ReplaceResult { content: "bar bar".to_owned(), count: 2 }
+			ReplaceResult { content: "bar bar".to_owned(), count: 2, fuzzy_lines: vec![] }
 		);
-		let old = "a".repeat(50);
-		let first = format!("{}b", "a".repeat(49));
-		let second = format!("{}cccccc", "a".repeat(44));
-		let new = format!("{old}\nexpanded");
 		assert_eq!(
-			replaced(
-				replace_text(&format!("{first}\n{second}"), &old, &new, true, true, Some(0.8)).unwrap()
-			),
-			ReplaceResult { content: format!("{new}\n{new}"), count: 2 }
+			replaced(replace_text("alpha  beta\nother", "alpha beta", "gamma", true, true, Some(0.8)).unwrap()),
+			ReplaceResult { content: "gamma\nother".to_owned(), count: 1, fuzzy_lines: vec![1] }
 		);
 	}
 
@@ -1768,7 +1906,7 @@ mod tests {
 		assert_eq!(ambiguous.occurrences, Some(2));
 		assert_eq!(
 			replaced(replace_text("a\r\nb", "a\r\nb", "c\r\nd", false, false, None).unwrap()),
-			ReplaceResult { content: "c\nd".to_owned(), count: 1 }
+			ReplaceResult { content: "c\nd".to_owned(), count: 1, fuzzy_lines: vec![] }
 		);
 		let ReplaceOutcome::Missed(missing) =
 			replace_text("abc", "missing", "x", false, false, None).unwrap()

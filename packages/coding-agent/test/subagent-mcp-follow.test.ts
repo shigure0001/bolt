@@ -74,7 +74,7 @@ describe("subagent session MCP tools follow the shared manager", () => {
 			agentDir: dir,
 			modelRegistry: new ModelRegistry(authStorage),
 			sessionManager: SessionManager.inMemory(),
-			settings: Settings.isolated(),
+			settings: Settings.isolated({ "tools.deferred": [] }),
 			model: getBundledModel("openai", "gpt-4o-mini"),
 			disableExtensionDiscovery: true,
 			skills: [],

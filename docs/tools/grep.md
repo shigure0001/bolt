@@ -27,12 +27,15 @@
 | `case` | `boolean` | No | Case-sensitive search. Defaults to `true`. Passed to native `ignoreCase`. |
 | `gitignore` | `boolean` | No | Respect `.gitignore` during directory scans. Defaults to `true`. |
 | `skip` | `number \| null` | No | File-page offset for multi-file results. Omitted or `null` means `0`; `grep.ts` floors finite numbers and rejects negative or non-finite values. Single-file searches ignore it because they do not paginate by file. |
+| `context` | `number` | No | Context lines before and after each match; `0` shows only the matching lines. Overrides `grep.contextBefore`/`grep.contextAfter`. Negative or non-finite values are rejected (`Context must be a non-negative number`). |
+| `mode` | `"content" \| "files" \| "count"` | No | `content` (default) prints matching lines. `files` lists matching file paths, one per line. `count` lists `path: N` match counts. `files`/`count` use native `filesWithMatches`/`count` modes with no match caps, so counts are exact; they paginate by file with `skip` like `content`. With a line-range selector (`file.ts:50-100`) the matched lines are fetched and collapsed to per-file rows in JS, so the count is bounded by the per-file fetch cap. |
 
 `grep` is enabled by default (`grep.enabled = true`) and is discoverable rather than essential. Context defaults are configurable with `grep.contextBefore` and `grep.contextAfter`.
 
 ## Outputs
 The tool returns a single text block in `content[0].text` plus structured `details`.
 
+- `files` and `count` modes print flat rows (`src/a.ts` or `src/a.ts: 3`) instead of the grouped tree and carry no hashline anchors or snapshot tags; `details.matchCount` is the summed count (`count`) or the file count (`files`).
 - Match lines are formatted by `formatMatchLine()` as `*LINE:content` for matches and ` LINE:content` for context under a `[PATH#TAG]` header in hashline mode.
   - Hashline mode: `[src/login.ts#1F2A]`, `*5:content`, ` 9:content`.
   - Plain mode: `*5|content`, ` 9|content`.
@@ -55,7 +58,7 @@ The tool returns a single text block in `content[0].text` plus structured `detai
    - normalizes `skip` to a non-negative integer;
    - expands delimiter-flattened `path` entries with `expandDelimitedPathEntries()`, keeping existing delimiter-containing paths intact, splitting semicolon-delimited lists unconditionally, accepting comma splits when at least one part resolves, and accepting whitespace splits only when every part resolves;
    - peels any line-range selector from each resulting entry;
-   - reads `grep.contextBefore` and `grep.contextAfter` from session settings (`1` and `3` by default);
+   - reads `grep.contextBefore` and `grep.contextAfter` from session settings (`1` and `3` by default) unless the `context` parameter is given;
    - enables multiline only when `pattern` contains `\n` or an actual newline.
 2. Each `path` root is normalized with `normalizePathLikeInput()` again during shared scope resolution; this is a no-op for entries already normalized by delimiter expansion.
 3. Archive member paths such as `bundle.zip:src/foo.ts` are materialized to temporary UTF-8 scratch files before native grep. Binary or non-UTF-8 archive members are reported as skipped/unreadable.
@@ -72,11 +75,11 @@ The tool returns a single text block in `content[0].text` plus structured `detai
 9. It calls native `grep()` from `@oh-my-pi/pi-natives` with:
    - `pattern`, `ignoreCase`, `multiline`, `gitignore`;
    - `hidden: true`;
-   - `contextBefore` / `contextAfter` from settings;
+   - `contextBefore` / `contextAfter` from the `context` parameter or settings;
    - `maxColumns: DEFAULT_MAX_COLUMN` (`512` UTF-8 bytes, including the `...` marker);
-   - `maxCount: INTERNAL_TOTAL_CAP` (`2000`) for ordinary searches;
-   - `maxCountPerFile`: the per-file match cap plus one for ordinary searches. Line-range searches enlarge both native fetch caps before filtering so earlier out-of-range matches do not exhaust the visible in-range budget;
-   - `mode: content`;
+   - `maxCount: INTERNAL_TOTAL_CAP` (`2000`) for ordinary content searches (omitted in `files`/`count` mode);
+   - `maxCountPerFile`: the per-file match cap plus one for ordinary content searches (omitted in `files`/`count` mode). Line-range searches enlarge both native fetch caps before filtering so earlier out-of-range matches do not exhaust the visible in-range budget;
+   - `mode`: `content`, or `filesWithMatches`/`count` for `mode: "files"`/`"count"` (a line-range selector forces `content`);
    - the combined abort `signal` and `timeoutMs: SEARCH_GREP_TIMEOUT_MS` (`30_000`);
    - `filesystem`: the URL filesystem's `shellFilesystem()`. URL paths resolve through it natively: file-backed schemes (`local://`, `skill://`, `artifact://`) redirect to their host files, virtual schemes (`omp://`, `history://`) serve rendered read-only files and enumerated directories. Host paths never leave native code.
 10. Native execution happens in `crates/pi-natives/src/grep.rs`:

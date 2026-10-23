@@ -295,7 +295,7 @@ describe("Anthropic request fingerprint alignment", () => {
 		expect(claudeCodeSystemInstruction).toBe("You are Claude Code, Anthropic's official CLI for Claude.");
 		expect(payload.system?.[1]?.text).toBe(claudeCodeSystemInstruction);
 		expect(payload.system?.[1]?.cache_control).toBeUndefined();
-		expect(payload.system?.[2]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect(payload.system?.at(-1)?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		const content = payload.messages?.[0]?.content;
 		expect(Array.isArray(content)).toBe(true);
 		expect(Array.isArray(content) ? content[0]?.cache_control : undefined).toEqual({
@@ -317,7 +317,7 @@ describe("Anthropic request fingerprint alignment", () => {
 			messages?: Array<{ content?: Array<{ cache_control?: unknown }> | string }>;
 		};
 
-		expect(payload.system?.[2]?.cache_control).toEqual({ type: "ephemeral" });
+		expect(payload.system?.at(-1)?.cache_control).toEqual({ type: "ephemeral" });
 		const content = payload.messages?.[0]?.content;
 		expect(Array.isArray(content) ? content[0]?.cache_control : undefined).toEqual({
 			type: "ephemeral",
@@ -342,6 +342,37 @@ describe("Anthropic request fingerprint alignment", () => {
 			type: "ephemeral",
 			ttl: "1h",
 		});
+	});
+
+	it("names OAuth tools by their wire names in prompt text", async () => {
+		const payload = (await captureAnthropicPayload(ANTHROPIC_MODEL, {
+			systemPrompt: [
+				"Use `read` (not `cat`) and `grep pattern`; `read.lines` is a setting; `reader` is not a tool.",
+			],
+			messages: [{ role: "user", content: "Hi", timestamp: Date.now() }],
+			tools: [
+				{
+					name: "read",
+					description: "Reads files; use `grep` to search.",
+					parameters: { type: "object", properties: {}, additionalProperties: false },
+				},
+				{
+					name: "grep",
+					description: "Searches contents.",
+					parameters: { type: "object", properties: {}, additionalProperties: false },
+				},
+			],
+		})) as { system?: Array<{ text?: string }>; tools?: Array<{ name?: string; description?: string }> };
+
+		const systemText = (payload.system ?? []).map(block => block.text ?? "").join("\n");
+		expect(systemText).toContain(
+			"Use `_read` (not `cat`) and `_grep pattern`; `read.lines` is a setting; `reader` is not a tool.",
+		);
+		expect(payload.tools?.find(tool => tool.name === "_read")?.description).toBe(
+			"Reads files; use `_grep` to search.",
+		);
+		// One line ties the required identity header to the harness prompt that follows it.
+		expect(systemText).toContain("Claude Code runs inside the harness described below");
 	});
 
 	it("caches tool-result-only user messages in OAuth request payloads", async () => {
@@ -1826,7 +1857,7 @@ describe("Anthropic request fingerprint alignment", () => {
 			ttl: "1h",
 		});
 		expect(payload.system?.[1]?.cache_control).toBeUndefined();
-		expect(payload.system?.[2]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+		expect(payload.system?.at(-1)?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		// Anthropic rejects a fifth breakpoint, so the total must stay in budget.
 		const marked = (blocks: Array<{ cache_control?: unknown }> | undefined) =>
 			(blocks ?? []).filter(block => block.cache_control != null).length;

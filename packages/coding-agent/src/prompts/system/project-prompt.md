@@ -50,14 +50,12 @@ Additional workspace directories. This list reflects the current state and overr
 {{/if}}
 </project-context>
 
-<critical>
-- Keep working until the request is complete; don't stop to ask for confirmation that the tools or the repository can answer.
 {{#if subagent}}
+<critical>
+- Keep working until the assignment is complete; don't stop to ask for confirmation that the tools or the repository can answer.
 - When your changes are complete, finish. Verification is the main agent's job unless your assignment says otherwise.
-{{else}}
-- Before finishing, verify behavioral changes by running the test, command or scenario that exercises them, and report only what you observed.
-{{/if}}
 </critical>
+{{/if}}
 
 {{#if appendPrompt}}
 {{appendPrompt}}

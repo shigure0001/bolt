@@ -10,6 +10,8 @@ import { findUniqueWorkspaceSuffixWithGlobForTest } from "../../src/tools/path-u
 import { ToolAbortError } from "../../src/tools/tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { formatOutputNotice, type OutputMeta } from "@oh-my-pi/pi-tui/tools/output-meta";
+import type { ToolCall } from "@oh-my-pi/pi-ai";
+import { TtsrToolInspector } from "../../src/session/ttsr-outputs";
 
 function createSession(cwd = process.cwd()): ToolSession {
 	return {
@@ -27,7 +29,7 @@ async function expectRootSearchRejected(searchPath: string): Promise<void> {
 	const tool = new GlobTool(createSession());
 	let thrown: unknown;
 	try {
-		await tool.execute("glob-root-regression", { path: searchPath });
+		await tool.execute("glob-root-regression", { pattern: searchPath });
 	} catch (error) {
 		thrown = error;
 	}
@@ -66,7 +68,7 @@ describe("GlobTool.execute", () => {
 				return { matches: [], totalMatches: 0 };
 			},
 		});
-		const execution = tool.execute("glob-preparation-abort", { path: "." }, controller.signal);
+		const execution = tool.execute("glob-preparation-abort", { pattern: "." }, controller.signal);
 
 		await statStarted.promise;
 		try {
@@ -103,7 +105,7 @@ describe("GlobTool.execute", () => {
 			},
 		});
 
-		const execution = tool.execute("glob-timeout-cleanup", { path: "." });
+		const execution = tool.execute("glob-timeout-cleanup", { pattern: "." });
 		let executionSettled = false;
 		void execution.then(
 			() => {
@@ -159,7 +161,7 @@ describe("GlobTool.execute", () => {
 		});
 		const execution = tool.execute(
 			"glob-abort-cleanup",
-			{ path: `.; ${path.dirname(process.cwd())}` },
+			{ pattern: `.; ${path.dirname(process.cwd())}` },
 			controller.signal,
 		);
 		let executionSettled = false;
@@ -232,7 +234,7 @@ describe("GlobTool hard-cap limit notice", () => {
 
 	test("discloses a clamped request and never advises a value that clamps back", async () => {
 		const result = await globToolWith(files230).execute("glob-clamp-notice", {
-			path: ".",
+			pattern: ".",
 			limit: 1000,
 			gitignore: false,
 		});
@@ -243,7 +245,7 @@ describe("GlobTool hard-cap limit notice", () => {
 	});
 
 	test("the default limit sitting on the cap keeps the reached notice without doomed advice", async () => {
-		const result = await globToolWith(files230).execute("glob-cap-default", { path: ".", gitignore: false });
+		const result = await globToolWith(files230).execute("glob-cap-default", { pattern: ".", gitignore: false });
 
 		expect(textOf(result)).not.toContain("clamped");
 		expect(limitNotice(result)).toContain("200 results limit reached");
@@ -251,7 +253,11 @@ describe("GlobTool hard-cap limit notice", () => {
 	});
 
 	test("below the cap the doubled suggestion is capped at the hard limit and stays usable", async () => {
-		const result = await globToolWith(files230).execute("glob-below-cap", { path: ".", limit: 50, gitignore: false });
+		const result = await globToolWith(files230).execute("glob-below-cap", {
+			pattern: ".",
+			limit: 50,
+			gitignore: false,
+		});
 
 		expect(limitNotice(result)).toContain("[50 results limit reached. Use limit=100 for more]");
 	});
@@ -287,7 +293,7 @@ describe("GlobTool custom backend contract", () => {
 		});
 
 		const started = Date.now();
-		const result = await tool.execute("glob-custom-deadline", { path: "src/**/*.ts" });
+		const result = await tool.execute("glob-custom-deadline", { pattern: "src/**/*.ts" });
 		const elapsed = Date.now() - started;
 
 		// The point is that it returned at the deadline rather than running on:
@@ -319,7 +325,7 @@ describe("GlobTool custom backend contract", () => {
 		let thrown: unknown;
 		let result: GlobExecuteResult | undefined;
 		try {
-			result = await tool.execute("glob-custom-exists-deadline", { path: "src/**/*.ts" });
+			result = await tool.execute("glob-custom-exists-deadline", { pattern: "src/**/*.ts" });
 		} catch (error) {
 			thrown = error;
 		}
@@ -356,7 +362,7 @@ describe("GlobTool custom backend contract", () => {
 		});
 
 		const result = await tool.execute("glob-custom-policy-flags", {
-			path: "src/**/*.ts",
+			pattern: "src/**/*.ts",
 			hidden: false,
 			gitignore: false,
 		});
@@ -383,7 +389,7 @@ describe("GlobTool custom backend contract", () => {
 		});
 
 		const result = await tool.execute("glob-custom-policy-limit", {
-			path: "src/**/*.ts",
+			pattern: "src/**/*.ts",
 			limit: 7,
 		});
 
@@ -393,5 +399,26 @@ describe("GlobTool custom backend contract", () => {
 		expect(text).toContain("file-19.ts");
 		expect(text).not.toContain("file-06.ts");
 		expect(detailsOf(result).fileCount).toBe(7);
+	});
+});
+
+describe("GlobTool TTSR path scope", () => {
+	// A `tool:glob(*.ts)` rule scopes on the call's file paths; a glob call that exposes none is never matched.
+	test("a glob call exposes its pattern entries as file paths, while grep's regex pattern stays out", () => {
+		const glob = new GlobTool(createSession());
+		const inspector = new TtsrToolInspector(
+			() => [glob],
+			() => process.cwd(),
+		);
+		const call = (name: string, args: Record<string, unknown>): ToolCall => ({
+			type: "toolCall",
+			id: "call-1",
+			name,
+			arguments: args,
+		});
+
+		expect(inspector.matchContext(call("glob", { pattern: "src/**/*.ts" }), 0).filePaths).toContain("src/**/*.ts");
+		expect(inspector.matchContext(call("glob", { limit: 5 }), 0).filePaths).toBeUndefined();
+		expect(inspector.matchContext(call("grep", { pattern: "foo\\(bar" }), 0).filePaths).toBeUndefined();
 	});
 });

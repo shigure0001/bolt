@@ -3,8 +3,6 @@
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
-use crate::task;
-
 #[napi(object)]
 pub struct BlockRangeOptions {
 	/// Source code to inspect.
@@ -83,76 +81,3 @@ pub fn node_chain_at(options: BlockRangeOptions) -> Result<Option<Vec<NodeSpan>>
 	.map_err(|error| Error::from_reason(error.to_string()))
 }
 
-#[napi(object)]
-pub struct BlockParseOptions {
-	/// Source code to parse.
-	pub code: String,
-	/// Language alias (e.g. "rust", "typescript") used before path inference.
-	pub lang: Option<String>,
-	/// File path used to infer language by extension when `lang` is omitted.
-	pub path: Option<String>,
-}
-
-/// Parse `options.code` into the shared tree cache on the native blocking
-/// pool.
-///
-/// [`enclosing_block_boundaries`], [`block_range_at`] and [`node_chain_at`]
-/// are synchronous and parse on the JS thread when their source is not
-/// cached; awaiting this first makes that parse a cache hit. Resolves without
-/// parsing when the language is unrecognized or the source is over 2 MiB,
-/// where a typical tree would not fit the cache's memory budget.
-#[napi]
-pub fn warm_block_parse(options: BlockParseOptions) -> task::Promise<()> {
-	task::blocking("block.warm_parse", (), move |_| {
-		pi_ast::block::warm_parse(&options.code, options.lang.as_deref(), options.path.as_deref())
-			.map_err(|error| Error::from_reason(error.to_string()))
-	})
-}
-
-#[napi(object)]
-pub struct LineRange {
-	/// 1-indexed inclusive first visible line.
-	pub start_line: u32,
-	/// 1-indexed inclusive last visible line.
-	pub end_line:   u32,
-}
-
-#[napi(object)]
-pub struct EnclosingBoundaryOptions {
-	/// Source code to inspect.
-	pub code:   String,
-	/// Language alias (e.g. "rust", "typescript") used before path inference.
-	pub lang:   Option<String>,
-	/// File path used to infer language by extension when `lang` is omitted.
-	pub path:   Option<String>,
-	/// 1-indexed inclusive visible line ranges (the lines actually shown).
-	pub ranges: Vec<LineRange>,
-}
-
-/// Matching-bracket context for an arbitrary tree-sitter language.
-///
-/// For each multi-line named node whose span crosses the visible window, return
-/// the boundary line sitting *outside* that window (the closer when the opener
-/// is shown, the opener when the closer is shown). Covers brace and indentation
-/// languages alike using real syntactic spans.
-///
-/// Returns `null` when the language is unrecognized or the source fails to
-/// parse / carries a syntax error (caller should fall back to a lexical scan);
-/// a sorted, unique list of 1-indexed boundary lines otherwise.
-#[napi]
-pub fn enclosing_block_boundaries(options: EnclosingBoundaryOptions) -> Result<Option<Vec<u32>>> {
-	pi_ast::block::enclosing_block_boundaries(pi_ast::block::EnclosingBoundaryOptions {
-		code:   options.code,
-		lang:   options.lang,
-		path:   options.path,
-		ranges: options
-			.ranges
-			.into_iter()
-			.map(|range| pi_ast::block::LineRange {
-				start_line: range.start_line,
-				end_line:   range.end_line,
-			})
-			.collect(),
-	})
-	.map_err(|error| Error::from_reason(error.to_string()))
-}

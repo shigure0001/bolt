@@ -53,7 +53,7 @@ function xdevSession(cwd: string, overrides: Partial<ToolSession> = {}): ToolSes
 		hasUI: true,
 		getSessionFile: () => null,
 		getSessionSpawns: () => "*",
-		settings: Settings.isolated({ "tools.xdev": true }),
+		settings: Settings.isolated({ "tools.xdev": true, "debug.enabled": true }),
 		...overrides,
 	};
 }

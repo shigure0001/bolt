@@ -1650,7 +1650,7 @@ mod tests {
 		)
 		.await;
 		assert_eq!(code, 0, "stderr: {err:?}");
-		let expected = format!("{0}\n{0}\n", root.display());
+		let expected = format!("{0}\n{0}\n", crate::pwd::display_path(&root.to_string_lossy()));
 		assert_eq!(out, expected);
 	}
 

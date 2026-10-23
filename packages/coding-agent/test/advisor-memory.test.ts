@@ -149,8 +149,8 @@ describe("advisor memory context", () => {
 					pattern: "Advisor project summary marker",
 				}),
 			).rejects.toThrow(unavailableRoot);
-			await expect(glob.execute("advisor-root-glob", { path: "memory://root" })).rejects.toThrow(unavailableRoot);
-			await expect(glob.execute("advisor-root-glob", { path: "memory://root/*.md" })).rejects.toThrow(
+			await expect(glob.execute("advisor-root-glob", { pattern: "memory://root" })).rejects.toThrow(unavailableRoot);
+			await expect(glob.execute("advisor-root-glob", { pattern: "memory://root/*.md" })).rejects.toThrow(
 				unavailableRoot,
 			);
 

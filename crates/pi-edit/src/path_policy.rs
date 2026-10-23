@@ -85,8 +85,8 @@ impl PathPolicy {
 		authored: &str,
 		urls: &HashMap<String, UrlResolution>,
 	) -> EditResult<Resolved> {
-		let display = unwrap_hashline_header_path(authored).to_owned();
-		let absolute = match self.address(&display) {
+		let authored = unwrap_hashline_header_path(authored);
+		let (absolute, display) = match self.address(authored) {
 			Address::Url(url) => {
 				let resolution = urls
 					.get(url.as_ref())
@@ -94,12 +94,22 @@ impl PathPolicy {
 				if let Some(error) = &resolution.error {
 					return Err(EditError::apply(error.clone()));
 				}
-				resolution
+				let absolute = resolution
 					.absolute
 					.clone()
-					.ok_or_else(|| EditError::apply(format!("No local file backs {url}")))?
+					.ok_or_else(|| EditError::apply(format!("No local file backs {url}")))?;
+				(absolute, authored.to_owned())
 			},
-			Address::Path => self.resolve_path(&display),
+			Address::Path => {
+				let absolute = self.resolve_path(authored);
+				// Paths under cwd display relative, as `write` and `read` show them.
+				let display = absolute
+					.strip_prefix(&self.cwd)
+					.ok()
+					.filter(|relative| !relative.as_os_str().is_empty())
+					.map_or_else(|| authored.to_owned(), |relative| relative.to_string_lossy().replace('\\', "/"));
+				(absolute, display)
+			},
 			Address::Refused(message) => return Err(EditError::apply(message)),
 		};
 		Ok(Resolved { absolute, display })

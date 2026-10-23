@@ -713,7 +713,7 @@ export class TodoTool implements AgentTool<typeof todoSchema, TodoToolDetails> {
 	readonly name = "todo";
 	readonly approval = "read" as const;
 	readonly label = "Todo";
-	readonly summary = "Write a structured todo list to track progress within a session";
+	readonly summary = "A todo list to track a multi-step task";
 	readonly description: string;
 	readonly parameters = todoSchema;
 	readonly concurrency = "exclusive";

@@ -184,14 +184,14 @@ Custom prompt.`,
 		expect(planSchema).not.toContain("seance");
 		expect(planSchema).not.toContain('"model"');
 		expect(planMode.description).not.toContain("seance");
-		expect(planMode.description).not.toContain("consult a past session");
+		expect(planMode.description).not.toContain("sourceSession");
 
 		const ordinary = await TaskTool.create(createSession({ parentSpawns: "task,seance" }));
 		const ordinarySchema = JSON.stringify(ordinary.parameters.toJsonSchema());
 		expect(ordinarySchema).toContain('"sourceSession"');
 		expect(ordinarySchema).toContain('"model"');
 		expect(ordinary.description).toContain("`seance`");
-		expect(ordinary.description).toContain("consult a past session");
+		expect(ordinary.description).toContain("`sourceSession`");
 	});
 	afterEach(() => vi.restoreAllMocks());
 });
@@ -202,7 +202,7 @@ describe("task description scout guidance", () => {
 	it("recommends scout for read-only research only while scout is spawnable", async () => {
 		vi.spyOn(discoveryModule, "discoverAgents").mockResolvedValue({ agents: [], projectAgentsDir: null });
 		const withScout = await TaskTool.create(createSession({ parentSpawns: "*" }));
-		expect(withScout.description).toContain("Use `scout` for read-only research");
+		expect(withScout.description).toContain("`scout`");
 
 		const noSpawnScout = await TaskTool.create(createSession({ parentSpawns: "task" }));
 		expect(noSpawnScout.description).not.toContain("`scout`");

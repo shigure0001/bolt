@@ -153,11 +153,13 @@ export interface SchemeHost {
 	skillUriAccess: boolean;
 	/** Number of rulebook rules addressable through rule://. */
 	ruleCount: number;
-	/** Active `memory.backend` id; undefined when memory is off. */
+	/** Active `memory.backend` id; undefined when memory is off or empty. */
 	memoryBackend?: string;
 	securityEnabled: boolean;
 	/** The user approves `cfg://` writes for this session (top-level TUI session). */
 	settingsApproval: boolean;
+	/** The `task` tool is active, so subagent output and transcripts exist to address. */
+	subagentsAvailable: boolean;
 }
 
 /**

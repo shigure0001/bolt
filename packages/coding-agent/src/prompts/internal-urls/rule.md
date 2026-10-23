@@ -1,1 +1,1 @@
-`rule://<name>`: the full text of a domain rule.
+`rule://<name>`: a domain rule's full text.

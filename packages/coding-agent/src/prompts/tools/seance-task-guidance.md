@@ -1,1 +1,1 @@
-- To consult a past session, use `agent: "seance"` with `sourceSession` (a session id or path). The source session is not modified. It runs on the session's saved model; set `model` to override it, or when that model is no longer available.
+- Past sessions: `agent: "seance"` with `sourceSession` (id or path) answers questions about one without modifying it; set `model` if its saved model is unavailable.

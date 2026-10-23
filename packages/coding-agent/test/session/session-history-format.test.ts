@@ -124,7 +124,7 @@ describe("formatSessionHistoryMarkdown", () => {
 						type: "toolCall",
 						id: "tc-glob",
 						name: "glob",
-						arguments: { path: "packages/coding-agent/src/**/*.ts" },
+						arguments: { pattern: "packages/coding-agent/src/**/*.ts" },
 					},
 				],
 				timestamp: 1,

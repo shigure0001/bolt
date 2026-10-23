@@ -9,19 +9,17 @@
 {{/if}}
 
 # Choosing an agent
-Pick the most specific agent for the job.{{#if scoutAvailable}} Use `scout` for read-only research when you don't yet know which files matter.{{/if}} Prefer one agent that both investigates and edits over separate agents for each step. Omit `agent` to get the default (`{{defaultAgent}}`).
-{{#if batchEnabled}}Set `agent` on each item in `tasks[]`, not at the top level.
-{{/if}}
-When several agents edit shared code, make one of them responsible for integrating it{{#if ircEnabled}}; siblings can coordinate with `write agent://<id>`{{/if}}. Define shared interfaces in {{#if batchEnabled}}`context`{{else}}the task{{/if}}. Tell agents to skip builds, tests, linters and formatters; run them once yourself after all agents finish.
+Use the most specific agent{{#if scoutAvailable}}; `scout` suits read-only research when you don't yet know which files matter{{/if}}. One agent that investigates and edits beats a chain of agents. Omit `agent` for the default (`{{defaultAgent}}`){{#if batchEnabled}}; set it per item in `tasks[]`, not at the top level{{/if}}.
+When several agents touch shared code, make one responsible for integration{{#if ircEnabled}} (siblings coordinate with `write agent://<id>`){{/if}} and define shared interfaces in {{#if batchEnabled}}`context`{{else}}the task{{/if}}. Tell agents to skip builds, tests, linters and formatters; run them yourself once all agents finish.
 
 # Writing assignments
-Subagents start with no memory of this conversation{{#if ircEnabled}}, though you can message them while they run{{/if}}. Pass large inputs as files via `local://<path>` rather than pasting them inline.
+Subagents start with no memory of this conversation. Pass large inputs as `local://<path>` files rather than inline.
 {{#if batchEnabled}}
-- `context`: shared background for all tasks, such as the goal and the interfaces between slices. Don't repeat it in each task.
+- `context`: background shared by all tasks (goal, interfaces between slices); don't repeat it per task.
 {{/if}}
-- `task`: a self-contained assignment. Name the target files and non-goals, the change to make, and the observable result that means it's done.
-- `name` (optional): a CamelCase name up to 32 characters, used to address the agent.
-- `solutionSpace` (optional): how open the problem is, such as "one fix: rename, names given" or "deadlock cause unknown, no repro". It helps the agent judge how much to explore.
+- `task`: self-contained: target files and non-goals, the change, and the observable result that means done.
+- `name` (optional): CamelCase, ≤32 chars, used to address the agent.
+- `solutionSpace` (optional): how open the problem is, e.g. "one fix: rename, names given" or "deadlock cause unknown, no repro".
 {{#if structured}}
 - `outputSchema` overrides agent and session schemas. `schemaMode`: the default (permissive) warns after retries; `strict` fails.
 {{/if}}

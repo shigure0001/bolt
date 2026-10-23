@@ -85,16 +85,16 @@ it.skipIf(process.platform === "win32")(
 	"reports calls that overlap a backgrounded one and leaves the session shell intact",
 	async () => {
 		const tool = bashTool({ "bash.autoBackground.thresholdMs": 100 });
-		await run(tool, "PI_STATE_VAR=kept");
+		await run(tool, "PI_STATE_VAR=kept; export PI_EXPORTED_VAR=shared");
 		expect((await run(tool, "sleep 2")).async?.state).toBe("running");
 
-		const overlapping = await run(tool, 'printf "[%s]" "$PI_STATE_VAR"; PI_STATE_VAR=lost');
-		expect(overlapping.text).toStartWith("[]");
-		expect(overlapping.text).toContain("Ran in a temporary shell");
+		const overlapping = await run(tool, 'printf "[%s|%s]" "$PI_STATE_VAR" "$PI_EXPORTED_VAR"; PI_STATE_VAR=lost');
+		expect(overlapping.text).toStartWith("[|shared]");
+		expect(overlapping.text).toContain("Ran in a separate shell");
 		// An overlapping call that itself moves to the background says so in its start result.
 		const promoted = await run(tool, "sleep 0.5");
 		expect(promoted.async?.state).toBe("running");
-		expect(promoted.text).toContain("Ran in a temporary shell");
+		expect(promoted.text).toContain("Ran in a separate shell");
 
 		await manager.waitForAll();
 		expect((await run(tool, 'printf "%s" "$PI_STATE_VAR"')).text).toBe("kept");

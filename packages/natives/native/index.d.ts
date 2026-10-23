@@ -571,6 +571,12 @@ export declare class Shell {
    */
   liveBackgroundJobCount(): Promise<number>
   /**
+   * Exported variables as of this session's last completed `run`, or
+   * `null` before one finished. Synchronous and never waits on a running
+   * command, so a caller finding the session busy can seed a separate shell.
+   */
+  exportedEnv(): Record<string, string> | null
+  /**
    * Pids of the still-alive processes spawned by this session's in-flight
    * `run`, in spawn order: foreground commands, pipeline stages, and `&`
    * jobs started by that run. Builtins run in-process and never appear.
@@ -1291,15 +1297,6 @@ export interface AxTextSelection {
   focused: boolean
 }
 
-export interface BlockParseOptions {
-  /** Source code to parse. */
-  code: string
-  /** Language alias (e.g. "rust", "typescript") used before path inference. */
-  lang?: string
-  /** File path used to infer language by extension when `lang` is omitted. */
-  path?: string
-}
-
 export interface BlockRange {
   /** 1-indexed inclusive first line of the resolved block. */
   startLine: number
@@ -1903,31 +1900,6 @@ export declare enum Ellipsis {
 }
 
 /**
- * Matching-bracket context for an arbitrary tree-sitter language.
- *
- * For each multi-line named node whose span crosses the visible window, return
- * the boundary line sitting *outside* that window (the closer when the opener
- * is shown, the opener when the closer is shown). Covers brace and indentation
- * languages alike using real syntactic spans.
- *
- * Returns `null` when the language is unrecognized or the source fails to
- * parse / carries a syntax error (caller should fall back to a lexical scan);
- * a sorted, unique list of 1-indexed boundary lines otherwise.
- */
-export declare function enclosingBlockBoundaries(options: EnclosingBoundaryOptions): Array<number> | null
-
-export interface EnclosingBoundaryOptions {
-  /** Source code to inspect. */
-  code: string
-  /** Language alias (e.g. "rust", "typescript") used before path inference. */
-  lang?: string
-  /** File path used to infer language by extension when `lang` is omitted. */
-  path?: string
-  /** 1-indexed inclusive visible line ranges (the lines actually shown). */
-  ranges: Array<LineRange>
-}
-
-/**
  * Encode image bytes into a SIXEL escape sequence for terminal rendering, on
  * the calling thread.
  *
@@ -2305,6 +2277,11 @@ export interface GrepResult {
   limitReached?: boolean
   /** Number of files skipped because they exceed the size limit. */
   skippedOversized?: number
+  /**
+   * Why the pattern was searched as literal text: set only when it was not a
+   * valid regex (the parse error), absent for every pattern that compiled.
+   */
+  literalFallback?: string
 }
 
 /**
@@ -2621,13 +2598,6 @@ export interface LineMatches {
    * when the group did not participate.
    */
   spans: Int32Array
-}
-
-export interface LineRange {
-  /** 1-indexed inclusive first visible line. */
-  startLine: number
-  /** 1-indexed inclusive last visible line. */
-  endLine: number
 }
 
 /**
@@ -4147,18 +4117,6 @@ export interface VectorTopK {
  * Tabs count as a fixed-width cell.
  */
 export declare function visibleWidth(text: string, tabWidth: number): number
-
-/**
- * Parse `options.code` into the shared tree cache on the native blocking
- * pool.
- *
- * [`enclosing_block_boundaries`], [`block_range_at`] and [`node_chain_at`]
- * are synchronous and parse on the JS thread when their source is not
- * cached; awaiting this first makes that parse a cache hit. Resolves without
- * parsing when the language is unrecognized or the source is over 2 MiB,
- * where a typical tree would not fit the cache's memory budget.
- */
-export declare function warmBlockParse(options: BlockParseOptions): Promise<undefined>
 
 /**
  * Warm syntax grammars, scope matchers, and the regexes of commonly

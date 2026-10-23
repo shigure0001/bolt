@@ -5,9 +5,9 @@ import type { ToolRenderer, ToolRenderProps } from "../types";
 import { detailsRecord, isRecord, num, scopePaths, shortenPath, str, truncate } from "../util";
 
 function Summary({ args }: ToolRenderProps): ReactNode {
-	const raw = args.path ?? args.paths;
-	if (raw !== undefined && typeof raw !== "string" && !Array.isArray(raw)) return <InvalidArg what="path" />;
-	const globs = scopePaths(args).map(shortenPath).join(", ");
+	const raw = args.pattern ?? args.path ?? args.paths;
+	if (raw !== undefined && typeof raw !== "string" && !Array.isArray(raw)) return <InvalidArg what="pattern" />;
+	const globs = scopePaths({ path: raw }).map(shortenPath).join(", ");
 	return <span className="tv-pattern">{truncate(globs || "*", 120)}</span>;
 }
 

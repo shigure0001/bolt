@@ -1,1 +1,1 @@
-`issue://<N>`, `pr://<N>`: a GitHub issue or pull request of the current repo (`<owner>/<repo>/<N>` for other repos). Bare `issue://`/`pr://` lists recent ones; filter with `?state=&limit=&author=&label=`. `pr://<N>/diff` lists changed files, `/diff/<i>` shows one, `/diff/all` the whole diff.
+`issue://<N>`, `pr://<N>[/diff]`: GitHub issues and PRs.

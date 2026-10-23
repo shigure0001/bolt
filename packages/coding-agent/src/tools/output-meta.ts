@@ -214,8 +214,8 @@ export class OutputMetaBuilder {
 		if (summary.elidedBytes != null && summary.elidedBytes > 0) {
 			const elidedLines = summary.elidedLines ?? Math.max(0, totalLines - summary.outputLines);
 			const keptLines = Math.max(0, summary.outputLines - 1); // -1 for marker line
-			const headLines = Math.ceil(keptLines / 2);
-			const tailLines = keptLines - headLines;
+			const headLines = summary.headLines ?? Math.ceil(keptLines / 2);
+			const tailLines = summary.tailLines ?? keptLines - headLines;
 			this.#meta.truncation = {
 				direction: "middle",
 				truncatedBy: "middle",
@@ -519,11 +519,26 @@ export function resolveArtifactSpillThreshold(s: Settings | undefined): number {
 }
 
 /**
- * Resolve the `enforceInlineByteCap` budget for streaming tools (bash/ssh)
- * from session settings: the user's spill threshold plus notice slack.
+ * Resolve the `enforceInlineByteCap` budget for `read` pages: the user's
+ * spill threshold plus notice slack.
  */
 export function resolveInlineByteCapBudget(s: Settings | undefined): number {
 	return resolveArtifactSpillThreshold(s) + INLINE_CAP_SLACK_BYTES;
+}
+
+/**
+ * Inline byte budget for streaming command output (bash): the head and tail
+ * windows a spilled result keeps, capped at the spill threshold. Larger output
+ * stays readable in full through its `artifact://` id.
+ */
+export function resolveStreamingInlineBytes(s: Settings | undefined): number {
+	const { threshold, headBytes, tailBytes } = getSpillConfig(s);
+	return Math.min(threshold, headBytes + tailBytes);
+}
+
+/** {@link resolveStreamingInlineBytes} plus notice slack, for `enforceInlineByteCap`. */
+export function resolveStreamingInlineCapBudget(s: Settings | undefined): number {
+	return resolveStreamingInlineBytes(s) + INLINE_CAP_SLACK_BYTES;
 }
 
 /**

@@ -298,6 +298,7 @@ import { resolveYieldReportText } from "./tools/yield";
 import { createModelJobWidgetAuthor, type JobWidgetAuthor, JobWidgets, resolveToolCallIntent } from "./job-widgets";
 import { createBrowserPrelude } from "./tools/browser";
 import { isMCPToolName, normalizeToolNames } from "./tools/builtin-names";
+import { applyToolDeferral, compileDeferredToolPatterns } from "./tools/deferred-tools";
 import { createComputerPrelude } from "./tools/computer";
 import { createRatchetPrelude } from "./ratchet/prelude-definition";
 import { createArchivePrelude } from "./archive/prelude-definition";
@@ -333,6 +334,7 @@ import {
 	cfgToolsAbortOnFabricatedResult,
 	cfgToolsIntentTracing,
 	cfgToolsMaxTimeout,
+	cfgToolsDeferred,
 	cfgToolsXdev,
 	cfgToolsXdevDocs,
 	cfgToolsXdevInlineDevices,
@@ -384,7 +386,6 @@ import {
 	cfgImagesBlockImages,
 	cfgStartupQuiet,
 	cfgTuiReactions,
-	cfgTuiAutoGraph,
 	cfgTuiRenderMermaid,
 	cfgTuiRenderSvg,
 } from "./modes/settings";
@@ -2555,6 +2556,11 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 		// SessionTools owns the advertised snapshot; before it exists the base
 		// prompt is built from, and therefore advertises, the live set.
 		toolSession.getAdvertisedEvalPreludes = () => session?.getAdvertisedEvalPreludes() ?? getEvalPreludes();
+		toolSession.getDeferredTools = () => session?.getDeferredTools() ?? [];
+		toolSession.loadDeferredTools = names =>
+			session
+				? session.loadDeferredTools(names)
+				: Promise.resolve({ loaded: [], alreadyActive: [], unknown: [...names] });
 
 		// Wire process-wide internal URL singletons owned by their real classes.
 		// Top-level sessions install the active snapshots; subagents inherit them.
@@ -4141,7 +4147,8 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				secretsEnabled: obfuscator?.obfuscates() === true,
 				workspaceTree: workspaceTreePromise ?? emptyWorkspaceTree,
 				includeWorkspaceTree,
-				memoryBackend: memoryBackend?.id,
+				// Advertise `memory://` only when the backend has something to read; a bare id would point the model at an empty namespace.
+				memoryBackend: memoryInstructions ? memoryBackend?.id : undefined,
 				securityEnabled: cfgSecurityEnabled.get(settings),
 				settingsApproval: toolSession.settingsApproval === true,
 				evalPreludes: toolSession.getAdvertisedEvalPreludes?.(),
@@ -4151,7 +4158,6 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				subagent: agentKind === "sub",
 				renderMermaid: tuiTranscript && cfgTuiRenderMermaid.get(settings),
 				renderSvg: tuiTranscript && cfgTuiRenderSvg.get(settings),
-				autoGraph: tuiTranscript && cfgTuiAutoGraph.get(settings) !== "off",
 				reactions: agentKind === "main" && options.hasUI === true && cfgTuiReactions.get(settings),
 				activeRepoContext,
 			});
@@ -4246,6 +4252,14 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				initialToolNames.push(name);
 			}
 		}
+		// Deferred tools stay registered but off the request until `load_tools`
+		// activates them; explicitly requested names are never deferred.
+		initialToolNames = applyToolDeferral(initialToolNames, {
+			globs: compileDeferredToolPatterns(cfgToolsDeferred.get(settings)),
+			registryNames: toolRegistry.keys(),
+			isLoaded: () => false,
+			isPinned: name => presentationPinnedToolNames?.has(name) === true,
+		});
 
 		// Pre-register in the global agent registry BEFORE building the system prompt,
 		// so that subagents launched in the same parallel batch can see each other in

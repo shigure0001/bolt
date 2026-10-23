@@ -897,6 +897,23 @@ describe("OutputSink head-retain mode", () => {
 		expect(saved).toBeUndefined();
 	});
 
+	test("middle elision keeps whole lines on both sides of the marker", async () => {
+		const sink = new OutputSink({ spillThreshold: 200, headBytes: 50 });
+		const lines = Array.from({ length: 300 }, (_, i) => `line ${i + 1}`);
+		// Uneven chunks so both window edges land mid-line.
+		const text = `${lines.join("\n")}\n`;
+		for (let i = 0; i < text.length; i += 37) sink.push(text.slice(i, i + 37));
+
+		const dumped = await sink.dump();
+		const [head, tail] = dumped.output.split(/\n\[…\d+ln elided…\]\n/);
+		expect(tail).toBeDefined();
+		const shown = [...head.split("\n"), ...tail.split("\n").filter(Boolean)];
+		for (const row of shown) expect(lines).toContain(row);
+		expect(head.split("\n").length + tail.split("\n").filter(Boolean).length + (dumped.elidedLines ?? 0)).toBe(
+			lines.length,
+		);
+	});
+
 	test("preview() matches the dump body mid-stream and onChunk already sees the chunk", async () => {
 		const previews: string[] = [];
 		const sink: OutputSink = new OutputSink({

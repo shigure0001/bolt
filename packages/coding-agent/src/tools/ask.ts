@@ -60,16 +60,16 @@ const RESERVED_OPTION_LABELS: Record<string, true> = {
 const OptionItem = arkType({
 	label: arkType("string"),
 	"description?": arkType("string"),
-	"preview?": arkType("string").describe("rich preview"),
+	"preview?": arkType("string").describe("markdown shown while this option is highlighted"),
 });
 
 const QuestionItem = arkType({
 	id: arkType("string"),
 	question: arkType("string"),
-	"header?": arkType("string").describe("display chip"),
+	"header?": arkType("string").describe("short tab label for the question (about 16 columns)"),
 	options: OptionItem.array(),
 	"multi?": arkType("boolean"),
-	"recommended?": arkType("number").describe("0-based default index"),
+	"recommended?": arkType("number").describe("0-based index of the suggested option"),
 }).narrow((question, ctx) => {
 	const reserved = question.options.find(option => RESERVED_OPTION_LABELS[option.label] === true);
 	return (

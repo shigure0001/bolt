@@ -55,12 +55,6 @@ import {
 	truncateHeadBytes,
 	truncateLine,
 } from "@oh-my-pi/pi-tui/tools/streaming-output";
-import {
-	buildLineEntriesWithBlockContext,
-	lineEntriesToPlainText,
-	spansCoverEveryLine,
-	warmBlockContext,
-} from "../utils/block-context";
 import { isCpuProfilePath, renderCpuProfile } from "../utils/cpuprofile";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import { loadImageInput, loadSvgImageInput } from "../utils/image-loading";
@@ -107,13 +101,11 @@ import { type LineRange } from "@oh-my-pi/pi-tui/tools/line-ranges";
 import { splitPathAndSel } from "@oh-my-pi/pi-tui/tools/read";
 import { readArchive, resolveArchiveReadPath } from "./read-archive";
 import {
-	BRACKET_CONTEXT_ELLIPSIS,
 	buildInMemoryMultiRangeResult,
 	buildInMemorySelectorResult,
 	buildInMemoryTextResult,
 	contiguousLineNumbers,
 	countTextLines,
-	formatLineEntriesWithMode,
 	formatReadHashlineHeader,
 	formatSummaryElisionFooter,
 	formatTextWithMode,
@@ -129,6 +121,7 @@ import {
 	toReadTruncationStats,
 } from "./read-format";
 import {
+	describeMissingPath,
 	findSuffixMatchCached,
 	isNotFoundError,
 	isRemoteMountPath,
@@ -198,13 +191,13 @@ const LF_BYTE = 0x0a;
  * Whole-file bytes plus every view the local text read path consumes,
  * materialized exactly once.
  *
- * The binary sniff, the structural summary, the emitted line window, bracket
- * context and the snapshot hash all want the same bytes. Each used to open the
+ * The binary sniff, the structural summary, the emitted line window
+ * and the snapshot hash all want the same bytes. Each used to open the
  * file for itself, so a single ranged read cost up to four opens, three UTF-8
  * decodes and two CRLF normalization passes over identical content.
  *
  * Only files at or below {@link SNAPSHOT_MAX_BYTES} are buffered: past that cap
- * bracket context and the snapshot are skipped anyway, so streaming a window
+ * the snapshot is skipped anyway, so streaming a window
  * stays strictly cheaper than materializing the file.
  */
 interface BufferedFileText {
@@ -218,7 +211,7 @@ interface BufferedFileText {
 	readonly strippedText: string;
 	/** {@link strippedText} normalized to LF — the exact text the snapshot store hashes. */
 	readonly normalizedText: string;
-	/** Addressable lines of {@link normalizedText}; bracket context indexes these. */
+	/** Addressable lines of {@link normalizedText}. */
 	readonly addressableLines: readonly string[];
 	/** Whether the final byte is LF. */
 	readonly endsWithNewline: boolean;
@@ -258,7 +251,7 @@ function deriveBufferedFileText(bytes: Buffer): BufferedFileText {
 	const rawSegments = rawText.split("\n");
 	let addressableLines: readonly string[];
 	if (normalizedText === rawText) {
-		// Nothing was rewritten, so display and bracket context share one array;
+		// Nothing was rewritten, so display and addressable lines share one array;
 		// the terminal newline sentinel is dropped exactly as
 		// `splitAddressableFileLines` does.
 		const last = rawSegments.length - 1;
@@ -740,13 +733,19 @@ interface FilesystemReadOptions {
 
 /**
  * Workflow hint for a large located file: page it through its URL, search/copy its backing
- * file. `rawBlocked` explains a refused whole-file `:raw` read.
+ * file. `raw-blocked` explains a refused whole-file `:raw` read; a ranged read already
+ * pages, so it gets only the backing path.
  */
-function formatLocatedFileNotice(url: string, backingPath: string, size: number, rawBlocked: boolean): string {
-	const workflows = `Use ${url}:raw:1-3000 for bounded verbatim chunks, ${url}:1-3000 for numbered exploration, and the backing file path for search/copy workflows`;
-	return rawBlocked
-		? `Unbounded raw read blocked for ${url} (${formatBytes(size)}). Reading the whole file verbatim can exhaust memory. ${workflows}: ${shortenPath(backingPath)}`
-		: `Backing file: ${shortenPath(backingPath)} (${formatBytes(size)}). ${workflows}.`;
+function formatLocatedFileNotice(
+	url: string,
+	backingPath: string,
+	size: number,
+	mode: "raw-blocked" | "bare" | "ranged",
+): string {
+	const backing = `${shortenPath(backingPath)} (${formatBytes(size)})`;
+	const workflows = `Page with ${url}:1-3000 (numbered) or ${url}:raw:1-3000 (verbatim); grep or copy the backing file`;
+	if (mode === "raw-blocked") return `Unbounded raw read of ${url} blocked. ${workflows}: ${backing}`;
+	return mode === "bare" ? `Backing file: ${backing}. ${workflows}.` : `Backing file: ${backing}`;
 }
 
 /**
@@ -771,7 +770,7 @@ export function splitImageQuestionTarget(readPath: string): { path: string; ques
 const MAX_IMAGE_SIZE = MAX_IMAGE_INPUT_BYTES;
 
 const readSchema = type({
-	path: type("string").describe("Local path, internal URI, or URL; selectors inline."),
+	path: type("string").describe("file, directory, URL or internal URL; append a selector like `:50-80`"),
 });
 
 export type ReadToolInput = typeof readSchema.infer;
@@ -1554,7 +1553,8 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		const blocks: string[] = [];
 		const notices: string[] = [];
 		const visibleSpans: Array<{ startLine: number; endLine: number }> = [];
-		const displayLineByNumber = new Map<number, string>();
+		const plainRows: string[] = [];
+		const rowNumbers: Array<number | null> = [];
 		const fullLines = rawSelector ? undefined : buffered?.addressableLines;
 		let columnCut: ColumnCut | undefined;
 		let cutLines: Set<number> | undefined;
@@ -1614,50 +1614,25 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (cloned) displayLines = cloned;
 			}
 			if (displayLines.length > 0) {
-				const endLine = range.startLine + displayLines.length - 1;
-				visibleSpans.push({ startLine: range.startLine, endLine });
-				for (let i = 0; i < displayLines.length; i++) {
-					displayLineByNumber.set(range.startLine + i, displayLines[i] ?? "");
-				}
-				if (!fullLines || rawSelector) {
-					const blockText = displayLines.join("\n") + (rawSelector && endsAtTerminalNewline ? "\n" : "");
-					blocks.push(formatTextWithMode(blockText, range.startLine, shouldAddHashLines, shouldAddLineNumbers));
+				visibleSpans.push({ startLine: range.startLine, endLine: range.startLine + displayLines.length - 1 });
+				const blockText = displayLines.join("\n") + (rawSelector && endsAtTerminalNewline ? "\n" : "");
+				blocks.push(formatTextWithMode(blockText, range.startLine, shouldAddHashLines, shouldAddLineNumbers));
+				if (!rawSelector) {
+					if (plainRows.length > 0) {
+						plainRows.push("…");
+						rowNumbers.push(null);
+					}
+					for (let i = 0; i < displayLines.length; i++) {
+						plainRows.push(displayLines[i]);
+						rowNumbers.push(range.startLine + i);
+					}
 				}
 			}
 		}
 
-		let outputText: string;
-		if (!rawSelector && fullLines && visibleSpans.length > 0) {
-			if (buffered && !spansCoverEveryLine(visibleSpans, fullLines.length)) {
-				await warmBlockContext({ path: absolutePath, text: buffered.normalizedText });
-			}
-			const entries = buildLineEntriesWithBlockContext(
-				fullLines,
-				visibleSpans,
-				{ path: absolutePath, text: buffered?.normalizedText },
-				{
-					lineText: (lineNumber, sourceText) => {
-						const visibleText = displayLineByNumber.get(lineNumber);
-						if (visibleText !== undefined) return visibleText;
-						if (maxColumns <= 0) return sourceText;
-						const truncated = truncateLine(sourceText, maxColumns);
-						if (truncated.wasTruncated) {
-							columnCut = addColumnCut(columnCut, maxColumns, lineNumber);
-							(cutLines ??= new Set()).add(lineNumber);
-						}
-						return truncated.text;
-					},
-				},
-			);
-			const firstLine = entries.find(entry => entry.kind === "line");
-			displayContent = {
-				text: lineEntriesToPlainText(entries, BRACKET_CONTEXT_ELLIPSIS),
-				startLine: firstLine?.kind === "line" ? firstLine.lineNumber : (visibleSpans[0]?.startLine ?? 1),
-				lineNumbers: entries.map(entry => (entry.kind === "line" ? entry.lineNumber : null)),
-			};
-			outputText = formatLineEntriesWithMode(entries, shouldAddHashLines, shouldAddLineNumbers);
-		} else {
-			outputText = blocks.join("\n\n…\n\n");
+		let outputText = blocks.join("\n\n…\n\n");
+		if (!rawSelector && visibleSpans.length > 0) {
+			displayContent = { text: plainRows.join("\n"), startLine: visibleSpans[0].startLine, lineNumbers: rowNumbers };
 		}
 		if (shouldAddHashLines && outputText) {
 			const tag = buffered
@@ -1988,7 +1963,9 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 				if (!recoveredApprovedPlan && !suffixResolution) {
 					const delimitedResult = await this.#tryReadDelimitedPaths(readPath, signal, toolContext);
 					if (delimitedResult) return delimitedResult;
-					throw new ToolError(`Path '${localReadPath}' not found`);
+					throw new ToolError(
+						`Path '${localReadPath}' not found${await describeMissingPath(absolutePath, this.session.cwd)}`,
+					);
 				}
 			} else {
 				throw error;
@@ -2044,7 +2021,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 		// `:raw` read inlines one only below the budget; bigger ones page with ranges.
 		if (located && !located.spec.unbounded && parsed.kind === "raw" && fileSize > MAX_URL_RAW_INLINE_BYTES) {
 			return toolResult<ReadToolDetails>({ resolvedPath: absolutePath })
-				.text(formatLocatedFileNotice(located.url, absolutePath, fileSize, true))
+				.text(formatLocatedFileNotice(located.url, absolutePath, fileSize, "raw-blocked"))
 				.done();
 		}
 
@@ -2058,7 +2035,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 
 		const ext = path.extname(renderAbsolutePath).toLowerCase();
 		// Buffer once for every consumer below: the image sniff, the binary sniff,
-		// the structural summary, the rendered window, bracket context, and the
+		// the structural summary, the rendered window, and the
 		// snapshot hash all want the same bytes. Magic bytes come from the
 		// in-memory header whenever the file is buffered (no extra open/read),
 		// so a PNG stored as `.txt` still resolves at any size under the cap;
@@ -2447,13 +2424,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						if (cloned) displayLines = cloned;
 					}
 
-					const displayLineByNumber = new Map<number, string>();
-					for (let i = 0; i < displayLines.length; i++) {
-						displayLineByNumber.set(startLineDisplay + i, displayLines[i] ?? "");
-					}
-					const bracketContextFullLines = rawSelector ? undefined : buffered?.addressableLines;
-					const displayedEndLine = startLineDisplay + Math.max(0, displayLines.length - 1);
-
 					let selectedContent = displayLines.join("\n");
 					if (
 						rawSelector &&
@@ -2469,17 +2439,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					const totalSelectedLines = totalFileLines - startLine;
 					const wasTruncated = reachedEof && (collectedLines.length < totalSelectedLines || stoppedByByteLimit);
 					const firstLineExceedsLimit = firstLineByteLength !== undefined && firstLineByteLength > maxBytesForRead;
-					if (
-						bracketContextFullLines &&
-						buffered &&
-						!firstLineExceedsLimit &&
-						!spansCoverEveryLine(
-							[{ startLine: startLineDisplay, endLine: displayedEndLine }],
-							bracketContextFullLines.length,
-						)
-					) {
-						await warmBlockContext({ path: absolutePath, text: buffered.normalizedText });
-					}
 					// A first line larger than the byte budget collects no complete
 					// line, yet the window still renders a byte-capped preview.
 					// Account for that preview so the notice/meta describe the
@@ -2542,37 +2501,6 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						emittedHashlineHeader = true;
 						return prependHashlineHeader(formatted, hashContext);
 					};
-					const formatBracketAwareText = (): string | undefined => {
-						if (!bracketContextFullLines) return undefined;
-						const entries = buildLineEntriesWithBlockContext(
-							bracketContextFullLines,
-							[{ startLine: startLineDisplay, endLine: displayedEndLine }],
-							{ path: absolutePath, text: buffered?.normalizedText },
-							{
-								lineText: (lineNumber, sourceText) => {
-									const visibleText = displayLineByNumber.get(lineNumber);
-									if (visibleText !== undefined) return visibleText;
-									if (maxColumns <= 0) return sourceText;
-									const truncated = truncateLine(sourceText, maxColumns);
-									if (truncated.wasTruncated) {
-										columnCut = addColumnCut(columnCut, maxColumns, lineNumber);
-										(cutLines ??= new Set()).add(lineNumber);
-									}
-									return truncated.text;
-								},
-							},
-						);
-						const firstLine = entries.find(entry => entry.kind === "line");
-						capturedDisplayContent = {
-							text: lineEntriesToPlainText(entries, BRACKET_CONTEXT_ELLIPSIS),
-							startLine: firstLine?.kind === "line" ? firstLine.lineNumber : startLineDisplay,
-							lineNumbers: entries.map(entry => (entry.kind === "line" ? entry.lineNumber : null)),
-						};
-						const formatted = formatLineEntriesWithMode(entries, shouldAddHashLines, shouldAddLineNumbers);
-						if (!hashContext || emittedHashlineHeader) return formatted;
-						emittedHashlineHeader = true;
-						return prependHashlineHeader(formatted, hashContext);
-					};
 
 					let outputText: string;
 
@@ -2614,7 +2542,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						}
 					} else if (!reachedEof) {
 						const nextOffset = startLine + userLimitedLines + 1;
-						outputText = formatBracketAwareText() ?? formatText(selectedContent, startLineDisplay);
+						outputText = formatText(selectedContent, startLineDisplay);
 						if (!rawSelector || limit === undefined || userLimitedLines < limit) {
 							outputText += `\n\n[More lines in file (${formatBytes(
 								fileSize,
@@ -2623,7 +2551,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						details = {};
 						sourcePath = renderAbsolutePath;
 					} else if (truncation?.truncated) {
-						outputText = formatBracketAwareText() ?? formatText(truncation.content, startLineDisplay);
+						outputText = formatText(truncation.content, startLineDisplay);
 						details = { truncation: toReadTruncationStats(truncation) };
 						sourcePath = renderAbsolutePath;
 						truncationInfo = {
@@ -2638,7 +2566,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					} else if (!rawSelector && startLine + userLimitedLines < totalFileLines) {
 						const nextOffset = startLine + userLimitedLines + 1;
 
-						outputText = formatBracketAwareText() ?? formatText(selectedContent, startLineDisplay);
+						outputText = formatText(selectedContent, startLineDisplay);
 						outputText += `\n\n[${
 							totalFileLines - (startLine + userLimitedLines)
 						} more lines in file. Use ${selectorBase}:${nextOffset} to continue]`;
@@ -2646,7 +2574,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 						sourcePath = renderAbsolutePath;
 					} else {
 						// No truncation, no user limit exceeded
-						outputText = formatBracketAwareText() ?? formatText(selectedContent, startLineDisplay);
+						outputText = formatText(selectedContent, startLineDisplay);
 						details = {};
 						sourcePath = renderAbsolutePath;
 					}
@@ -2706,9 +2634,8 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 					}
 
 					content = [{ type: "text", text: outputText }];
-					// `maxBytesForRead` bounds only the selected source lines; row prefixes and
-					// off-window block context ride on top. Skip the spill only while the final page
-					// still fits the inline cap, so block context can never bypass the bound.
+					// `maxBytesForRead` bounds only the selected source lines; row prefixes ride on top.
+					// Skip the spill only while the final page still fits the inline cap.
 					pagedSource =
 						Buffer.byteLength(outputText, "utf-8") <= resolveInlineByteCapBudget(this.session.settings);
 				}
@@ -2720,7 +2647,7 @@ export class ReadTool implements AgentTool<typeof readSchema, ReadToolDetails> {
 			if (located && immutable && !isRawSelector(parsed) && fileSize > MAX_URL_RAW_INLINE_BYTES) {
 				const firstText = content.find((c): c is TextContent => c.type === "text");
 				if (firstText) {
-					firstText.text += `\n\n[${formatLocatedFileNotice(located.url, absolutePath, fileSize, false)}]`;
+					firstText.text += `\n\n[${formatLocatedFileNotice(located.url, absolutePath, fileSize, parsed.kind === "none" ? "bare" : "ranged")}]`;
 				}
 			}
 		}

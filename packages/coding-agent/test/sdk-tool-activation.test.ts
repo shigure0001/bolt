@@ -96,7 +96,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 	// defends the mounted-device activation contract, so sessions opt in here;
 	// tests of the default (unmounted) shape pass their own settings.
 	const xdevSettings = (overrides: Record<string, unknown> = {}): Settings =>
-		Settings.isolated({ "tools.xdev": true, ...overrides });
+		Settings.isolated({ "tools.xdev": true, "tools.deferred": [], ...overrides });
 
 	// Shared options for every session. `rules: []` and `workspaceTree` short-circuit
 	// the two slow startup scans (rule discovery + native workspace walk, ~100ms each)
@@ -180,7 +180,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 
 		const { session } = await createAgentSession({
 			...baseOptions(tempDir),
-			settings: Settings.isolated(),
+			settings: Settings.isolated({ "tools.deferred": [] }),
 			extensions: [toolActivationExtension],
 		});
 
@@ -2458,6 +2458,24 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		});
 	});
 
+	it("advertises memory:// only when the local backend has content to read", async () => {
+		const advertised = async (instructions: string | undefined): Promise<boolean> => {
+			vi.spyOn(memoryBackendModule, "resolveMemoryBackend").mockResolvedValue({
+				id: "local",
+				start: async () => {},
+				buildDeveloperInstructions: async () => instructions,
+			} as never);
+			const { session } = await createAgentSession(baseOptions(makeTempDir()));
+			try {
+				return session.systemPrompt.join("\n").includes("what is remembered about this project");
+			} finally {
+				await session.dispose();
+			}
+		};
+		expect(await advertised(undefined)).toBe(false);
+		expect(await advertised("Memory summary: the project uses bun.")).toBe(true);
+	});
+
 	it("resolves bridge frame paths through the session's live cwd", async () => {
 		// The bridge is built once, at session creation, while the session's cwd
 		// moves under it (`/cd`, resume, branch restore). The path-confining
@@ -2560,7 +2578,7 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		// Driven through the real SDK session rather than a fabricated XdevState,
 		// because the absence of that state is precisely what is under test.
 		const tempDir = makeTempDir();
-		const settings = Settings.isolated();
+		const settings = Settings.isolated({ "tools.deferred": [] });
 		cfgToolsXdev.set(settings, false);
 
 		await withProviderAuth(["openai"], async () => {

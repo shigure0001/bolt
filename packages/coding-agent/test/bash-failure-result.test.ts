@@ -99,7 +99,7 @@ describe("BashTool execution results", () => {
 		expect(result.isError).toBe(true);
 		expect(result.details?.timedOut).toBe(true);
 		const text = result.content.find(c => c.type === "text")?.text ?? "";
-		expect(text.match(/\[Command timed out after 1 seconds\]/gu)).toHaveLength(1);
+		expect(text.match(/\[Command timed out after 1 second\]/gu)).toHaveLength(1);
 	});
 
 	it("preserves the executor cancellation notice without classifying it as a timeout", async () => {

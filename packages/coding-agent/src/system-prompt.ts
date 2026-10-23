@@ -8,6 +8,7 @@ import type { AgentTool } from "@oh-my-pi/pi-agent-core";
 import type { ToolExample, TSchema } from "@oh-my-pi/pi-ai";
 import { renderToolInventory } from "@oh-my-pi/pi-ai/dialect";
 import type { DelegationBias } from "@oh-my-pi/pi-catalog/compat/delegation";
+import * as vcs from "@oh-my-pi/pi-natives/vcs";
 import { $env, getAgentDir, getProjectDir, hasFsCode, isEnoent, logger, prompt } from "@oh-my-pi/pi-utils";
 import { contextFileCapability } from "./capability/context-file";
 import { systemPromptCapability } from "./capability/system-prompt";
@@ -39,7 +40,7 @@ import { combine } from "./config/registry";
 import { cfgBashAutoBackgroundEnabled } from "./exec/settings";
 import { cfgEvalAutoBackgroundEnabled } from "./eval/settings";
 import { cfgTtsrBuiltinRules, cfgTtsrDisabledRules, cfgTtsrEnabled } from "./export/ttsr-settings";
-import { cfgTuiAutoGraph, cfgTuiReactions, cfgTuiRenderMermaid, cfgTuiRenderSvg } from "./modes/settings";
+import { cfgTuiReactions, cfgTuiRenderMermaid, cfgTuiRenderSvg } from "./modes/settings";
 import { cfgSecretsEnabled } from "./secrets/settings";
 import { cfgToolsFormat } from "./session/context-settings";
 import {
@@ -75,7 +76,6 @@ export const cfgSystemPromptInputs = combine({
 	vaultEnabled: cfgVaultEnabled,
 	renderMermaid: cfgTuiRenderMermaid,
 	renderSvg: cfgTuiRenderSvg,
-	autoGraph: cfgTuiAutoGraph,
 	reactions: cfgTuiReactions,
 	// Rendered into the bash/eval/task tool descriptions (inline catalog) or read by
 	// the prompt builder (eager/batch delegation).
@@ -217,12 +217,24 @@ function renderActiveRepoContextPrompt(activeRepoContext: ActiveRepoContext | nu
 }
 
 const SYSTEM_PROMPT_PREP_TIMEOUT_MS = 5000;
-/** Workstation facts the model needs to pick commands and paths: platform/release and CPU architecture. */
-function getEnvironmentInfo(): Array<{ label: string; value: string }> {
-	return [
+/** Workstation facts the model needs to pick commands and paths: platform/release, CPU architecture and VCS state. */
+function getEnvironmentInfo(vcsState: string | undefined): Array<{ label: string; value: string }> {
+	const environment = [
 		{ label: "OS", value: `${os.platform()} ${os.release()}` },
 		{ label: "Arch", value: os.arch() },
 	];
+	if (vcsState) environment.push({ label: "VCS", value: vcsState });
+	return environment;
+}
+
+/** `git on \`main\``, plus the root when cwd is below it; `none` outside a repository. */
+async function describeVcsState(cwd: string): Promise<string> {
+	const repo = vcs.repo(cwd);
+	if (!repo) return "none";
+	const label = await repo.label();
+	const root = path.resolve(repo.root());
+	const rootNote = root === path.resolve(cwd) ? "" : `, repo root ${normalizePromptPath(root)}`;
+	return `${repo.kind()}${label ? ` on \`${label}\`` : ""}${rootNote}`;
 }
 
 /** Discover TITLE_SYSTEM.md file for automatic session-title prompt overrides */
@@ -548,7 +560,7 @@ export interface BuildSystemPromptOptions {
 	secretsEnabled?: boolean;
 	/** Pre-loaded workspace tree (skips discovery if provided). May be a Promise to allow early kick-off. */
 	workspaceTree?: WorkspaceTree | Promise<WorkspaceTree>;
-	/** Active `memory.backend` id; undefined when memory is off. */
+	/** Active `memory.backend` id, set only when it has memory content to read; gates advertising `memory://`. */
 	memoryBackend?: string;
 	/** Whether the read-only security:// resource namespace is active. */
 	securityEnabled?: boolean;
@@ -562,7 +574,7 @@ export interface BuildSystemPromptOptions {
 	evalPreludes?: readonly Pick<EvalPreludeDefinition, "name" | "guidance">[];
 	/** Active model identifier (e.g. "anthropic/claude-opus-4") surfaced in the workstation block. */
 	model?: string;
-	/** Whether to surface `model` in the workstation block. Default: true. */
+	/** Whether to surface `model` in the workstation block. Default: false. */
 	includeModelInPrompt?: boolean;
 	/** Personality preset rendered into the default system prompt. "none" omits the block. Default: "default" */
 	personality?: Personality;
@@ -572,8 +584,6 @@ export interface BuildSystemPromptOptions {
 	renderMermaid?: boolean;
 	/** Whether the reader's UI draws ```svg fences as themed images, so the prompt invites figures. Default: false */
 	renderSvg?: boolean;
-	/** Whether the reader's UI charts numeric Markdown tables, so the prompt routes data to tables and forbids duplicate charts. Default: false */
-	autoGraph?: boolean;
 	/** Whether the TUI lifts an opening emoji into a reaction badge on the user's message. Default: false */
 	reactions?: boolean;
 	/** Pre-resolved nested active repo context. Undefined resolves from cwd. */
@@ -663,12 +673,11 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		settingsApproval = false,
 		evalPreludes = [],
 		model,
-		includeModelInPrompt = true,
+		includeModelInPrompt = false,
 		personality = "default",
 		includeWorkspaceTree = false,
 		renderMermaid = true,
 		renderSvg = false,
-		autoGraph = false,
 		reactions = false,
 		xdevTools = [],
 		xdevDocs = "",
@@ -804,6 +813,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		providedActiveRepoContext !== undefined
 			? Promise.resolve(providedActiveRepoContext)
 			: logger.time("resolveActiveRepoContext", () => resolveActiveRepoContext(resolvedCwd));
+	const vcsStatePromise = describeVcsState(resolvedCwd);
 	// "none" (explicit off — and every subagent) omits the block and skips the file lookup.
 	const bundledPersonality = personality === "none" ? "" : PERSONALITY_SPECS[personality].trim();
 	const personalityPromise: Promise<string> =
@@ -821,6 +831,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		skills,
 		workspaceTree,
 		activeRepoContext,
+		vcsState,
 		personalityBlock,
 	] = await Promise.all([
 		withDeadline(
@@ -844,6 +855,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		withDeadline("loadSkills", skillsPromise, prepDefaults.skills),
 		withDeadline("buildWorkspaceTree", workspaceTreePromise, prepDefaults.workspaceTree),
 		withDeadline("resolveActiveRepoContext", activeRepoContextPromise, prepDefaults.activeRepoContext),
+		withDeadline("describeVcsState", vcsStatePromise, undefined),
 		withDeadline("loadPersonalityOverride", personalityPromise, bundledPersonality),
 	]);
 	clearTimeout(deadlineTimer);
@@ -927,6 +939,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		memoryBackend,
 		securityEnabled,
 		settingsApproval,
+		subagentsAvailable: toolNames.includes("task"),
 	};
 	const filteredSkills = (options.skillDescriptions ?? new SkillDescriptionCatalog()).render(
 		hasSkillReader ? skills.filter(skill => skill.hide !== true) : [],
@@ -945,7 +958,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 	];
 	const injectedAlwaysApplyRules = dedupeAlwaysApplyRules(alwaysApplyRules, promptSources);
 
-	const environment = getEnvironmentInfo();
+	const environment = getEnvironmentInfo(vcsState);
 	const data = {
 		systemPromptCustomization: effectiveSystemPromptCustomization,
 		customPrompt: resolvedCustomPrompt,
@@ -984,7 +997,6 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		includeWorkspaceTree,
 		renderMermaid,
 		renderSvg,
-		autoGraph,
 		reactions,
 		xdevTools,
 		hasDynamicXdevTools: xdevTools.some(mounted => mounted.dynamic === true),

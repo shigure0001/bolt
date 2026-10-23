@@ -1,1 +1,1 @@
-`memory://root`: summary of what is remembered about this project.
+`memory://root`: what is remembered about this project.

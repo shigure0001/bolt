@@ -236,6 +236,7 @@ import {
 	releaseTabsForOwner,
 } from "../tools/browser/tab-supervisor";
 import type { CheckpointState, CompletedRewindState } from "../tools/checkpoint";
+import type { DeferredToolEntry, DeferredToolLoadResult } from "../tools/deferred-tools";
 import {
 	beginComputerTurnForOwner,
 	endComputerTurnForOwner,
@@ -6819,6 +6820,16 @@ export class AgentSession implements SettingsScope {
 	/** Selects enabled tools, ignoring names absent from the registry. */
 	setActiveToolsByName(toolNames: string[]): Promise<void> {
 		return this.#tools.setActiveToolsByName(toolNames);
+	}
+
+	/** Registered tools that `load_tools` can activate. */
+	getDeferredTools(): DeferredToolEntry[] {
+		return this.#tools.getDeferredTools();
+	}
+
+	/** Activates deferred tools for the rest of the session. */
+	loadDeferredTools(names: string[]): Promise<DeferredToolLoadResult> {
+		return this.#tools.loadDeferredTools(names);
 	}
 
 	/** Restores an exact top-level versus `xd://` tool partition. */

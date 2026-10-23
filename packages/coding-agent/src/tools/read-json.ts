@@ -65,22 +65,31 @@ export function splitJsonQueryTarget(readPath: string): { jsonPath: string; quer
 	return JSON_FILE_PATTERN.test(jsonPath) ? { jsonPath, queryString: readPath.slice(queryIndex + 1) } : null;
 }
 
+/** Start of an option after the filter; any other `&` belongs to the filter. */
+const JSON_OPTION_START = /&(?:q|query|raw|compact|offset|limit)=/;
+
 /**
  * Parses `q`, `raw`, `compact`, `offset`, and `limit`; null without a filter.
- * `q` is percent-decoded but never form-decoded, so jq's `+` survives.
+ * `q` runs to the next option (so a literal `&` in a jq string needs no
+ * escaping) and is percent-decoded but never form-decoded, so jq's `+` survives.
  */
 export function parseJsonSelector(queryString: string): JsonSelector | null {
-	const match = /(?:^|&)(?:q|query)=([^&]*)/.exec(queryString);
-	if (!match?.[1]) return null;
+	const match = /(?:^|&)(?:q|query)=/.exec(queryString);
+	if (!match) return null;
+	const valueStart = match.index + match[0].length;
+	const valueLength = queryString.slice(valueStart).search(JSON_OPTION_START);
+	const valueEnd = valueLength === -1 ? queryString.length : valueStart + valueLength;
+	const encoded = queryString.slice(valueStart, valueEnd);
+	if (!encoded) return null;
 	let query: string;
 	try {
-		query = decodeURIComponent(match[1]);
+		query = decodeURIComponent(encoded);
 	} catch {
 		// A filter with a bare `%` (jq modulo) is not valid percent-encoding; take it verbatim.
-		query = match[1];
+		query = encoded;
 	}
 
-	const params = new URLSearchParams(queryString);
+	const params = new URLSearchParams(`${queryString.slice(0, match.index)}${queryString.slice(valueEnd)}`);
 	const flag = (name: string) => {
 		const value = params.get(name)?.toLowerCase();
 		return value === "true" || value === "1";

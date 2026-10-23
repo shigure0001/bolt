@@ -567,6 +567,8 @@ describe("RPC ask dialog", () => {
 		await using temp = await TempDir.create("@rpc-ask-dialog-");
 		const extensionPath = temp.join("scripted-ask.ts");
 		await Bun.write(extensionPath, scriptedAskProvider);
+		// `ask` is deferred by default; the scripted provider calls it without a `load_tools` round-trip.
+		await Bun.write(temp.join(".bolt/config.yml"), "tools:\n  deferred: []\n");
 		const child = Bun.spawn(
 			[
 				process.execPath,

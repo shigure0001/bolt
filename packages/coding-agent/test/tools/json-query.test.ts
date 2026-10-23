@@ -177,6 +177,13 @@ describe("JSON query in read tool", () => {
 		expect(text.trim()).toBe("4");
 	});
 
+	it("keeps a literal & inside the filter while still honoring later options", async () => {
+		const result = await readTool.execute("call_amp", {
+			path: `${jsonFile}?q=.items[0].name + " & co"&raw=true`,
+		});
+		expect(getText(result).trim()).toBe("item-one & co");
+	});
+
 	it("supports offset and limit pagination on JSONL streams with continuation hint", async () => {
 		const result = await readTool.execute("call_p2", {
 			path: `${jsonlFile}?q=.user&raw=true&offset=1&limit=1`,

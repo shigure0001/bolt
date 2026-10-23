@@ -179,7 +179,7 @@ describe("GrepTool internal URL resolution", () => {
 			path: "skill://demo/references",
 		});
 		const findResult = await findTool.execute("test-find", {
-			path: "skill://demo/references",
+			pattern: "skill://demo/references",
 		});
 
 		const searchText = getResultText(searchResult);
@@ -199,7 +199,7 @@ describe("GrepTool internal URL resolution", () => {
 			path: "skill://demo",
 		});
 		const findResult = await findTool.execute("test-find", {
-			path: "skill://demo",
+			pattern: "skill://demo",
 		});
 
 		expect(getResultText(searchResult)).toContain("deep needle");
@@ -435,7 +435,9 @@ describe("GrepTool internal URL resolution", () => {
 	});
 
 	it("globs omp:// docs by URL pattern", async () => {
-		const text = getResultText(await new GlobTool(createSession()).execute("glob-omp", { path: "omp://tools/*.md" }));
+		const text = getResultText(
+			await new GlobTool(createSession()).execute("glob-omp", { pattern: "omp://tools/*.md" }),
+		);
 
 		expect(text).toContain("omp://tools/read.md");
 		expect(text).toContain("omp://tools/grep.md");
@@ -471,7 +473,7 @@ describe("GrepTool internal URL resolution", () => {
 		const tool = new GlobTool(session);
 
 		const result = await tool.execute("test-call", {
-			path: "local://PLAN.md",
+			pattern: "local://PLAN.md",
 		});
 
 		const text = getResultText(result);
@@ -488,7 +490,7 @@ describe("GrepTool internal URL resolution", () => {
 		const session = createSession({ hasEditTool: true });
 		const readResult = await new ReadTool(session).execute("test-read", { path: "local://notes" });
 		const findResult = await new GlobTool(session).execute("test-find", {
-			path: "local://notes",
+			pattern: "local://notes",
 		});
 		const dirResource = await InternalUrlRouter.instance().resolve("local://notes");
 
@@ -529,7 +531,7 @@ describe("GrepTool internal URL resolution", () => {
 		LocalProtocolHandler.setOverride({ getArtifactsDir: () => artifactsDir, getSessionId: () => "session" });
 		const session = createSession();
 
-		const findResult = await new GlobTool(session).execute("find-single-slash", { path: "local:/notes" });
+		const findResult = await new GlobTool(session).execute("find-single-slash", { pattern: "local:/notes" });
 		const searchResult = await new GrepTool(session).execute("search-single-slash", {
 			pattern: "needle",
 			path: "local:/notes/plan.md",
@@ -561,18 +563,19 @@ describe("GrepTool internal URL resolution", () => {
 		await Bun.write(path.join(artifactsDir, "4.bash.log"), "log\n");
 
 		await expect(
-			new GlobTool(createSession()).execute("find-missing-artifact", { path: "artifact://9" }),
+			new GlobTool(createSession()).execute("find-missing-artifact", { pattern: "artifact://9" }),
 		).rejects.toThrow("Artifact 9 not found. Available: 4");
 	});
 
 	it("reports a glob in a skill:// name through the nameless skill root's error", async () => {
 		await registerSkillDirectory();
 
-		for (const tool of [new GlobTool(createSession()), new GrepTool(createSession())]) {
-			await expect(tool.execute("id-glob", { pattern: "needle", path: "skill://*/SKILL.md" })).rejects.toThrow(
-				"skill:// URL requires a skill name",
-			);
-		}
+		await expect(new GlobTool(createSession()).execute("id-glob", { pattern: "skill://*/SKILL.md" })).rejects.toThrow(
+			"skill:// URL requires a skill name",
+		);
+		await expect(
+			new GrepTool(createSession()).execute("id-grep", { pattern: "needle", path: "skill://*/SKILL.md" }),
+		).rejects.toThrow("skill:// URL requires a skill name");
 	});
 
 	it("greps a local:// directory, naming hits by URL with anchors on the backing file", async () => {
@@ -617,7 +620,9 @@ describe("GrepTool internal URL resolution", () => {
 		LocalProtocolHandler.setOverride({ getArtifactsDir: () => artifactsDir, getSessionId: () => "session" });
 		const session = createSession();
 
-		const findText = getResultText(await new GlobTool(session).execute("find-root-glob", { path: "local://*.md" }));
+		const findText = getResultText(
+			await new GlobTool(session).execute("find-root-glob", { pattern: "local://*.md" }),
+		);
 		const searchText = getResultText(
 			await new GrepTool(session).execute("search-root-glob", { pattern: "needle", path: "local://*.md" }),
 		);

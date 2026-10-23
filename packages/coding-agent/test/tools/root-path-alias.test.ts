@@ -119,7 +119,7 @@ describe("tool path root alias", () => {
 		if (!tool) throw new Error("Missing find tool");
 
 		const result = await tool.execute("find-root-alias", {
-			path: "/",
+			pattern: "/",
 		});
 		const details = result.details as { scopePath?: string } | undefined;
 		const text = getText(result);

@@ -34,8 +34,18 @@ impl builtins::Command for PwdCommand {
 			cwd = context.shell.filesystem().canonicalize(cwd.as_ref()).await?.into();
 		}
 
-		writeln!(context.stdout(), "{}", cwd.to_string_lossy())?;
+		writeln!(context.stdout(), "{}", display_path(&cwd.to_string_lossy()))?;
 
 		Ok(ExecutionResult::success())
+	}
+}
+
+/// The shell speaks POSIX paths everywhere; on Windows that means forward
+/// slashes and no `\\?\` verbatim prefix (which canonicalization adds).
+pub(crate) fn display_path(path: &str) -> Cow<'_, str> {
+	if cfg!(windows) {
+		Cow::Owned(path.strip_prefix(r"\\?\").unwrap_or(path).replace('\\', "/"))
+	} else {
+		Cow::Borrowed(path)
 	}
 }

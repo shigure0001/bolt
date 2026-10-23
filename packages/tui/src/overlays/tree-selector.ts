@@ -1244,11 +1244,13 @@ class TreeList implements Component {
 			}
 			case "glob": {
 				const globInput =
-					typeof args.path === "string"
-						? args.path
-						: typeof args.paths === "string" || Array.isArray(args.paths)
-							? args.paths
-							: undefined;
+					typeof args.pattern === "string"
+						? args.pattern
+						: typeof args.path === "string"
+							? args.path
+							: typeof args.paths === "string" || Array.isArray(args.paths)
+								? args.paths
+								: undefined;
 				const paths = toPathList(globInput);
 				const scope = paths.length > 0 ? paths.join(", ") : ".";
 				return `[glob: ${shortenPath(scope)}]`;

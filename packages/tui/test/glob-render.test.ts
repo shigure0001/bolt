@@ -28,7 +28,7 @@ describe("globToolRenderer", () => {
 		};
 
 		const renderedLines = globToolRenderer
-			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { paths: "src/**/*.ts" })
+			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { pattern: "src/**/*.ts" })
 			.render(240);
 		const plainLines = sanitizeText(renderedLines.join("\n")).split("\n");
 
@@ -54,7 +54,7 @@ describe("globToolRenderer", () => {
 		};
 
 		const renderedLines = globToolRenderer
-			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { paths: "~/.cache/*" })
+			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { pattern: "~/.cache/*" })
 			.render(240);
 		const plain = sanitizeText(renderedLines.join("\n"));
 
@@ -91,7 +91,7 @@ describe("globToolRenderer", () => {
 		const render = (result: unknown): string =>
 			sanitizeText(
 				globToolRenderer
-					.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { paths: "src/**/*.ts" })
+					.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { pattern: "src/**/*.ts" })
 					.render(240)
 					.join("\n"),
 			);
@@ -116,7 +116,7 @@ describe("globToolRenderer", () => {
 		};
 
 		const renderedLines = globToolRenderer
-			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { paths: "src/*.zig" })
+			.renderResult(result as never, { expanded: true, isPartial: false }, uiTheme, { pattern: "src/*.zig" })
 			.render(240);
 		const plain = sanitizeText(renderedLines.join("\n"));
 

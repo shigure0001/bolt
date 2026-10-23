@@ -189,23 +189,52 @@ const SUMMARY_CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g;
 const SUMMARY_ELLIPSIS = "…";
 const SUMMARY_ELLIPSIS_BYTES = Buffer.byteLength(SUMMARY_ELLIPSIS, "utf-8");
 
+/** Sentence/clause terminators; a cut after one reads as a complete phrase. `e.g.`/`i.e.` style abbreviations do not count. */
+const CLAUSE_END = /[.;!?]/;
+const ABBREVIATION_TAIL = /(?:^|[\s.(])\w\.$/;
+
+/**
+ * Longest prefix of `text` within `maxBytes` that ends on a whole clause, or
+ * undefined when none lands past an eighth of the budget. The probe includes the
+ * first dropped character so a terminator exactly at the limit still counts.
+ */
+function clausePrefix(text: string, maxBytes: number): string | undefined {
+	const window = truncateHeadBytes(text, maxBytes).text;
+	const probe = text.slice(0, window.length + 1);
+	for (let i = window.length - 1; i >= Math.floor(maxBytes / 8); i--) {
+		const ch = probe[i];
+		if (!CLAUSE_END.test(ch) || !/\s/.test(probe[i + 1] ?? "")) continue;
+		if (ch === "." && ABBREVIATION_TAIL.test(probe.slice(0, i + 1))) continue;
+		return probe.slice(0, ch === ";" ? i : i + 1).trimEnd();
+	}
+	return undefined;
+}
+
 /**
  * Bound a catalog summary for prompt rendering. External summaries are
  * third-party metadata inlined verbatim, so control characters are stripped
  * first, then the result is bounded in UTF-8 BYTES rather than characters (a
- * character bound is not a byte bound for multi-byte scripts). The cut lands
- * on a code point boundary, so the prompt never carries a partial code point.
+ * character bound is not a byte bound for multi-byte scripts). The cut prefers
+ * the last sentence/clause end within the bound, then the last word boundary
+ * plus an ellipsis; only a single unbroken run is cut mid-token. It always
+ * lands on a code point boundary, so the prompt never carries a partial code point.
  */
 function sanitizeCatalogSummary(summary: string, maxBytes?: number): string {
 	const cleaned = summary.replace(SUMMARY_CONTROL_CHARS, " ").trim();
 	if (maxBytes === undefined || Buffer.byteLength(cleaned, "utf-8") <= maxBytes) return cleaned;
 	if (maxBytes <= 0) return "";
 	if (maxBytes < SUMMARY_ELLIPSIS_BYTES) return truncateHeadBytes(cleaned, maxBytes).text;
-	const body = truncateHeadBytes(cleaned, maxBytes - SUMMARY_ELLIPSIS_BYTES).text.trimEnd();
-	return `${body}${SUMMARY_ELLIPSIS}`;
+	const clause = clausePrefix(cleaned, maxBytes);
+	if (clause) return clause;
+	let body = truncateHeadBytes(cleaned, maxBytes - SUMMARY_ELLIPSIS_BYTES).text;
+	if (!/\s/.test(cleaned[body.length] ?? "")) {
+		const space = body.search(/\s\S*$/);
+		if (space >= Math.floor(maxBytes / 3)) body = body.slice(0, space);
+	}
+	return `${body.trimEnd().replace(/[,;:\-–(]+$/, "")}${SUMMARY_ELLIPSIS}`;
 }
 
-function promptCatalogSummary(inst: Tool, maxBytes?: number): string {
+export function promptCatalogSummary(inst: Tool, maxBytes?: number): string {
 	const summary =
 		toolSummary(inst)
 			.split("\n")

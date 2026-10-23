@@ -968,8 +968,10 @@ export function formatReadSummary(
 			elidedLines += Math.max(0, unit.endLine - unit.startLine - 1);
 			continue;
 		}
-		modelParts.push(formatSingleLine(unit.line, unit.text, shouldAddHashLines, shouldAddLineNumbers));
 		displayParts.push(unit.text);
+		// Numbered rows already show the gap, so a blank line costs a row and says nothing.
+		if (shouldAddLineNumbers && unit.text.trim().length === 0) continue;
+		modelParts.push(formatSingleLine(unit.line, unit.text, shouldAddHashLines, shouldAddLineNumbers));
 	}
 
 	return { text: modelParts.join("\n"), displayText: displayParts.join("\n"), elidedRanges, elidedLines };

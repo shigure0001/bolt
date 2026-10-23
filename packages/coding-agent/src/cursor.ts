@@ -822,7 +822,7 @@ export class CursorExecHandlers implements ICursorExecHandlers {
 	/**
 	 * `pi_find` is a filename search, which is the local `glob` tool — not
 	 * `grep`. Its `pattern` is a glob, joined onto `path` because `glob` takes a
-	 * single combined path spec.
+	 * single combined pattern.
 	 *
 	 * `limit` is `optional int32`, so `0` is present rather than unset; the
 	 * reference clamps it with `Math.max(1, limit ?? 1000)`, and an unset limit
@@ -831,7 +831,7 @@ export class CursorExecHandlers implements ICursorExecHandlers {
 	async piFind(call: Parameters<NonNullable<ICursorExecHandlers["piFind"]>>[0]) {
 		const { pattern, path, limit } = call.args;
 		return await executeTool(this.options, "glob", call.toolCallId, {
-			path: piJoinPath(path, pattern),
+			pattern: piJoinPath(path, pattern),
 			limit: piLimit(limit),
 		});
 	}

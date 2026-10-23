@@ -5150,7 +5150,8 @@ mod tests {
 		)
 		.await;
 		assert_eq!(code, 0, "stderr: {err}");
-		assert_eq!(out, format!("{}\n1 sub/d.txt\n", root.join("sub").display()));
+		let sub = crate::pwd::display_path(&root.join("sub").to_string_lossy()).into_owned();
+		assert_eq!(out, format!("{sub}\n1 sub/d.txt\n"));
 	}
 
 	#[test]

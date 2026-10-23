@@ -1538,7 +1538,8 @@ mod tests {
 		let (code, out, err) = sh_in("env -C sub pwd; pwd", dir.path()).await;
 		assert_eq!(err, "");
 		assert_eq!(code, 0);
-		assert_eq!(out, format!("{}\n{}\n", target.display(), dir.path().display()));
+		let shown = |path: &std::path::Path| crate::pwd::display_path(&path.to_string_lossy()).into_owned();
+		assert_eq!(out, format!("{}\n{}\n", shown(&target), shown(dir.path())));
 		// As `chdir` does, -C leaves PWD as it was. Literal style: a Windows
 		// path's backslashes would otherwise print shell-quoted.
 		let script = "export QUOTING_STYLE=literal; env -C sub env | grep '^PWD='";

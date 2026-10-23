@@ -2338,12 +2338,12 @@ describe("CursorExecHandlers Pi frame translation", () => {
 		await handlers.piFind({ toolCallId: "c3", args: { pattern: "*.ts" } } as never);
 
 		expect(calls).toEqual([
-			{ path: path.join("src", "*.ts"), limit: 10 },
+			{ pattern: path.join("src", "*.ts"), limit: 10 },
 			// `optional int32`: a present 0 is clamped to 1 (as the reference
 			// does), not silently widened to the tool's default.
-			{ path: "*.ts", limit: 1 },
+			{ pattern: "*.ts", limit: 1 },
 			// Genuinely unset leaves the local tool's own default in place.
-			{ path: "*.ts", limit: undefined },
+			{ pattern: "*.ts", limit: undefined },
 		]);
 	});
 

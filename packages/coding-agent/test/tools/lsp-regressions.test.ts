@@ -412,7 +412,6 @@ describe("lsp regressions", () => {
 		expect(arkToWireSchema(lspSchema)).toMatchObject({
 			properties: {
 				timeout: {
-					description: "Timeout in seconds; raises or lowers the default (range 5–300).",
 					maximum: 300,
 					minimum: 5,
 				},

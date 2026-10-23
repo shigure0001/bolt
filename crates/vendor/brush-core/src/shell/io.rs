@@ -82,6 +82,11 @@ impl<SE: extensions::ShellExtensions> crate::Shell<SE> {
 		err: &error::Error,
 	) -> Result<(), error::Error> {
 		use crate::extensions::ErrorFormatter as _;
+		// An interrupt comes from whoever cancelled the run (a timeout or an
+		// abort), which reports it; bash prints nothing for it either.
+		if matches!(err.kind(), error::ErrorKind::Interrupted) {
+			return Ok(());
+		}
 		let str = self.error_formatter.format_error(err, self);
 		file.write_all_async(str.as_bytes()).await?;
 

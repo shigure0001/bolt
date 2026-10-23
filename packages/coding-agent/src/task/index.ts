@@ -208,7 +208,7 @@ function renderDescription(options: TaskDescriptionOptions): string {
 		hasBlockingAgents: renderedAgents.some(agent => agent.blocking),
 		hasStructuredAgents: renderedAgents.some(agent => agent.structured),
 		hasModelMentions: options.sessionAgents.length > 0,
-		seanceGuidance: seanceAgent && isBundledSeance(seanceAgent) ? seanceTaskGuidance : "",
+		seanceGuidance: seanceAgent && isBundledSeance(seanceAgent) ? seanceTaskGuidance.trim() : "",
 		ircEnabled: options.ircEnabled,
 		asyncGuidance: options.asyncGuidance,
 	});
@@ -637,7 +637,7 @@ export class TaskTool implements AgentTool<TaskToolSchemaInstance, TaskToolDetai
 		return lines;
 	};
 	readonly label = "Task";
-	readonly summary = "Spawn subagents to complete delegated tasks";
+	readonly summary = "Subagents for independent pieces of work, run in parallel";
 	readonly strict = false;
 	readonly loadMode = "essential";
 	// Arktype validates model calls against the active wire schema, but the flat

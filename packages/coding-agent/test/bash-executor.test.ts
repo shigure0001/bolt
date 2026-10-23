@@ -152,7 +152,8 @@ describe("executeBash", () => {
 
 	it("honors cwd", async () => {
 		const result = await executeBash("pwd", { cwd: tempDir, timeout: 5000 });
-		expect(result.output.trim()).toBe(tempDir);
+		// The shell prints POSIX separators on every platform.
+		expect(result.output.trim()).toBe(process.platform === "win32" ? tempDir.replaceAll("\\", "/") : tempDir);
 	});
 
 	it("extracts terminal graphics before sanitization on failed and truncated output", async () => {
@@ -794,7 +795,7 @@ exit 64
 
 		expect(result.cancelled).toBe(true);
 		expect(result.output).toContain("streamed-before-timeout");
-		expect(result.output).toContain("Command timed out after 1 seconds");
+		expect(result.output).toContain("Command timed out after 1 second");
 		// Watchdog-win path: native never returned, so the result must be
 		// distinguishable from a confirmed empty run (#10308).
 		expect(result.output).toContain("the shell backend did not respond");
@@ -1336,7 +1337,7 @@ exit 64
 
 		expect(result.cancelled).toBe(true);
 		expect(result.output).toContain("flushed-during-timeout");
-		expect(result.output).toContain("Command timed out after 1 seconds");
+		expect(result.output).toContain("Command timed out after 1 second");
 		// Native-confirmed timeout: no "backend did not respond" caveat.
 		expect(result.output).not.toContain("the shell backend did not respond");
 		expect(nativeSignal?.aborted).toBe(false);

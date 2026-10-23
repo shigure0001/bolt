@@ -28,10 +28,8 @@ it("updates async guidance when wait, messaging, or background execution availab
 			expect(description).toContain("Results are delivered to you automatically");
 			expect(description.includes("call `wait`")).toBe(waitTool);
 			expect(description.includes("write agent://")).toBe(ircEnabled);
-			expect(description).toContain("read proc://");
 		}
 	}
 	cfgAsyncEnabled.override(settings, false);
 	expect(tool.description).not.toContain("Results are delivered to you automatically");
-	expect(tool.description).not.toContain("read proc://");
 });

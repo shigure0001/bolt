@@ -1419,9 +1419,8 @@ export interface ToolScopeResolution {
 	immutableSourcePaths: Set<string>;
 }
 
-/** Approval tier for a search tool's raw `path` (or legacy `paths`) input: the highest scheme read tier named anywhere in it. */
-export function searchPathTier(args: unknown): ToolTier {
-	const raw = isRecord(args) ? (args.path ?? args.paths) : undefined;
+/** Highest scheme read tier named anywhere in a raw path/pattern input (string, or array of strings). */
+function readTierOfRawEntries(raw: unknown): ToolTier {
 	// The tools decode JSON-encoded arrays (`["ssh:\/\/host"]`) the same way before resolving.
 	const entries =
 		typeof raw === "string"
@@ -1431,6 +1430,16 @@ export function searchPathTier(args: unknown): ToolTier {
 				: [];
 	// Substring scan over the raw entries: delimited lists are only split after approval.
 	return InternalUrlRouter.instance().readTier(entries.join("\n"));
+}
+
+/** Approval tier for a search tool's raw `path` (or legacy `paths`) input: the highest scheme read tier named anywhere in it. */
+export function searchPathTier(args: unknown): ToolTier {
+	return readTierOfRawEntries(isRecord(args) ? (args.path ?? args.paths) : undefined);
+}
+
+/** Approval tier for the glob tool's raw `pattern` input: the highest scheme read tier named anywhere in it. */
+export function searchPatternTier(args: unknown): ToolTier {
+	return readTierOfRawEntries(isRecord(args) ? args.pattern : undefined);
 }
 
 /**

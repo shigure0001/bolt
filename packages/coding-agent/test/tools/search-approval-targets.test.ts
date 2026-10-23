@@ -68,10 +68,10 @@ describe("search tool approval cache targets", () => {
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src" })).toEqual([treeKey]);
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src/*.txt" })).toEqual([treeKey]);
 		// A `**` pattern recurses too; a one-segment pattern under an explicit base does not.
-		expect(glob.approvalCacheTargets?.({ path: "src/**/*.txt" })).toEqual([treeKey]);
-		expect(glob.approvalCacheTargets?.({ path: "src/*.txt" })).toEqual([folderKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "src/**/*.txt" })).toEqual([treeKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "src/*.txt" })).toEqual([folderKey]);
 		// A glob root reports the folder the tool walks, never the pattern itself.
-		expect(glob.approvalCacheTargets?.({ path: "src" })).toEqual([treeKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "src" })).toEqual([treeKey]);
 	});
 
 	it("splits a semicolon-delimited root list the way execution does", () => {
@@ -83,7 +83,7 @@ describe("search tool approval cache targets", () => {
 		// Execution fans `a;b` into two roots; keying the unsplit string would report nothing and
 		// leave the search auto-allowed, so both roots are keyed.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src;other" })).toEqual([srcKey, otherKey]);
-		expect(glob.approvalCacheTargets?.({ path: "src/**/*.txt;other/**/*.txt" })).toEqual([srcKey, otherKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "src/**/*.txt;other/**/*.txt" })).toEqual([srcKey, otherKey]);
 		// A root that exists literally keeps its own key beside the split parts.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src;missing" })).toEqual([srcKey]);
 	});
@@ -94,7 +94,7 @@ describe("search tool approval cache targets", () => {
 		const fileKey = approvalTargetKey(cwd, "src/notes.txt")!;
 
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src/notes.txt" })).toEqual([fileKey]);
-		expect(glob.approvalCacheTargets?.({ path: "src/notes.txt" })).toEqual([fileKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "src/notes.txt" })).toEqual([fileKey]);
 		// A line-range selector is peeled, so a ranged search shares the one file key.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "src/notes.txt:1-2" })).toEqual([fileKey]);
 	});
@@ -119,25 +119,25 @@ describe("search tool approval cache targets", () => {
 
 		// No path argument: both tools search the session cwd recursively, so that is the target.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello" })).toEqual([cwdTreeKey]);
-		expect(glob.approvalCacheTargets?.({ path: "*.txt" })).toEqual([cwdTreeKey]);
+		expect(glob.approvalCacheTargets?.({ pattern: "*.txt" })).toEqual([cwdTreeKey]);
 		// Public web contents are public already: nothing to approve, nothing to remember.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "https://example.com/a.txt" })).toBeUndefined();
-		expect(glob.approvalCacheTargets?.({ path: "https://example.com/*.txt" })).toBeUndefined();
+		expect(glob.approvalCacheTargets?.({ pattern: "https://example.com/*.txt" })).toBeUndefined();
 		// A root nothing occupies is not worth a grant.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "missing/nothing.txt" })).toBeUndefined();
-		expect(glob.approvalCacheTargets?.({ path: "missing/**" })).toBeUndefined();
+		expect(glob.approvalCacheTargets?.({ pattern: "missing/**" })).toBeUndefined();
 		// An internal URL keeps the normalized form a read of the same resource mints.
 		expect(grep.approvalCacheTargets?.({ pattern: "hello", path: "local://notes/a.md" })).toEqual([
 			"local://notes/a.md",
 		]);
-		expect(glob.approvalCacheTargets?.({ path: "local://notes" })).toEqual(["local://notes"]);
+		expect(glob.approvalCacheTargets?.({ pattern: "local://notes" })).toEqual(["local://notes"]);
 	});
 
 	it("prompts until the reported key is granted, under always-ask-cached", () => {
 		const grep = new GrepTool(createToolSession(cwd));
 		const glob = new GlobTool(createToolSession(cwd));
 		const grepArgs = { pattern: "hello", path: "src" };
-		const globArgs = { path: "src/**/*.txt" };
+		const globArgs = { pattern: "src/**/*.txt" };
 
 		expect(resolveApproval(grep, grepArgs, "always-ask-cached", {}, readTierGrants())).toMatchObject({
 			policy: "prompt",
@@ -151,9 +151,11 @@ describe("search tool approval cache targets", () => {
 		const folderGrant = readTierGrants([approvalDirectoryKey(srcDir)]);
 		expect(resolveApproval(grep, grepArgs, "always-ask-cached", {}, folderGrant).policy).toBe("prompt");
 		expect(resolveApproval(glob, globArgs, "always-ask-cached", {}, folderGrant).policy).toBe("prompt");
-		expect(resolveApproval(glob, { path: "src/*.txt" }, "always-ask-cached", {}, folderGrant).policy).toBe("allow");
+		expect(resolveApproval(glob, { pattern: "src/*.txt" }, "always-ask-cached", {}, folderGrant).policy).toBe(
+			"allow",
+		);
 		// It reaches a file search inside the folder too.
-		expect(resolveApproval(glob, { path: "src/notes.txt" }, "always-ask-cached", {}, folderGrant).policy).toBe(
+		expect(resolveApproval(glob, { pattern: "src/notes.txt" }, "always-ask-cached", {}, folderGrant).policy).toBe(
 			"allow",
 		);
 		// The tree grant the search's own prompt records is what silences a recursive search.
@@ -182,7 +184,9 @@ describe("search tool approval cache targets", () => {
 			expect([...store.present([tree, folder])].sort()).toEqual([folder, tree].sort());
 
 			const glob = new GlobTool(createToolSession(cwd));
-			expect(resolveApproval(glob, { path: "src/**/*.txt" }, "always-ask-cached", {}, store).policy).toBe("allow");
+			expect(resolveApproval(glob, { pattern: "src/**/*.txt" }, "always-ask-cached", {}, store).policy).toBe(
+				"allow",
+			);
 			// The same grant covers a search of one file inside the folder.
 			expect(
 				resolveApproval(grep, { pattern: "hello", path: "src/notes.txt" }, "always-ask-cached", {}, store).policy,

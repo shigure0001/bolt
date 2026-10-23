@@ -55,14 +55,15 @@ export interface GlobToolDetails {
 // =============================================================================
 
 interface GlobRenderArgs {
+	pattern?: string | string[];
+	/** Legacy argument names (`path`, then `paths`); kept so historical transcripts still render a scope. */
 	path?: string | string[];
-	/** Legacy pre-`path` argument name; kept so historical transcripts still render a scope. */
 	paths?: string | string[];
 	limit?: number;
 }
 
 function formatGlobRenderPaths(args: GlobRenderArgs | undefined): string | undefined {
-	const list = toPathList(args?.path ?? args?.paths);
+	const list = toPathList(args?.pattern ?? args?.path ?? args?.paths);
 	return list.length > 0 ? list.join(", ") : undefined;
 }
 

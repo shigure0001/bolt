@@ -198,7 +198,7 @@ function primaryArgText(name: string, args: Record<string, unknown> | undefined)
 		if (paths) return paths;
 	}
 	if (name === "glob") {
-		const paths = primaryArgValue(args.path) || primaryArgValue(args.paths);
+		const paths = primaryArgValue(args.pattern) || primaryArgValue(args.path) || primaryArgValue(args.paths);
 		if (paths) return paths;
 	}
 	if (name === "ast_grep") {

@@ -80,7 +80,7 @@ describe("multi-path tools tolerate missing entries", () => {
 		const tool = new GlobTool(createTestSession(tempDir), { rootPathAlias: true });
 
 		const result = await tool.execute("find-multi-missing", {
-			path: "src/**/*.ts; tests/**/*.ts",
+			pattern: "src/**/*.ts; tests/**/*.ts",
 		});
 
 		const text = getText(result);
@@ -99,7 +99,7 @@ describe("multi-path tools tolerate missing entries", () => {
 		const tool = new GlobTool(createTestSession(tempDir), { rootPathAlias: true });
 
 		const promise = tool.execute("find-all-missing", {
-			path: "nope/**/*.ts; also-nope/**/*.ts",
+			pattern: "nope/**/*.ts; also-nope/**/*.ts",
 		});
 
 		await expect(promise).rejects.toThrow(/Path not found.*nope.*also-nope/s);

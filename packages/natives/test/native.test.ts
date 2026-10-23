@@ -435,15 +435,21 @@ try {
 			expect(result.matches[0].line).toContain("TODO");
 		});
 
-		it("should handle literal function-call text with parentheses", async () => {
-			const result = await grep({
-				pattern: "hello(",
-				path: testDir,
-			});
+		it("searches an unparseable pattern as literal text and reports why", async () => {
+			const result = await grep({ pattern: "hello(", path: testDir });
+
+			expect(result.totalMatches).toBe(1);
+			expect(result.matches[0].line).toContain("hello()");
+			expect(result.literalFallback).toBe("unclosed group");
+		});
+
+		it("reports no literal fallback for a pattern that parses", async () => {
+			const result = await grep({ pattern: "hello\\(", path: testDir });
 
 			expect(result.totalMatches).toBe(1);
 			expect(result.matches).toHaveLength(1);
 			expect(result.matches[0].line).toContain("hello()");
+			expect(result.literalFallback).toBeUndefined();
 		});
 
 		it("should respect glob patterns", async () => {

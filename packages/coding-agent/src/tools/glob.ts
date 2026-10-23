@@ -23,7 +23,7 @@ import {
 	resolveExplicitFindPatterns,
 	resolveSearchBase,
 	resolveSearchResultPath,
-	searchPathTier,
+	searchPatternTier,
 } from "./path-utils";
 import { searchApprovalCacheTargets } from "./search-approval-targets";
 import { toPathList } from "@oh-my-pi/pi-tui/render/render-utils";
@@ -34,7 +34,7 @@ import { toolResult } from "./tool-result";
 import { cfgTaskDisabledAgents } from "../task/settings";
 
 const findSchema = type({
-	"path?": "string",
+	"pattern?": "string",
 	"hidden?": "boolean",
 	"gitignore?": "boolean",
 	"limit?": "number",
@@ -118,7 +118,7 @@ interface NativePreparedTarget {
 
 export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 	readonly name = "glob";
-	readonly approval = searchPathTier;
+	readonly approval = searchPatternTier;
 	/**
 	 * `always-ask-cached` keys: the folders and files this glob searches, so a
 	 * folder grant recorded by a `read` (or by a grep) covers a search inside it
@@ -127,9 +127,9 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 	 * costs a single stat; see {@link searchApprovalCacheTargets}.
 	 */
 	readonly approvalCacheTargets = (args: unknown): readonly string[] | undefined => {
-		const a = args as { path?: string | string[] } | null | undefined;
+		const a = args as { pattern?: string | string[] } | null | undefined;
 		return searchApprovalCacheTargets(
-			toPathList(a?.path),
+			toPathList(a?.pattern),
 			this.session.cwd,
 			entry => parseFindPattern(entry).basePath,
 			entry => {
@@ -139,6 +139,15 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 				return globPattern === "" || globPattern.includes("**");
 			},
 		);
+	};
+	/**
+	 * TTSR path scope: the raw `pattern` entries, as the generic `*path` argument
+	 * scan reported them when this argument was named `path`, so `tool:glob(*.ts)`
+	 * rules still see `src/**\/*.ts`.
+	 */
+	readonly matcherPaths = (args: unknown): readonly string[] | undefined => {
+		const entries = toPathList((args as { pattern?: string | string[] } | null | undefined)?.pattern);
+		return entries.length > 0 ? entries : undefined;
 	};
 	readonly loadMode = "essential";
 	readonly label = "Glob";
@@ -190,7 +199,7 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 		onUpdate?: AgentToolUpdateCallback<GlobToolDetails>,
 		_context?: AgentToolContext,
 	): Promise<AgentToolResult<GlobToolDetails>> {
-		const { path: pathInput, limit, hidden, gitignore } = params;
+		const { pattern: patternInput, limit, hidden, gitignore } = params;
 
 		throwIfAborted(signal);
 		// Preparation still rejects immediately on caller abort. Once every
@@ -206,7 +215,7 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 		const immediateAbortSignal = this.#customOps?.glob ? signal : preparationController?.signal;
 		const execution = untilAborted(immediateAbortSignal, async () => {
 			const formatScopePath = (targetPath: string): string => formatPathRelativeToCwd(targetPath, this.session.cwd);
-			const scopedPaths = toPathList(pathInput);
+			const scopedPaths = toPathList(patternInput);
 			const effectivePaths = scopedPaths.length > 0 ? scopedPaths : ["."];
 			const rawPatternInputs = this.#customOps
 				? effectivePaths
@@ -226,7 +235,7 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 			});
 			const normalizedPatterns = aliasResolvedPatterns.map(pattern => internalRouter.normalize(pattern));
 			if (normalizedPatterns.some(pattern => pattern.length === 0)) {
-				throw new ToolError("`path` must contain non-empty globs or paths");
+				throw new ToolError("`pattern` must contain non-empty globs or paths");
 			}
 
 			// Tolerate missing entries in a multi-path call: skip ones whose base
@@ -320,7 +329,13 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 					// A timed-out empty result is an incomplete scan, not a verified
 					// absence — never emit the definitive "No files found" claim next
 					// to a timeout notice (the two statements contradict each other).
-					const parts = opts?.timedOut ? [] : ["No files found matching pattern"];
+					const parts = opts?.timedOut
+						? []
+						: [
+								useGitignore
+									? "No files found matching pattern (gitignored files skipped; `gitignore: false` includes them)"
+									: "No files found matching pattern",
+							];
 					if (notice) parts.push(notice);
 					if (missingPathsNote) parts.push(missingPathsNote);
 					// Zero results is useless regardless of notices: the follow-up

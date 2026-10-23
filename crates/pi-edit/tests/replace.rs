@@ -34,6 +34,52 @@ async fn replace_old_text_new_text_and_rendered_preview() {
 }
 
 #[tokio::test]
+async fn duplicate_match_error_lists_lines_and_marks_previews() {
+	let workspace = Workspace::new(EditMode::Replace);
+	workspace.write(
+		"t.py",
+		"def a():\n    return 1\n\ndef b():\n    return 1\n\ndef c(x):\n    if x:\n        return 2\n",
+	);
+	let error = workspace
+		.apply_json(
+			&json!({ "path": "t.py", "old_string": "    return 1", "new_string": "    return 3" }),
+			&DiskWriter::default(),
+		)
+		.await
+		.unwrap_err()
+		.to_string();
+	assert!(error.contains("Found 2 occurrences in t.py (lines 2, 5);"), "{error}");
+	assert!(error.contains("*2|    return 1") && error.contains("*5|    return 1"), "{error}");
+	assert_eq!(error.matches("def a():").count(), 1, "previews must not overlap: {error}");
+}
+
+#[tokio::test]
+async fn fuzzy_only_match_is_reported_in_result_text() {
+	let workspace = Workspace::new(EditMode::Replace);
+	workspace.write("f.py", "def a():\n    pass\n\nclass K:\n    def m(self):\n        return 1\n");
+	let fuzzy = workspace
+		.apply_json(
+			&json!({
+				"path": "f.py",
+				"old_string": "def m(self):\n    return 1",
+				"new_string": "def m(self):\n    return 2",
+			}),
+			&DiskWriter::default(),
+		)
+		.await
+		.unwrap();
+	assert!(fuzzy.files[0].text.contains("matched with whitespace-insensitive fallback at line 5"));
+	let exact = workspace
+		.apply_json(
+			&json!({ "path": "f.py", "old_string": "return 2", "new_string": "return 3" }),
+			&DiskWriter::default(),
+		)
+		.await
+		.unwrap();
+	assert!(!exact.files[0].text.contains("fallback"));
+}
+
+#[tokio::test]
 async fn prunes_old_text_new_text_while_keeping_diff() {
 	let workspace = Workspace::new(EditMode::Replace);
 	let filler = "filler line that makes the source large\n".repeat(500);
@@ -79,6 +125,30 @@ async fn applies_cursor_batch_sequentially_with_one_aggregate_diff() {
 }
 
 #[tokio::test]
+async fn replace_all_marks_the_gap_between_distant_hunks() {
+	let workspace = Workspace::new(EditMode::Replace);
+	workspace.write(
+		"a.ts",
+		"export function add(a: number, b: number): number {\n  return a + b;\n}\n\nexport function sub(a: number, b: number): number {\n  return a - b;\n}\n\n// TODO: mul\nconst x = add(1, 2);\nconst y = add(3, 4);\nconsole.log(x, y);\n",
+	);
+	let outcome = workspace
+		.apply_json(
+			&json!({ "path": "a.ts", "old_string": "add(", "new_string": "plus(", "replace_all": true }),
+			&DiskWriter::default(),
+		)
+		.await
+		.unwrap();
+	let text = &outcome.text;
+	let rows: Vec<&str> = text.lines().filter(|row| row.contains('|') || *row == "…").collect();
+	for pair in rows.windows(2) {
+		let number = |row: &str| row.trim_start_matches(['>', ' ', '+', '-', '*']).split('|').next()?.parse::<u32>().ok();
+		if let (Some(a), Some(b)) = (number(pair[0]), number(pair[1])) {
+			assert!(b <= a + 1, "rows {a} and {b} are not adjacent and have no `…` between them:\n{text}");
+		}
+	}
+}
+
+#[tokio::test]
 async fn cursor_batch_failure_stages_nothing() {
 	let workspace = Workspace::new(EditMode::Replace);
 	workspace.write("a.ts", "one\ntwo\n");
@@ -96,7 +166,7 @@ async fn cursor_batch_failure_stages_nothing() {
 		)
 		.await
 		.unwrap_err();
-	assert!(error.to_string().contains("match in a.ts"));
+	assert!(error.to_string().contains("a.ts"));
 	assert!(writer.requests.lock().is_empty());
 	assert_eq!(workspace.read("a.ts").as_deref(), Some("one\ntwo\n"));
 }

@@ -93,7 +93,8 @@ export const cfgEditFuzzyThreshold = register({
 		tab: "files",
 		group: "Editing",
 		label: "Fuzzy Match Threshold",
-		description: "Similarity threshold (0-1) for accepting fuzzy matches",
+		description:
+			"Similarity (0-1) a candidate needs before its whitespace differences are accepted; other differences are never applied",
 		options: [
 			{ value: "0.85", label: "0.85", description: "Lenient" },
 			{ value: "0.90", label: "0.90", description: "Moderate" },

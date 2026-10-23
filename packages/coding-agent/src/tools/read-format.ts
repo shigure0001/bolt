@@ -1,4 +1,4 @@
-import { type ElidedRange, formatSingleLine } from "@oh-my-pi/pi-tui/tools/read";
+import type { ElidedRange } from "@oh-my-pi/pi-tui/tools/read";
 import * as path from "node:path";
 import type { AgentToolResult } from "@oh-my-pi/pi-agent-core";
 import { countNewlines } from "@oh-my-pi/pi-utils";
@@ -18,13 +18,6 @@ import {
 	truncateHead,
 	truncateHeadBytes,
 } from "@oh-my-pi/pi-tui/tools/streaming-output";
-import {
-	buildLineEntriesWithBlockContext,
-	type LineEntry,
-	lineEntriesToPlainText,
-	spansCoverEveryLine,
-	warmBlockContext,
-} from "../utils/block-context";
 import { resolveFileDisplayMode } from "../utils/file-display-mode";
 import { formatPathRelativeToCwd } from "./path-utils";
 import { type LineRange } from "@oh-my-pi/pi-tui/tools/line-ranges";
@@ -129,21 +122,6 @@ export function formatTextWithMode(
 	return text;
 }
 
-export const BRACKET_CONTEXT_ELLIPSIS = "…";
-
-function formatLineEntryWithMode(entry: LineEntry, shouldAddHashLines: boolean, shouldAddLineNumbers: boolean): string {
-	if (entry.kind === "ellipsis") return BRACKET_CONTEXT_ELLIPSIS;
-	return formatSingleLine(entry.lineNumber, entry.text, shouldAddHashLines, shouldAddLineNumbers);
-}
-
-export function formatLineEntriesWithMode(
-	entries: readonly LineEntry[],
-	shouldAddHashLines: boolean,
-	shouldAddLineNumbers: boolean,
-): string {
-	return entries.map(entry => formatLineEntryWithMode(entry, shouldAddHashLines, shouldAddLineNumbers)).join("\n");
-}
-
 /** Line count of file content: 0 for empty text, otherwise N newlines ⇒ N+1 lines. */
 export function countTextLines(text: string): number {
 	return text.length === 0 ? 0 : countNewlines(text) + 1;
@@ -206,14 +184,6 @@ function recordInMemorySeenLines(
 ): void {
 	if (!absolutePath || !path.isAbsolute(absolutePath) || !seenLines || seenLines.length === 0) return;
 	getEditStore(session).recordSnapshot(absolutePath, normalizeToLF(fullText), [...seenLines]);
-}
-
-function lineNumbersFromEntries(entries: readonly LineEntry[]): number[] {
-	const lines: number[] = [];
-	for (const entry of entries) {
-		if (entry.kind === "line") lines.push(entry.lineNumber);
-	}
-	return lines;
 }
 
 /** Sample ranges shown in the footer to demonstrate the multi-range syntax. */
@@ -288,8 +258,8 @@ export async function buildInMemoryTextResult(
 	const displayMode = resolveFileDisplayMode(session, { raw: options.raw, immutable: options.immutable });
 	const details = options.details ?? {};
 	const rawDisplay = options.raw === true;
-	// Raw mode addresses verbatim `\n` segments and shows no block context, so it
-	// slices the window straight out of `text`; only addressable reads need every line.
+	// Raw mode addresses verbatim `\n` segments, so it slices the window straight out of
+	// `text`; only addressable reads need every line.
 	const allLines = rawDisplay ? undefined : splitAddressableFileLines(text);
 	const totalLines = allLines ? allLines.length : countRawLines(text);
 	details.totalLines = totalLines;
@@ -340,15 +310,6 @@ export async function buildInMemoryTextResult(
 	const joinSelectedLines = (): string =>
 		(allLines ? allLines.slice(startLine, endLine) : selectedRange.split("\n")).join("\n");
 	const userLimitedLines = limit !== undefined ? endLine - startLine : undefined;
-	// Any display short of the whole text shows block context around it.
-	if (
-		!rawDisplay &&
-		options.sourcePath &&
-		!truncation.firstLineExceedsLimit &&
-		(startLine > 0 || endLine < totalLines || truncation.truncated)
-	) {
-		await warmBlockContext({ path: options.sourcePath, text });
-	}
 
 	const shouldAddHashLines = displayMode.hashLines;
 	const shouldAddLineNumbers = shouldAddHashLines ? false : displayMode.lineNumbers;
@@ -378,24 +339,6 @@ export async function buildInMemoryTextResult(
 		emittedHashlineHeader = true;
 		return prependHashlineHeader(formatted, hashContext);
 	};
-	const formatLineEntries = (entries: readonly LineEntry[], startNum: number): string => {
-		const firstLine = entries.find(entry => entry.kind === "line");
-		details.displayContent = {
-			text: lineEntriesToPlainText(entries, BRACKET_CONTEXT_ELLIPSIS),
-			startLine: firstLine?.kind === "line" ? firstLine.lineNumber : startNum,
-			lineNumbers: entries.map(entry => (entry.kind === "line" ? entry.lineNumber : null)),
-		};
-		if (shouldAddHashLines) seenLines = lineNumbersFromEntries(entries);
-		const formatted = formatLineEntriesWithMode(entries, shouldAddHashLines, shouldAddLineNumbers);
-		if (!hashContext || emittedHashlineHeader) return formatted;
-		emittedHashlineHeader = true;
-		return prependHashlineHeader(formatted, hashContext);
-	};
-	const buildLineEntries = (lines: readonly string[], endLineDisplay: number): LineEntry[] =>
-		buildLineEntriesWithBlockContext(lines, [{ startLine: startLineDisplay, endLine: endLineDisplay }], {
-			path: options.sourcePath,
-			text,
-		});
 
 	let outputText: string;
 	let truncationInfo: { result: TruncationResult; options: TruncationMetaInput } | undefined;
@@ -425,14 +368,13 @@ export async function buildInMemoryTextResult(
 			options: { direction: "head", startLine: startLineDisplay, totalFileLines: totalLines },
 		};
 	} else if (truncation.truncated) {
-		const outputLines = truncation.outputLines ?? countTextLines(truncation.content);
-		const endLineDisplay = startLineDisplay + Math.max(0, outputLines - 1);
-		if (!allLines) {
-			rawSeenLines = contiguousLineNumbers(startLineDisplay, outputLines);
-			outputText = formatText(truncation.content, startLineDisplay);
-		} else {
-			outputText = formatLineEntries(buildLineEntries(allLines, endLineDisplay), startLineDisplay);
+		if (rawDisplay) {
+			rawSeenLines = contiguousLineNumbers(
+				startLineDisplay,
+				truncation.outputLines ?? countTextLines(truncation.content),
+			);
 		}
+		outputText = formatText(truncation.content, startLineDisplay);
 		details.truncation = toReadTruncationStats(truncation);
 		truncationInfo = {
 			result: truncation,
@@ -447,21 +389,11 @@ export async function buildInMemoryTextResult(
 	} else if (!rawDisplay && userLimitedLines !== undefined && startLine + userLimitedLines < totalLines) {
 		const remaining = totalLines - (startLine + userLimitedLines);
 		const nextOffset = startLine + userLimitedLines + 1;
-
-		if (!allLines) {
-			rawSeenLines = contiguousLineNumbers(startLineDisplay, userLimitedLines);
-			outputText = formatText(joinSelectedLines(), startLineDisplay);
-		} else {
-			outputText = formatLineEntries(buildLineEntries(allLines, endLine), startLineDisplay);
-		}
+		outputText = formatText(joinSelectedLines(), startLineDisplay);
 		outputText += `\n\n[${remaining} more lines in ${options.entityLabel}. Use :${nextOffset} to continue]`;
 	} else {
-		if (!allLines) {
-			rawSeenLines = contiguousLineNumbers(startLineDisplay, endLine - startLine);
-			outputText = formatText(joinSelectedLines(), startLineDisplay);
-		} else {
-			outputText = formatLineEntries(buildLineEntries(allLines, endLine), startLineDisplay);
-		}
+		if (rawDisplay) rawSeenLines = contiguousLineNumbers(startLineDisplay, endLine - startLine);
+		outputText = formatText(joinSelectedLines(), startLineDisplay);
 	}
 
 	if (hashContext?.tag && options.sourcePath && seenLines) {
@@ -481,8 +413,7 @@ export async function buildInMemoryTextResult(
  * Render a multi-range read against in-memory text. Each range emits a
  * formatted block with its own anchors / line numbers, blocks are joined
  * with an elision separator, and ranges past EOF surface as `[…]` notices
- * so the model can correct the next call. No leading/trailing context is
- * added — multi-range callers always specify exact bounds.
+ * so the model can correct the next call. Ranges are exact: no context lines.
  */
 export async function buildInMemoryMultiRangeResult(
 	session: ToolSession,
@@ -508,7 +439,6 @@ export async function buildInMemoryMultiRangeResult(
 					text,
 				)
 			: undefined;
-	let emittedHashlineHeader = false;
 
 	let seenLines: number[] | undefined;
 	const resultBuilder = toolResult(details);
@@ -518,7 +448,9 @@ export async function buildInMemoryMultiRangeResult(
 
 	const outOfBounds: LineRange[] = [];
 	const visibleSpans: Array<{ startLine: number; endLine: number }> = [];
-	const rawParts: string[] = [];
+	const parts: string[] = [];
+	const plainRows: string[] = [];
+	const rowNumbers: Array<number | null> = [];
 	for (const range of ranges) {
 		if (range.startLine > totalLines) {
 			outOfBounds.push(range);
@@ -526,9 +458,20 @@ export async function buildInMemoryMultiRangeResult(
 		}
 		const effectiveEnd = Math.min(range.endLine ?? totalLines, totalLines);
 		visibleSpans.push({ startLine: range.startLine, endLine: effectiveEnd });
-		if (!allLines) {
+		if (allLines) {
+			const rows = allLines.slice(range.startLine - 1, effectiveEnd);
+			parts.push(formatTextWithMode(rows.join("\n"), range.startLine, shouldAddHashLines, shouldAddLineNumbers));
+			if (plainRows.length > 0) {
+				plainRows.push("…");
+				rowNumbers.push(null);
+			}
+			for (let i = 0; i < rows.length; i++) {
+				plainRows.push(rows[i]);
+				rowNumbers.push(range.startLine + i);
+			}
+		} else {
 			// Re-join (as the split path did) so the part never pins `text` through a substring.
-			rawParts.push(
+			parts.push(
 				sliceRawLineRange(
 					text,
 					range.startLine - 1,
@@ -541,26 +484,15 @@ export async function buildInMemoryMultiRangeResult(
 		}
 	}
 
-	let outputText = "";
-	if (!allLines) {
-		outputText = rawParts.length > 0 ? rawParts.join("\n\n…\n\n") : "";
-	} else if (visibleSpans.length > 0) {
-		if (options.sourcePath && !spansCoverEveryLine(visibleSpans, totalLines)) {
-			await warmBlockContext({ path: options.sourcePath, text });
-		}
-		const entries = buildLineEntriesWithBlockContext(allLines, visibleSpans, { path: options.sourcePath, text });
-		if (shouldAddHashLines) seenLines = lineNumbersFromEntries(entries);
-		const firstLine = entries.find(entry => entry.kind === "line");
-		if (firstLine?.kind === "line") {
-			details.displayContent = {
-				text: lineEntriesToPlainText(entries, BRACKET_CONTEXT_ELLIPSIS),
-				startLine: firstLine.lineNumber,
-				lineNumbers: entries.map(entry => (entry.kind === "line" ? entry.lineNumber : null)),
-			};
-		}
-		const formatted = formatLineEntriesWithMode(entries, shouldAddHashLines, shouldAddLineNumbers);
-		outputText = hashContext && !emittedHashlineHeader ? prependHashlineHeader(formatted, hashContext) : formatted;
-		if (hashContext) emittedHashlineHeader = true;
+	let outputText = parts.join("\n\n…\n\n");
+	if (allLines && visibleSpans.length > 0) {
+		if (shouldAddHashLines) seenLines = lineNumbersFromSpans(visibleSpans);
+		details.displayContent = {
+			text: plainRows.join("\n"),
+			startLine: visibleSpans[0].startLine,
+			lineNumbers: rowNumbers,
+		};
+		if (hashContext) outputText = prependHashlineHeader(outputText, hashContext);
 	}
 	const notices: string[] = [];
 	for (const range of outOfBounds) {

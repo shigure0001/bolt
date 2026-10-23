@@ -39,6 +39,7 @@ import {
 	isMountableUnderXdev,
 	listXdevTools,
 	planXdevPromptDocs,
+	promptCatalogSummary,
 	type XdevState,
 	xdevDocsFor,
 	xdevEntries,
@@ -63,7 +64,22 @@ import type { SessionManager } from "./session-manager";
 import { cfgDisabledExtensions, cfgSkills, type SkillsSettings } from "../extensibility/settings";
 import { cfgExternalThinking, cfgIncludeModelInPrompt, cfgInlineToolDescriptors, cfgSkillful } from "./settings";
 import { cfgStartupQuiet } from "../modes/settings";
-import { cfgToolsApproval, cfgToolsApprovalMode, cfgToolsXdevDocs, cfgToolsXdevInlineDevices } from "../tools/settings";
+import {
+	cfgToolsApproval,
+	cfgToolsApprovalMode,
+	cfgToolsDeferred,
+	cfgToolsXdevDocs,
+	cfgToolsXdevInlineDevices,
+} from "../tools/settings";
+import {
+	applyToolDeferral,
+	compileDeferredToolPatterns,
+	type DeferredToolEntry,
+	type DeferredToolLoadResult,
+	isToolDeferred,
+	LOAD_TOOLS_TOOL_NAME,
+	type ToolDeferralContext,
+} from "../tools/deferred-tools";
 
 /** Capabilities borrowed from the owning AgentSession. */
 export interface SessionToolsHost {
@@ -462,6 +478,8 @@ export class SessionTools {
 	 */
 	#promptSurface: PromptSurface;
 	#acpPermissionDecisions = new Map<string, "allow_always" | "reject_always">();
+	/** Deferred tools the model loaded with `load_tools`; they stay active for the session. */
+	readonly #loadedDeferredToolNames = new Set<string>();
 
 	constructor(host: SessionToolsHost, options: SessionToolsOptions) {
 		this.#host = host;
@@ -1169,6 +1187,7 @@ export class SessionTools {
 	async #applyActiveToolsByName(toolNames: string[], forcePromptRefresh = false, signal?: AbortSignal): Promise<void> {
 		signal?.throwIfAborted();
 		toolNames = normalizeToolNames(toolNames);
+		toolNames = applyToolDeferral(toolNames, this.#deferralContext());
 		let builtInWriteAvailable = this.#builtInToolNames.has("write");
 		const fullWriteSelected =
 			toolNames.includes("write") &&
@@ -1958,6 +1977,44 @@ export class SessionTools {
 				this.getActiveToolNames().includes("write"),
 			);
 		});
+	}
+
+	#deferralContext(): ToolDeferralContext {
+		return {
+			globs: compileDeferredToolPatterns(cfgToolsDeferred.get(this.#host.settings)),
+			registryNames: this.#toolRegistry.keys(),
+			isLoaded: name => this.#loadedDeferredToolNames.has(name),
+			isPinned: name => this.#presentationPinnedToolNames?.has(name) === true,
+		};
+	}
+
+	/** Registered tools that `load_tools` can activate, with one-line summaries. */
+	getDeferredTools(): DeferredToolEntry[] {
+		if (!this.getActiveToolNames().includes(LOAD_TOOLS_TOOL_NAME)) return [];
+		const ctx = this.#deferralContext();
+		const active = new Set(this.getActiveToolNames());
+		const entries: DeferredToolEntry[] = [];
+		for (const [name, tool] of this.#toolRegistry) {
+			if (active.has(name) || !isToolDeferred(name, ctx)) continue;
+			entries.push({ name, summary: promptCatalogSummary(tool, 80) });
+		}
+		return entries;
+	}
+
+	/** Activates deferred tools for the rest of the session. */
+	async loadDeferredTools(names: string[]): Promise<DeferredToolLoadResult> {
+		const active = new Set(this.getActiveToolNames());
+		const loadable = new Set(this.getDeferredTools().map(entry => entry.name));
+		const result: DeferredToolLoadResult = { loaded: [], alreadyActive: [], unknown: [] };
+		for (const name of normalizeToolNames(names)) {
+			if (active.has(name)) result.alreadyActive.push(name);
+			else if (loadable.has(name)) result.loaded.push(name);
+			else result.unknown.push(name);
+		}
+		if (result.loaded.length === 0) return result;
+		for (const name of result.loaded) this.#loadedDeferredToolNames.add(name);
+		await this.setActiveToolsByName([...this.getEnabledToolNames(), ...result.loaded]);
+		return result;
 	}
 
 	/**

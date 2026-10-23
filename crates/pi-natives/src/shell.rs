@@ -391,6 +391,14 @@ impl Shell {
 		self.inner.live_background_job_count().await
 	}
 
+	/// Exported variables as of this session's last completed `run`, or
+	/// `null` before one finished. Synchronous and never waits on a running
+	/// command, so a caller finding the session busy can seed a separate shell.
+	#[napi]
+	pub fn exported_env(&self) -> Option<HashMap<String, String>> {
+		self.inner.exported_env()
+	}
+
 	/// Pids of the still-alive processes spawned by this session's in-flight
 	/// `run`, in spawn order: foreground commands, pipeline stages, and `&`
 	/// jobs started by that run. Builtins run in-process and never appear.

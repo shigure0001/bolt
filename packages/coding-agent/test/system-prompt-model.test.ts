@@ -99,6 +99,7 @@ describe("system prompt model identifier", () => {
 			toolNames: [],
 			workspaceTree: { ...EMPTY_TREE, rootPath: tempDir },
 			model: "anthropic/claude-opus-4",
+			includeModelInPrompt: true,
 		});
 
 		expect(systemPrompt.join("\n\n")).toContain("Model: anthropic/claude-opus-4");
@@ -204,11 +205,15 @@ describe("AgentSession model-change prompt refresh", () => {
 		authStorage.keys.setRuntime(modelB.provider, "key-b");
 
 		let rebuildCount = 0;
-		session = newSession(modelA, Settings.isolated({ "compaction.enabled": false }), async () => {
-			rebuildCount++;
-			const active = session?.model;
-			return { systemPrompt: [`model:${active ? `${active.provider}/${active.id}` : ""}`] };
-		});
+		session = newSession(
+			modelA,
+			Settings.isolated({ "compaction.enabled": false, includeModelInPrompt: true }),
+			async () => {
+				rebuildCount++;
+				const active = session?.model;
+				return { systemPrompt: [`model:${active ? `${active.provider}/${active.id}` : ""}`] };
+			},
+		);
 
 		await session.setModel(modelB);
 		expect(rebuildCount).toBe(1);

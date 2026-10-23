@@ -1,1 +1,1 @@
-`artifact://<id>`: full output that was truncated in a tool result. Read it in ranges, e.g. `artifact://12:200-400` (add `:raw` for exact text).
+`artifact://<id>`: full text of truncated tool output; read in ranges (`artifact://12:200-400`).

@@ -134,6 +134,7 @@ async function createDeferredSession() {
 			"retry.enabled": false,
 			"todo.enabled": false,
 			"tools.xdev": true,
+			"tools.deferred": [],
 		}),
 		disableExtensionDiscovery: true,
 		skills: [],
