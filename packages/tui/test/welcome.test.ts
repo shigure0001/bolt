@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from "bun:test";
-import { pickWeightedTip, WelcomeComponent } from "@oh-my-pi/pi-tui/prompt/welcome";
+import { BRAND_LOGO, pickWeightedTip, WelcomeComponent } from "@oh-my-pi/pi-tui/prompt/welcome";
 import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
 import { visibleWidth } from "@oh-my-pi/pi-tui";
 
@@ -86,13 +86,14 @@ describe("WelcomeComponent", () => {
 		const indent = (row: string) => visibleWidth(row) - visibleWidth(row.trimStart());
 		const expectCentered = (left: number, right: number) => expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
 
-		// The lockup is one block: the logo's bar starts it, the wordmark row ends it.
-		const bar = rows.find(row => row.includes("████████████")) ?? "";
-		const word = rows.find(row => row.includes("▄▀▀▄")) ?? "";
-		expectCentered(indent(bar), columns - visibleWidth(word));
+		// The lockup is one block: its leftmost row start and rightmost row end center it.
+		const tipStart = rows.findIndex(row => row.includes("Tip: "));
+		const lockup = rows.slice(0, tipStart).filter(row => row.length > 0);
+		expect(lockup).toHaveLength(BRAND_LOGO.length);
+		expectCentered(Math.min(...lockup.map(indent)), columns - Math.max(...lockup.map(row => visibleWidth(row))));
 
 		// Each tip line centers on its own.
-		const below = rows.slice(rows.findIndex(row => row.includes("Tip: "))).filter(row => row.length > 0);
+		const below = rows.slice(tipStart).filter(row => row.length > 0);
 		expect(below.length).toBeGreaterThanOrEqual(1);
 		for (const row of below) expectCentered(indent(row), columns - visibleWidth(row));
 	});
@@ -105,18 +106,22 @@ describe("WelcomeComponent", () => {
 	});
 
 	it("sets the version under the wordmark while the lockup fits, else keeps the logo alone", () => {
-		const rows = (columns: number) => new WelcomeComponent("1.0.0").render(columns).map(row => Bun.stripANSI(row));
+		const lockup = (columns: number) =>
+			new WelcomeComponent("1.0.0")
+				.render(columns)
+				.map(row => Bun.stripANSI(row).trimEnd())
+				.filter(row => row.length > 0);
+		const logoWidth = Math.max(...BRAND_LOGO.map(row => row.length));
 
-		// The lockup needs 12 logo + 4 gap + 15 wordmark columns inside the 2-column margin.
-		const fits = rows(33);
-		const word = fits.find(row => row.includes("▄▀▀▄"));
-		const version = fits.find(row => row.includes("v1.0.0"));
-		expect(fits.some(row => row.includes("████████████"))).toBe(true);
-		expect(version?.indexOf("v1.0.0")).toBe(word?.indexOf("▄▀▀▄"));
+		// Wide enough for logo + 4-column gap + wordmark: the version starts where the wordmark does.
+		const fits = lockup(48);
+		const blockIndent = Math.min(...fits.map(row => row.length - row.trimStart().length));
+		const wordStart = blockIndent + logoWidth + 4;
+		expect(fits[1]?.[wordStart]).not.toBe(" ");
+		expect(fits[4]?.indexOf("v1.0.0")).toBe(wordStart);
 
-		const narrow = rows(32).join("\n");
-		expect(narrow).toContain("████████████");
-		expect(narrow).not.toContain("▄▀▀▄");
-		expect(narrow).not.toContain("v1.0.0");
+		// Room for the logo but not the wordmark (2-column margin): the logo alone.
+		const narrow = lockup(logoWidth + 2);
+		expect(narrow.map(row => row.trim())).toEqual(BRAND_LOGO.map(row => row.trim()));
 	});
 });

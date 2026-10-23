@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The welcome banner and setup scenes show a lightning-bolt mark and a `bolt` wordmark instead of the π mark and `omp`; the exported `PI_LOGO` is now `BRAND_LOGO`. The setup splash's 2x mark scales half blocks into the matching half instead of doubling them into stripes
+- Welcome tips name the `bolt` CLI (`bolt stats`, `bolt -c`, `bolt auth-broker serve`, `bolt cleanse`), and the tip advertising omp's Tern app is gone
+
 ### Added
 
 - Added `modelEnds` to `GroupedFileSection`: per file, the model-line index just past its last line, so a caller cutting the output can tell which files it shows whole ([#16594](https://github.com/can1357/oh-my-pi/pull/16594) by [@will-bogusz](https://github.com/will-bogusz))

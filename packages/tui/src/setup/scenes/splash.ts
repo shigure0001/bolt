@@ -1,6 +1,6 @@
 import { centerLine, visibleWidth } from "../../utils";
 import { padToWidth } from "../../render/utils";
-import { gradientEscape, gradientLogo, logoNode, PI_LOGO, type ShineConfig } from "../../prompt/welcome";
+import { BRAND_LOGO, gradientEscape, gradientLogo, logoNode, type ShineConfig } from "../../prompt/welcome";
 import { theme } from "../../theme/theme";
 import { formatKeyHint } from "../../app-keybindings";
 import { col, node, span, text } from "../../native/describe";
@@ -10,13 +10,20 @@ import { Memo } from "../../native/memo";
 export const SETUP_SPLASH_MS = 2600;
 export const SETUP_TICK_MS = 33;
 
-/** Brand mark at 2x: every glyph doubled horizontally, every row doubled vertically. */
-const LARGE_LOGO = PI_LOGO.flatMap(line => {
-	let wide = "";
+/**
+ * Brand mark at 2x: every cell becomes 2×2, and a half block (`▀`/`▄`) fills
+ * only its own row of the pair, so the shape scales instead of striping.
+ */
+const LARGE_LOGO = BRAND_LOGO.flatMap(line => {
+	let top = "";
+	let bottom = "";
 	for (const char of line) {
-		wide += char === " " ? "  " : `${char}${char}`;
+		const upper = char === "▄" ? " " : char === "▀" ? "█" : char;
+		const lower = char === "▀" ? " " : char === "▄" ? "█" : char;
+		top += upper + upper;
+		bottom += lower + lower;
 	}
-	return [wide, wide];
+	return [top, bottom];
 });
 const LOGO_WIDTH = Math.max(...LARGE_LOGO.map(line => visibleWidth(line)));
 const LOGO_HEIGHT = LARGE_LOGO.length;
@@ -158,7 +165,7 @@ function resetCells(width: number, height: number): string[][] {
 let diagonalEscapes: (string | undefined)[] = [];
 
 /**
- * Animated setup splash, in the spirit of the omp landing page: the brand π
+ * Animated setup splash, in the spirit of the omp landing page: the brand bolt
  * mark rendered with the live diagonal gradient + shine sweep, rising out of a
  * rippling, gradient-lit water surface, under a faint twinkling starfield. The
  * mark and water share one continuous gradient so the sweep reads across the
@@ -274,7 +281,7 @@ export function describeSetupSplash(): NativeNode {
 
 /** Centered fallback for windows too small to hold the full scene. */
 function renderCompactSplash(width: number, height: number, phase: number, shine: ShineConfig): string[] {
-	const art = height >= 14 ? LARGE_LOGO : PI_LOGO;
+	const art = height >= 14 ? LARGE_LOGO : BRAND_LOGO;
 	const content = [...gradientLogo(art, phase, shine), "", theme.bold("O h   M y   P i")];
 	const start = Math.max(0, Math.floor((height - content.length) / 2));
 	const lines: string[] = [];
