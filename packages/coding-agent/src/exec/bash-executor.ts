@@ -3,6 +3,7 @@
  *
  * Uses brush-core via native bindings for shell execution.
  */
+import * as path from "node:path";
 import { ExponentialYield } from "@oh-my-pi/pi-agent-core/utils/yield";
 import type { ImageContent } from "@oh-my-pi/pi-ai";
 import {
@@ -28,6 +29,7 @@ import { getOrCreateSnapshot } from "../utils/shell-snapshot";
 import { TerminalGraphicsDecoder } from "../utils/terminal-graphics";
 import { loadDirenvEnv } from "./direnv";
 import { buildNonInteractiveEnv } from "./non-interactive-env";
+import { findDriveRootTmpWrites, formatDriveRootTmpNotice } from "./windows-tmp-alias";
 
 import {
 	cfgBashDirenv,
@@ -750,6 +752,7 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 
 	let resetSession = false;
 
+	const runStartedMs = Date.now();
 	try {
 		const runPromise = executionShell.run(
 			{
@@ -869,11 +872,21 @@ export async function executeBash(command: string, options?: BashExecutorOptions
 		}
 
 		// Normal completion
+		const strayTmpWrites =
+			process.platform === "win32" && !virtualCwd
+				? await findDriveRootTmpWrites(
+						command,
+						[commandCwd ?? process.cwd(), winner.result.workingDir ?? process.cwd()].map(
+							dir => path.parse(path.resolve(dir)).root,
+						),
+						runStartedMs,
+					)
+				: [];
 		return {
 			exitCode: winner.result.exitCode,
 			cancelled: false,
 			workingDir: winner.result.workingDir,
-			...(await dump()),
+			...(await dump(strayTmpWrites.length > 0 ? formatDriveRootTmpNotice(strayTmpWrites) : undefined)),
 		};
 	} catch (err) {
 		resetSession = true;

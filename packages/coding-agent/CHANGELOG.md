@@ -59,6 +59,9 @@
 - `read`'s not-found error says "in the working directory" instead of `in '.'`, and `bash` names its default `cwd` the working directory
 - An empty `glob` result says gitignored files were skipped and that `gitignore: false` includes them; bash timeout notices say "1 second" instead of "1 seconds"; shell I/O errors use POSIX wording (`No such file or directory`, `Permission denied`) instead of the OS's localized message
 - `edit`'s description says a text differing only in whitespace or quote style still matches (was "small whitespace differences are tolerated"); `read`'s `path` parameter description names the line selector (`:50-80`)
+- An empty `glob` result names what was skipped: gitignored files (`gitignore: false` includes them) and `node_modules` unless the pattern names it; it no longer claims `gitignore: false` reaches `node_modules`. The `glob` description states the `node_modules` rule
+- The system prompt says to keep scratch files in `local://` or the system temp dir and never to create files or folders in the working directory's parent, or elsewhere outside it, unless the task needs them there
+- On Windows the `bash` description says `/tmp` means `$TMPDIR` only inside the shell and to pass native programs `$TMPDIR`; a command that makes a native program write the drive root's `tmp` (`C:\tmp\x` for `/tmp/x`) gets a notice naming the stray path
 
 ### Fixed
 

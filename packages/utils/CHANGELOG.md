@@ -5,6 +5,7 @@
 ### Changed
 
 - `APP_NAME` is now `bolt` and `CONFIG_DIR_NAME` is `.bolt`, so config, sessions, logs, caches and XDG directories no longer overlap with `omp`
+- On Windows the shell spawn environment sets `HOME` from `USERPROFILE` and `TMPDIR` from `TEMP`/`TMP` when the host leaves them unset, so `~` and `$TMPDIR` work in the shell and `$TMPDIR` names one directory for the shell and native programs
 
 ## [18.12.6] - 2026-10-21
 

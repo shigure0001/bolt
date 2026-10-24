@@ -329,11 +329,23 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 					// A timed-out empty result is an incomplete scan, not a verified
 					// absence — never emit the definitive "No files found" claim next
 					// to a timeout notice (the two statements contradict each other).
+					// The walker skips node_modules unless the pattern names it, whatever
+					// `gitignore` says, so the hint must not promise `gitignore: false`
+					// reaches it.
+					const skipped = [
+						...(useGitignore ? ["gitignored files (`gitignore: false` includes them)"] : []),
+						...(targets.some(
+							target =>
+								target.globPattern.includes("node_modules") || target.searchPath.includes("node_modules"),
+						)
+							? []
+							: ["node_modules (name it in the pattern to search it)"]),
+					];
 					const parts = opts?.timedOut
 						? []
 						: [
-								useGitignore
-									? "No files found matching pattern (gitignored files skipped; `gitignore: false` includes them)"
+								skipped.length > 0
+									? `No files found matching pattern (skipped ${skipped.join(" and ")})`
 									: "No files found matching pattern",
 							];
 					if (notice) parts.push(notice);

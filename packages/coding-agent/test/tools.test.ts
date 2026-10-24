@@ -3354,6 +3354,25 @@ function b() {
 			expect(elapsedMs).toBeLessThan(1000);
 		});
 
+		// Regression: the empty-result hint promised `gitignore: false` would include
+		// skipped files, but node_modules stays skipped unless the pattern names it.
+		it("points an empty search at the pattern, not gitignore, for node_modules", async () => {
+			fs.mkdirSync(path.join(testDir, "node_modules", "pkg"), { recursive: true });
+			fs.writeFileSync(path.join(testDir, "node_modules", "pkg", "index.d.ts"), "export {};\n");
+
+			const missed = getTextOutput(
+				await findTool.execute("test-call-nm-1", { pattern: "**/*.d.ts", gitignore: false }),
+			);
+			expect(missed).toContain("No files found matching pattern (skipped node_modules");
+			expect(missed).not.toContain("`gitignore: false` includes them");
+
+			const named = await findTool.execute("test-call-nm-2", {
+				pattern: "node_modules/**/*.d.ts",
+				gitignore: false,
+			});
+			expect(named.details?.files).toEqual(["node_modules/pkg/index.d.ts"]);
+		});
+
 		it("should return directories alongside files with a trailing slash", async () => {
 			fs.mkdirSync(path.join(testDir, "pkg"));
 			fs.mkdirSync(path.join(testDir, "pkg", "nested"));

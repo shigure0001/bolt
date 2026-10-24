@@ -1,4 +1,4 @@
-Runs a command in an embedded bash-compatible shell (brush, not system bash; POSIX syntax everywhere{{#if isWindows}}, including this Windows host: forward slashes; `cmd /c …` works{{/if}}){{#if hasShellBuiltins}}; coreutils are built in{{/if}}.
+Runs a command in an embedded bash-compatible shell (brush, not system bash; POSIX syntax everywhere{{#if isWindows}}, including this Windows host: forward slashes; `cmd /c …` works; `/tmp` means `$TMPDIR` only inside the shell, so pass native programs `$TMPDIR`{{/if}}){{#if hasShellBuiltins}}; coreutils are built in{{/if}}.
 - Each call starts in `cwd` (default: the working directory), so a `cd` doesn't carry over; variables and functions do. A call made while the shell is busy (e.g. parallel calls) runs in a separate shell that sees only exported variables and keeps nothing.
 - Chain dependent steps with `&&`; `pty: true` only for interactive programs; `timeout` (default {{defaultTimeoutSec}}s) kills the command.
 - Output over {{spillKb}}KB keeps its head and tail inline; the full text goes to an `artifact://<id>` you can `read`.

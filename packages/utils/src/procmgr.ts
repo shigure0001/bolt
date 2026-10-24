@@ -38,13 +38,46 @@ let capturedChildShellEnv: Record<string, string> | undefined;
 let spawnEnvProjectDir: string | undefined;
 
 /**
+ * POSIX variables a Windows host leaves unset, derived from their native
+ * counterparts. Without them `$HOME`/`~` are empty in the shell and `$TMPDIR`
+ * gives no portable temp path that both the shell (where `/tmp` is an alias for
+ * `%TEMP%`) and native programs (where `/tmp` is the drive root's `tmp`)
+ * resolve to the same directory. Host values win; Windows names are
+ * case-insensitive.
+ *
+ * Exported for tests; `platform` overrides the host platform.
+ */
+export function windowsPosixEnvDefaults(
+	env: Record<string, string | undefined>,
+	platform: NodeJS.Platform = process.platform,
+): Record<string, string> {
+	if (platform !== "win32") return {};
+	const byUpperKey = new Map<string, string>();
+	for (const [key, value] of Object.entries(env)) {
+		if (value) byUpperKey.set(key.toUpperCase(), value);
+	}
+	const defaults: Record<string, string> = {};
+	if (!byUpperKey.has("HOME")) {
+		const profile = byUpperKey.get("USERPROFILE");
+		if (profile) defaults.HOME = profile;
+	}
+	if (!byUpperKey.has("TMPDIR")) {
+		const temp = byUpperKey.get("TEMP") ?? byUpperKey.get("TMP");
+		if (temp) defaults.TMPDIR = temp;
+	}
+	return defaults;
+}
+
+/**
  * Build the spawn environment (cached).
  */
 function buildSpawnEnv(shell: string): Record<string, string> {
 	const noCI = $env.PI_BASH_NO_CI || $env.CLAUDE_BASH_NO_CI;
 	spawnEnvProjectDir ??= getProjectDir();
+	const baseEnv = capturedChildShellEnv ?? filterChildShellEnv(Bun.env, spawnEnvProjectDir);
 	return {
-		...(capturedChildShellEnv ?? filterChildShellEnv(Bun.env, spawnEnvProjectDir)),
+		...baseEnv,
+		...windowsPosixEnvDefaults(baseEnv),
 		SHELL: shell,
 		GIT_EDITOR: "true",
 		GPG_TTY: "not a tty",

@@ -3,7 +3,13 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { getAgentDir, MAIN_CONFIG_FILENAMES } from "../src/dirs";
-import { getShellArgs, getShellConfig, isPosixShell, resolveWindowsShell } from "../src/procmgr";
+import {
+	getShellArgs,
+	getShellConfig,
+	isPosixShell,
+	resolveWindowsShell,
+	windowsPosixEnvDefaults,
+} from "../src/procmgr";
 
 describe("getShellConfig", () => {
 	it("directs invalid custom shell paths to the canonical config file", () => {
@@ -214,5 +220,27 @@ describe("resolveWindowsShell", () => {
 	it.skipIf(isWindowsHost)("falls back to cmd.exe instead of failing when no bash exists", () => {
 		expect(resolveWindowsShell({})).toBe("C:\\Windows\\System32\\cmd.exe");
 		expect(resolveWindowsShell({ ComSpec: "D:\\win\\cmd.exe" })).toBe("D:\\win\\cmd.exe");
+	});
+});
+
+describe("windowsPosixEnvDefaults", () => {
+	// Regression: on Windows `$HOME` and `$TMPDIR` were empty in the shell, so `~`
+	// expanded to nothing and there was no temp path native programs agree on.
+	it("derives HOME and TMPDIR from the Windows profile and temp dirs", () => {
+		expect(windowsPosixEnvDefaults({ USERPROFILE: "C:\\Users\\me", TEMP: "C:\\Users\\me\\Temp" }, "win32")).toEqual({
+			HOME: "C:\\Users\\me",
+			TMPDIR: "C:\\Users\\me\\Temp",
+		});
+		expect(windowsPosixEnvDefaults({ TMP: "D:\\tmp" }, "win32")).toEqual({ TMPDIR: "D:\\tmp" });
+	});
+
+	it("keeps host values, matching names case-insensitively", () => {
+		expect(
+			windowsPosixEnvDefaults({ Home: "H:\\", TmpDir: "T:\\", USERPROFILE: "C:\\u", TEMP: "C:\\t" }, "win32"),
+		).toEqual({});
+	});
+
+	it("adds nothing outside Windows", () => {
+		expect(windowsPosixEnvDefaults({ USERPROFILE: "C:\\u", TEMP: "C:\\t" }, "linux")).toEqual({});
 	});
 });
