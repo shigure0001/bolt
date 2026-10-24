@@ -16,6 +16,7 @@
 - `eval` runs Python only: the JavaScript backend, its `%bun add`/`%environment` commands and managed package environment (`eval.js`, `PI_JS`, `eval.autoProvision`) are gone, and `eval` takes `code` with no `language` field.
 - Removed the `agent()`, `completion()`, `wait()`, `workpool()` and `judge()`/`judge_batch()` eval helpers with their host bridges, work-pool yield plumbing, kernel-defined `@tool` functions with their advertising (`eval.tools.enabled`, `eval.workpool.freshAgents`) and the task `tools` field, and the `judge_batch` progress row.
 - Removed speculative execution for `read` and the `tools.speculativeExecution.*` settings; `task.speculativeLaunch` still starts streamed subagents early.
+- Removed the `+Nk` turn-budget directive and its `budget` eval helper, which only the deleted eval `agent()` bridge enforced.
 
 ### Added
 

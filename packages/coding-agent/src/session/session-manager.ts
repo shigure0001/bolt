@@ -940,11 +940,6 @@ export class SessionManager {
 	 */
 	onEntryAppended?: (entry: SessionEntry) => void;
 
-	#turnBudgetTotal: number | null = null;
-	#turnBudgetHard = false;
-	#turnOutputBaseline = 0;
-	#turnEvalOutput = 0;
-
 	/** The single open append writer; the manager only ever writes one file at a time. */
 	#writer: SessionStorageWriter | undefined;
 	/** Sealed by {@link releaseRetainedEntries}: every later append/title/rewrite is a dropped no-op. */
@@ -2032,10 +2027,6 @@ export class SessionManager {
 		this.#loadedMalformedRecords = 0;
 		this.#forceFileCreation = false;
 		this.#draftOnlySessionCleanupArmed = false;
-		this.#turnBudgetTotal = null;
-		this.#turnBudgetHard = false;
-		this.#turnOutputBaseline = 0;
-		this.#turnEvalOutput = 0;
 		this.#artifactManager = null;
 		this.#artifactManagerSessionFile = null;
 		this.#adoptedArtifactManager = null;
@@ -3130,26 +3121,6 @@ export class SessionManager {
 
 	getUsageStatistics(): UsageStatistics {
 		return this.#index.usageSnapshot();
-	}
-
-	/**
-	 * Open a new per-turn budget window: snapshot the cumulative output baseline,
-	 * reset the eval-subagent counter, and set the (optional) ceiling.
-	 */
-	beginTurnBudget(total: number | null, hard: boolean): void {
-		this.#turnBudgetTotal = total;
-		this.#turnBudgetHard = hard;
-		this.#turnOutputBaseline = this.#index.usageSnapshot().output;
-		this.#turnEvalOutput = 0;
-	}
-
-	recordEvalSubagentOutput(output: number): void {
-		if (Number.isFinite(output) && output > 0) this.#turnEvalOutput += output;
-	}
-
-	getTurnBudget(): { total: number | null; spent: number; hard: boolean } {
-		const mainOutput = Math.max(0, this.#index.usageSnapshot().output - this.#turnOutputBaseline);
-		return { total: this.#turnBudgetTotal, spent: mainOutput + this.#turnEvalOutput, hard: this.#turnBudgetHard };
 	}
 
 	getSessionDir(): string {

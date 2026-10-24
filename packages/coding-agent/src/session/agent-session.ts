@@ -172,7 +172,6 @@ import { MEMORY_RECALL_CHANGES_MESSAGE_TYPE } from "../memory-backend/recall-ent
 import { shutdownMnemopiEmbedClient } from "../mnemopi/embed-client";
 import { getMnemopiSessionState, type MnemopiSessionState, setMnemopiSessionState } from "../mnemopi/state";
 import { theme } from "@oh-my-pi/pi-tui/theme";
-import { parseTurnBudget } from "../modes/turn-budget";
 import { computeNonMessageTokens } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import { type PlanApprovalDetails, resolveApprovedPlan } from "../plan-mode/approved-plan";
 import { listPlanFiles, readPlanFile, resolvePlanFilePath } from "../plan-mode/plan-files";
@@ -7228,11 +7227,6 @@ export class AgentSession implements SettingsScope {
 		const templated = expandPromptTemplates ? expandPromptTemplate(text, [...this.#promptTemplates]) : text;
 		const expandedText = options?.synthetic ? templated : this.#modelMentions.expandMentions(templated);
 
-		if (!options?.synthetic) {
-			const turnBudget = parseTurnBudget(expandedText);
-			this.sessionManager.beginTurnBudget(turnBudget?.total ?? null, turnBudget?.hard ?? false);
-		}
-
 		// A `^` mention in a non-synthetic prompt mints a new alias. The hidden
 		// session-agent notice (which tells the model about the alias) must ride
 		// with the message via prependMessages — not as a separate steer — so the
@@ -7456,13 +7450,6 @@ export class AgentSession implements SettingsScope {
 		// skill prompt carries the session-agent notice itself, like a queued typed
 		// prompt (#14093).
 		if (message.customType === SKILL_PROMPT_MESSAGE_TYPE && message.attribution === "user") {
-			const details = message.details;
-			let skillArgs = "";
-			if (details && typeof details === "object" && "args" in details && typeof details.args === "string") {
-				skillArgs = details.args;
-			}
-			const turnBudget = parseTurnBudget(skillArgs);
-			this.sessionManager.beginTurnBudget(turnBudget?.total ?? null, turnBudget?.hard ?? false);
 			const sessionAgentNotice = this.#tools.takeSessionAgentNotice();
 			if (sessionAgentNotice) queuedNotices = [sessionAgentNotice];
 		}

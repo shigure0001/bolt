@@ -831,10 +831,6 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 	// failure must carry the exit status and artifact the child produced.
 	let settled: SingleResult | undefined;
 	let retainSalvagedArtifact = false;
-	const onSubprocessResult =
-		request.invocationKind === "eval"
-			? (result: SingleResult) => request.session.recordEvalSubagentUsage?.(result.usage?.output ?? 0)
-			: undefined;
 	try {
 		const id = await reserveStructuredSubagentId(request.session, {
 			...request.identity,
@@ -873,7 +869,6 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 		try {
 			if (!isolationContext) {
 				result = await runSubprocess(baseOptions);
-				onSubprocessResult?.(result);
 			} else {
 				result = await runIsolatedSubprocess({
 					baseOptions,
@@ -885,7 +880,6 @@ export async function runStructuredSubagent(request: StructuredSubagentRequest):
 					description: trimToUndefined(request.identity?.label),
 					buildCommitMessage: makeIsolationCommitMessage(request.session),
 					buildFailureResult: buildFailureResult(request, policy, id, Date.now()),
-					onSubprocessResult,
 				});
 			}
 		} finally {

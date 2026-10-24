@@ -1,8 +1,6 @@
 import type { ImageContent } from "@oh-my-pi/pi-ai";
-import type { EvalLanguage, EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/tools/eval";
+import type { EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/tools/eval";
 import { isRecord } from "@oh-my-pi/pi-utils/type-guards";
-
-/** Kernel-defined tool metadata exposed to task subagents. */
 
 /** Image metadata accepted at the untyped JS/Python display boundary. */
 export function evalImageMetadata(value: unknown): Pick<ImageContent, "detail" | "providerFile" | "url"> {

@@ -32,4 +32,4 @@
 - Registered only while `tools.deferred` is non-empty.
 - Deferral applies only when the initial selection contains `load_tools`: explicit tool lists (subagent definitions, `--tools`) and restricted modes such as plan mode keep every selected tool active.
 - Pinned tools and tools already loaded are never deferred. When nothing is left to defer, `load_tools` itself is dropped.
-- Default `tools.deferred`: `task`, `eval`, `lsp`, `ast_edit`, `ast_grep`, `ask`, `wait`, `todo`, `web_search`, `find`, `debug`, `github`, `checkpoint`, `rewind`, `security_scan`, `ida`, `mcp__*`.
+- Default `tools.deferred`: `task`, `eval`, `lsp`, `ask`, `wait`, `todo`, `web_search`, `github`, `mcp__*`.

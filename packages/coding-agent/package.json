@@ -165,14 +165,6 @@
 			"types": "./src/config/*.ts",
 			"import": "./src/config/*.ts"
 		},
-		"./dap": {
-			"types": "./src/dap/index.ts",
-			"import": "./src/dap/index.ts"
-		},
-		"./dap/*": {
-			"types": "./src/dap/*.ts",
-			"import": "./src/dap/*.ts"
-		},
 		"./debug": {
 			"types": "./src/debug/index.ts",
 			"import": "./src/debug/index.ts"
@@ -284,14 +276,6 @@
 		"./extensibility/plugins/marketplace/*": {
 			"types": "./src/extensibility/plugins/marketplace/*.ts",
 			"import": "./src/extensibility/plugins/marketplace/*.ts"
-		},
-		"./ida": {
-			"types": "./src/ida/index.ts",
-			"import": "./src/ida/index.ts"
-		},
-		"./ida/*": {
-			"types": "./src/ida/*.ts",
-			"import": "./src/ida/*.ts"
 		},
 		"./internal-urls": {
 			"types": "./src/internal-urls/index.ts",
@@ -476,14 +460,6 @@
 		"./tools": {
 			"types": "./src/tools/index.ts",
 			"import": "./src/tools/index.ts"
-		},
-		"./tools/jfind": {
-			"types": "./src/tools/jfind/index.ts",
-			"import": "./src/tools/jfind/index.ts"
-		},
-		"./tools/jfind/*": {
-			"types": "./src/tools/jfind/*.ts",
-			"import": "./src/tools/jfind/*.ts"
 		},
 		"./tools/*": {
 			"types": "./src/tools/*.ts",

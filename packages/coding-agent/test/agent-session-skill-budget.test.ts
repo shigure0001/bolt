@@ -85,7 +85,7 @@ describe("AgentSession skill prompt turn budgets", () => {
 		tempDir.removeSync();
 	});
 
-	it("applies turn budgets from user-authored skill arguments", async () => {
+	it("keeps user-authored skill arguments in the skill prompt", async () => {
 		const skillPath = path.join(tempDir.path(), "deep-research.md");
 		const details: SkillPromptDetails = {
 			name: "deep-research",
@@ -105,6 +105,5 @@ describe("AgentSession skill prompt turn budgets", () => {
 		const observedTurn = observedTurns[0];
 		if (!observedTurn) throw new Error("Expected prompt context to be captured");
 		expect(observedTurn.texts).toContain(`Skill body\n\n---\n\nSkill: ${skillPath}\nUser: ${details.args}`);
-		expect(session.sessionManager.getTurnBudget()).toEqual({ total: 500_000, spent: 0, hard: true });
 	});
 });

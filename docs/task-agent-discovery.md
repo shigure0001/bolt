@@ -313,7 +313,7 @@ For an explicit agent tool list, `runSubprocess` auto-adds `task` when `spawns` 
 When parent plan mode is enabled, `resolveEffectiveSubagentPolicy()` builds an `effectiveAgent` before launching subprocesses:
 
 - prepends the plan-mode subagent system prompt
-- restricts tools to `read`, `grep`, `glob`, and `web_search`, plus `ast_grep` when the agent's own tool list declares it
+- restricts tools to `read`, `grep`, `glob`, and `web_search`
 - clears child spawns
 
 Plan mode also rejects eval-defined tools and per-spawn isolation, apply, and merge controls. The same `effectiveAgent` is used for subprocess launch, model/thinking overrides, and output-schema selection.

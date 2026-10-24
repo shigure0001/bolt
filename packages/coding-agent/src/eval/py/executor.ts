@@ -1,14 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { getProjectDir, logger, Snowflake } from "@oh-my-pi/pi-utils";
+import { getProjectDir, logger } from "@oh-my-pi/pi-utils";
 import type { OutputArtifactError } from "@oh-my-pi/pi-tui/tools/streaming-output";
 import type { ToolSession } from "../../tools";
 import {
 	buildManagedKernelEnv,
 	buildManagedKernelEnvPatch,
 	createCancelledKernelResult,
-	EvalKernelNotRunningError,
 	executeWithKernelBase,
 	getExecutionDeadlineMs,
 	getRemainingTimeoutMs,
@@ -38,7 +37,7 @@ import {
 	type PythonPreludeSource,
 } from "./kernel";
 import { resolveExplicitPythonRuntime } from "./runtime";
-import { ensurePyToolBridge, registerPyToolBridge } from "./tool-bridge";
+import { ensurePyToolBridge } from "./tool-bridge";
 
 export type PythonKernelMode = "session" | "per-call";
 

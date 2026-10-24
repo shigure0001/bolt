@@ -10,13 +10,7 @@
 import * as path from "node:path";
 import { $flag, isBunTestRuntime, logger, Snowflake } from "@oh-my-pi/pi-utils";
 import { Settings } from "../../config/settings";
-import {
-	BaseKernel,
-	getRemainingTimeMs,
-	type KernelExecuteOptions,
-	type KernelExecuteResult,
-	type KernelStartOptions,
-} from "../kernel-base";
+import { BaseKernel, getRemainingTimeMs, type KernelExecuteOptions, type KernelStartOptions } from "../kernel-base";
 import { type BackendProbeOptions, probeCandidates } from "../probe";
 import { stageRunnerScript } from "../runner-cache";
 import { PYTHON_PRELUDE } from "./prelude";

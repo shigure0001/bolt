@@ -207,7 +207,6 @@ export interface IsolatedRunOptions {
 	 */
 	buildFailureResult: (err: unknown) => SingleResult;
 	/** Observe the real child result before post-run isolation work. */
-	onSubprocessResult?: (result: SingleResult) => void;
 }
 
 /**
@@ -472,7 +471,6 @@ export async function runIsolatedSubprocess(opts: IsolatedRunOptions): Promise<S
 			// (`releaseIsolation`) to the agent lifecycle.
 			onRelease: opts.baseOptions.keepAlive === false ? releaseBase : releaseIsolation,
 		});
-		opts.onSubprocessResult?.(result);
 		// A successful result cannot be captured while deferred owner jobs or
 		// shutdown hooks may still write the worktree. Failed runs skip capture,
 		// so their cleanup remains asynchronous.
