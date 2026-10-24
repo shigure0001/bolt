@@ -503,35 +503,6 @@ describe("system prompt tool inventory", () => {
 		expect(text).not.toContain("`lsp`");
 	});
 
-	it("renders exactly one delegation rule per bias", async () => {
-		const renderDelegation = async (delegationBias: "eager" | "restrained" | "gated", eagerTasks: boolean) => {
-			const { systemPrompt } = await buildSystemPrompt({
-				cwd: tempDir,
-				contextFiles: [],
-				skills: [],
-				rules: [],
-				toolNames: ["read", "task"],
-				workspaceTree: { ...EMPTY_TREE, rootPath: tempDir },
-				delegationBias,
-				eagerTasks,
-			});
-			const count = (needle: string) => systemPrompt[0].split(needle).length - 1;
-			return [
-				count("Delegate when it clearly helps"),
-				count("Work inline by default"),
-				count("The user prefers delegation"),
-				count("Use subagents only when the user"),
-				count("Proactive delegation is on"),
-			];
-		};
-		expect(await renderDelegation("eager", false)).toEqual([1, 0, 0, 0, 0]);
-		expect(await renderDelegation("eager", true)).toEqual([0, 0, 1, 0, 0]);
-		expect(await renderDelegation("restrained", true)).toEqual([0, 0, 1, 0, 0]);
-		expect(await renderDelegation("restrained", false)).toEqual([0, 1, 0, 0, 0]);
-		expect(await renderDelegation("gated", false)).toEqual([0, 0, 0, 1, 0]);
-		expect(await renderDelegation("gated", true)).toEqual([0, 0, 0, 0, 1]);
-	});
-
 	it("appends each advertised prelude's guidance as its own block", async () => {
 		const { systemPrompt } = await buildSystemPrompt({
 			cwd: tempDir,
@@ -639,10 +610,7 @@ describe("system prompt tool inventory", () => {
 	});
 
 	it("omits eval prompt guidance when every eval backend is disabled", async () => {
-		const settings = Settings.isolated({
-			"eval.py": false,
-			"eval.js": false,
-		});
+		const settings = Settings.isolated({ "eval.py": false });
 		const session = makeToolSession(settings);
 		const tools = await createTools(session, ["bash", "eval"]);
 		const toolNames = tools.map(tool => tool.name);

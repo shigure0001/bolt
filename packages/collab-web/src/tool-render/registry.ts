@@ -4,11 +4,8 @@
  */
 import { genericRenderer } from "./generic";
 import { askRenderer } from "./tools/ask";
-import { astEditRenderer } from "./tools/ast-edit";
-import { astGrepRenderer } from "./tools/ast-grep";
 import { bashRenderer } from "./tools/bash";
 import { browserRenderer } from "./tools/browser";
-import { debugRenderer } from "./tools/debug";
 import { editRenderer } from "./tools/edit";
 import { evalRenderer } from "./tools/eval";
 import { fetchRenderer } from "./tools/fetch";
@@ -34,12 +31,9 @@ import type { ToolRenderer } from "./types";
 
 const RENDERERS: Record<string, ToolRenderer> = {
 	ask: askRenderer,
-	ast_edit: astEditRenderer,
-	ast_grep: astGrepRenderer,
 	bash: bashRenderer,
 	browser: browserRenderer,
 	puppeteer: browserRenderer,
-	debug: debugRenderer,
 	edit: editRenderer,
 	apply_patch: editRenderer,
 	eval: evalRenderer,
@@ -48,7 +42,6 @@ const RENDERERS: Record<string, ToolRenderer> = {
 	notebook: evalRenderer,
 	fetch: fetchRenderer,
 	glob: globRenderer,
-	find: globRenderer,
 	generate_image: generateImageRenderer,
 	github: githubRenderer,
 	goal: goalRenderer,

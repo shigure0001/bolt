@@ -330,7 +330,6 @@ describe("seance startup contracts", () => {
 				worktree: "",
 				outputSchema: undefined,
 				outputSchemaOverridesAgent: false,
-				workPoolYieldItems: [],
 				ircPeers: [],
 				ircParkedCount: 0,
 				ircOmittedCount: 0,

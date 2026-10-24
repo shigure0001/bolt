@@ -160,4 +160,13 @@ describe("AgentSession todo-error reminder", () => {
 		expect(session?.getTodoPhases()[1]?.tasks[0]?.status).toBe("completed");
 		expect(reminders).toEqual([]);
 	});
+
+	it("does not turn an aborted todo call into a retry reminder", async () => {
+		const reminders = await runTwoPrompts([
+			{ ...todoCall("todo-aborted", { op: "append", phase: "Build", items: ["Add tests"] }), stopReason: "aborted" },
+		]);
+
+		expect(session?.getTodoPhases()[0]?.tasks.map(task => task.content)).toEqual(["Write code"]);
+		expect(reminders).toEqual([]);
+	});
 });

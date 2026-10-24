@@ -3,15 +3,6 @@ import type { EvalLanguage, EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/t
 import { isRecord } from "@oh-my-pi/pi-utils/type-guards";
 
 /** Kernel-defined tool metadata exposed to task subagents. */
-export interface EvalToolDescriptor {
-	name: string;
-	description: string;
-	parameters: Record<string, unknown>;
-	language: EvalLanguage;
-}
-
-/** Result of invoking a kernel-defined tool. */
-export type EvalToolInvokeResult = { ok: true; value: unknown } | { ok: false; error: string };
 
 /** Image metadata accepted at the untyped JS/Python display boundary. */
 export function evalImageMetadata(value: unknown): Pick<ImageContent, "detail" | "providerFile" | "url"> {

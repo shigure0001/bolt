@@ -33,8 +33,6 @@ function createBashTool(settingsOverrides: Record<string, unknown> = {}, resolve
 	const settings = Settings.isolated({
 		"async.enabled": false,
 		"bash.autoBackground.enabled": false,
-		"astGrep.enabled": false,
-		"astEdit.enabled": false,
 		"grep.enabled": false,
 		"glob.enabled": false,
 		...settingsOverrides,

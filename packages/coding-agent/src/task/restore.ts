@@ -92,7 +92,6 @@ async function restoreSubagents(session: AgentSession, options: RestoreOptions):
 					message: init.task,
 					restore: true,
 					structured,
-					workPoolYieldItems: init.workPoolYieldItems,
 					outputSchema: init.outputSchema,
 					outputSchemaMode: init.outputSchemaMode,
 					signal,

@@ -128,8 +128,11 @@ describe("BaseKernel stdin failures", () => {
 		const kernel = new TestKernel();
 		kernel.setProcess(proc as unknown as Parameters<TestKernel["setProcess"]>[0]);
 		try {
-			// The control timeout is far beyond the test timeout: only the write failure can settle this.
-			await expect(kernel.requestControl("snapshot", undefined, 60_000)).rejects.toThrow("EPIPE");
+			// Only the stdin write failure can settle this request: no frames come back.
+			await expect(kernel.execute("boom")).resolves.toMatchObject({
+				status: "error",
+				error: { value: "EPIPE: broken pipe, write" },
+			});
 			expect(await exited.promise).toBe(0);
 			expect(kernel.isAlive()).toBe(false);
 		} finally {
@@ -156,7 +159,10 @@ describe("BaseKernel stdin failures", () => {
 		const kernel = new TestKernel();
 		kernel.setProcess(proc as unknown as Parameters<TestKernel["setProcess"]>[0]);
 		try {
-			await expect(kernel.requestControl("snapshot", undefined, 60_000)).rejects.toThrow("EPIPE");
+			await expect(kernel.execute("boom")).resolves.toMatchObject({
+				status: "error",
+				error: { value: "EPIPE: broken pipe, write" },
+			});
 			expect(await exited.promise).toBe(0);
 			expect(kernel.isAlive()).toBe(false);
 		} finally {

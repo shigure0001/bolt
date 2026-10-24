@@ -345,7 +345,6 @@ export class ExtensionToolWrapper<TParameters extends TSchema = TSchema, TDetail
 		// short-circuit above.
 		const resolvedArgs = approvalArgs(effectiveParams, context);
 		const resolved = resolveApproval(this.tool, resolvedArgs, approvalMode, userPolicies, approvalGrants);
-		context?.xdevTierResolved?.(resolved.tier);
 		if (resolved.policy === "deny") {
 			cancelPreflight();
 			throw denyError(resolved, this.tool.name);

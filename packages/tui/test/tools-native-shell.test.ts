@@ -545,7 +545,7 @@ describe("eval native run boxes", () => {
 						details: {
 							cells: [
 								cell({
-									language: "js",
+									language: "python",
 									code: "await tool.read({ path: 'src/rollup.ts:1:raw' })",
 									statusEvents: [
 										{ op: "read", path: "src/rollup.ts:1:raw", chars: 2082, preview: source },

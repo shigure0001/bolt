@@ -49,7 +49,7 @@ import {
 	cfgInlineToolDescriptors,
 	cfgPersonality,
 } from "./session/settings";
-import { cfgTaskBatch, cfgTaskEager } from "./task/settings";
+import { cfgTaskBatch } from "./task/settings";
 import {
 	cfgAsyncEnabled,
 	cfgToolsIntentTracing,
@@ -82,7 +82,6 @@ export const cfgSystemPromptInputs = combine({
 	asyncEnabled: cfgAsyncEnabled,
 	bashAutoBackground: cfgBashAutoBackgroundEnabled,
 	evalAutoBackground: cfgEvalAutoBackgroundEnabled,
-	taskEager: cfgTaskEager,
 	taskBatch: cfgTaskBatch,
 	// Rule bucketing (TTSR registrations, rulebook, always-apply) runs at rebuild time.
 	ttsrEnabled: cfgTtsrEnabled,
@@ -539,10 +538,6 @@ export interface BuildSystemPromptOptions {
 	rules?: Array<{ name: string; description?: string; path: string; globs?: string[] }>;
 	/** Intent field name injected into every tool schema. If set, explains the field in the prompt. */
 	intentField?: string;
-	/** Encourage the agent to delegate via tasks unless changes are trivial. */
-	eagerTasks?: boolean;
-	/** When true, the Eager Tasks section uses the hard MUST/ONLY wording (`task.eager: always`) rather than the softer `preferred` nudge. */
-	eagerTasksAlways?: boolean;
 	/** Whether `task.batch` is enabled; selects the centralized delegation guidance's call shape. */
 	taskBatch?: boolean;
 	/** Effective task concurrency limit displayed in centralized delegation guidance. Zero means unlimited. */
@@ -562,8 +557,6 @@ export interface BuildSystemPromptOptions {
 	workspaceTree?: WorkspaceTree | Promise<WorkspaceTree>;
 	/** Active `memory.backend` id, set only when it has memory content to read; gates advertising `memory://`. */
 	memoryBackend?: string;
-	/** Whether the read-only security:// resource namespace is active. */
-	securityEnabled?: boolean;
 	/** Whether the user approves `cfg://` writes for this session; gates advertising `cfg://`. */
 	settingsApproval?: boolean;
 	/**
@@ -659,8 +652,6 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		rules,
 		alwaysApplyRules,
 		intentField,
-		eagerTasks = false,
-		eagerTasksAlways = false,
 		taskBatch = true,
 		taskMaxConcurrency = 0,
 		taskIrcEnabled = false,
@@ -669,7 +660,6 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		scoutAvailable = true,
 		delegationBias = "eager",
 		memoryBackend,
-		securityEnabled = false,
 		settingsApproval = false,
 		evalPreludes = [],
 		model,
@@ -937,7 +927,6 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		skillUriAccess: hasSkillUriAccess,
 		ruleCount: rules?.length ?? 0,
 		memoryBackend,
-		securityEnabled,
 		settingsApproval,
 		subagentsAvailable: toolNames.includes("task"),
 	};
@@ -983,10 +972,8 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		personality: personalityBlock,
 		intentTracing: !!intentField,
 		intentField: intentField ?? "",
-		eagerTasks,
-		eagerTasksAlways,
-		// Restrained bias yields to an explicit eager-tasks mode.
-		inlineFirstDelegation: delegationBias === "restrained" && !eagerTasks,
+		// Restrained bias still starts inline.
+		inlineFirstDelegation: delegationBias === "restrained",
 		taskBatch,
 		MAX_CONCURRENCY: normalizeConcurrencyLimit(taskMaxConcurrency),
 		scoutAvailable,

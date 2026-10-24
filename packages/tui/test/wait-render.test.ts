@@ -436,7 +436,7 @@ describe("job renderer task-result preview", () => {
 	});
 
 	describe("job widgets", () => {
-		const widgetResult = (stage?: string) => ({
+		const widgetResult = () => ({
 			content: [{ type: "text" as const, text: "" }],
 			details: {
 				op: "wait" as const,
@@ -455,13 +455,12 @@ describe("job renderer task-result preview", () => {
 						status: "running" as const,
 						label: "Bencher",
 						durationMs: 60_000,
-						...(stage ? { stage } : {}),
 					},
 				],
 			} satisfies CoordinationDetails,
 		});
-		it("draws every job as a tile of one strip: the widget inside its job's tile, a task's stage in its own", () => {
-			const view = waitToolRenderer.describeResult!(widgetResult("profiling the decode loop"), {
+		it("draws the task and bash widgets as separate tiles in one strip", () => {
+			const view = waitToolRenderer.describeResult!(widgetResult(), {
 				expanded: true,
 				isPartial: true,
 			});
@@ -473,7 +472,6 @@ describe("job renderer task-result preview", () => {
 			]);
 			const bench = tiles[1]!;
 			expect(byRole(bench, "omp.job.tile.chart")).toBeDefined();
-			expect(JSON.stringify(tiles[0])).toContain("profiling the decode loop");
 		});
 
 		it("re-describes a memoized result when a widget's data moves", () => {

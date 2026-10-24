@@ -26,8 +26,6 @@ import { code, span } from "../native/describe";
 import { type DescribeContext, type NativeNode, type NativeUiEvent, rootToggleExpanded } from "../native/node";
 import { Memo } from "../native/memo";
 
-export type EvalExecutionLanguage = "python" | "js";
-
 export class EvalExecutionComponent extends Container {
 	#status: ExecutionStatus = "running";
 	#exitCode: number | undefined = undefined;
@@ -44,15 +42,14 @@ export class EvalExecutionComponent extends Container {
 	#outputPane: OutputPane;
 	readonly #code: string;
 	readonly #excludeFromContext: boolean;
-	readonly #language: EvalExecutionLanguage;
 	readonly #startedAt = performance.now();
 	#endedAt: number | undefined;
 	// Bumped whenever the output pane's text changes.
 	#outputVersion = 0;
 	readonly #native = new Memo();
 
-	#highlightLang(): "python" | "javascript" {
-		return this.#language === "js" ? "javascript" : "python";
+	#highlightLang(): "python" {
+		return "python";
 	}
 
 	#formatHeader(colorKey: ExecutionColorKey): Text {
@@ -65,11 +62,10 @@ export class EvalExecutionComponent extends Container {
 		return new Text(headerLines.join("\n"), 1, 0);
 	}
 
-	constructor(code: string, ui: TUI, excludeFromContext = false, language: EvalExecutionLanguage = "python") {
+	constructor(code: string, ui: TUI, excludeFromContext = false) {
 		super();
 		this.#code = code;
 		this.#excludeFromContext = excludeFromContext;
-		this.#language = language;
 
 		const colorKey: ExecutionColorKey = this.#excludeFromContext ? "dim" : "pythonMode";
 		const { contentContainer, loader } = buildExecutionFrame(this, ui, colorKey);
@@ -131,7 +127,7 @@ export class EvalExecutionComponent extends Container {
 		const dataFirst = cx?.supports("tool") === true;
 		const key = [dataFirst, this.#outputVersion, this.#status, this.#expanded];
 		return this.#native.get(key, () => {
-			const title = this.#language === "js" ? "JavaScript" : "Python";
+			const title = "Python";
 			const common = {
 				role: "omp.eval",
 				status: this.#status,

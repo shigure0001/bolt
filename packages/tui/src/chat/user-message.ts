@@ -20,7 +20,6 @@ import {
 import { MODEL_MENTION_TAG_RE } from "../prompt/model-mention-syntax";
 import { expandKeyHint, fileHyperlink, fileLinkSpan } from "../render";
 import { imageLinksEnabled, imageReferenceHyperlink } from "../prompt/image-references";
-import { highlightMagicKeywords } from "../prompt/magic-keywords";
 import type { ReactionTarget } from "./reaction";
 import { card, md, node, row, span, text } from "../native/describe";
 import { base64ImageNode, openableImageProps } from "../native/blobs";
@@ -73,26 +72,21 @@ export interface UserBubbleOptions {
 }
 
 /**
- * Foreground styling for prose inside a user bubble: the bubble text color with the
- * magic-keyword glow, attachment chips in their composer identity color, and skill
- * chips as soft pills (linked to their SKILL.md) — each token restoring the bubble's
- * own foreground after it. Shared by {@link UserMessageComponent} and the skill
- * callout so both read as one turn.
+ * Foreground styling for prose inside a user bubble: the bubble text color,
+ * attachment chips in their composer identity color, and skill chips as soft
+ * pills (linked to their SKILL.md). Shared by {@link UserMessageComponent}
+ * and the skill callout so both read as one turn.
  */
 export function userBubbleColor(
 	options: UserBubbleOptions = {},
 	tokenRegex: RegExp = COMPOSER_TOKEN_REGEX,
 ): (value: string) => string {
 	const { imageLinks, synthetic = false, skillPath } = options;
-	// The Markdown component routes code spans and fenced blocks through its own code styling
-	// (never `color`), so those are already excluded; `highlightMagicKeywords` additionally
-	// restores the bubble's own foreground after each painted keyword so the gradient never
-	// bleeds into the rest of the line.
-	const keywordReset = theme.getFgOnBgAnsi("userMessageText", "userMessageBg");
-	const bubbleReset = `${keywordReset}${theme.getBgAnsi("userMessageBg")}`;
+	const bubbleTextReset = theme.getFgOnBgAnsi("userMessageText", "userMessageBg");
+	const bubbleReset = `${bubbleTextReset}${theme.getBgAnsi("userMessageBg")}`;
 	const renderText = synthetic
 		? (text: string) => theme.fg("dim", text)
-		: (text: string) => theme.fgOnBg("userMessageText", "userMessageBg", highlightMagicKeywords(text, keywordReset));
+		: (text: string) => theme.fgOnBg("userMessageText", "userMessageBg", text);
 	return (value: string) =>
 		renderPlaceholders(
 			value,
@@ -106,10 +100,10 @@ export function userBubbleColor(
 				renderMention: label => modelChipStyle(label, bubbleReset),
 				renderReference: (label, kind, index, form) => {
 					// Chip tokens keep their composer identity color; the bubble's own
-					// foreground resumes after the token (same pattern as keywords).
+					// foreground resumes after the token.
 					const styled =
 						form === "chip"
-							? `${attachmentSgr(kind, index)}\x1b[1m${label}\x1b[22m${keywordReset}`
+							? `${attachmentSgr(kind, index)}\x1b[1m${label}\x1b[22m${bubbleTextReset}`
 							: theme.fg("accent", `\x1b[1m${label}\x1b[22m`);
 					return kind === "image" || kind === "video"
 						? imageReferenceHyperlink(label, index, imageLinks, () => styled)

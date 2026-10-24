@@ -1,16 +1,12 @@
 import type { ToolSession } from ".";
 
-import { cfgEvalJs, cfgEvalPy } from "../eval/settings";
+import { cfgEvalPy } from "../eval/settings";
 
 export interface EvalBackendsAllowance {
 	python: boolean;
-	js: boolean;
 }
 
-/** Active eval backend allowance (`eval.py` / `eval.js`; `PI_PY` / `PI_JS` override). */
+/** Active eval backend allowance (`eval.py`; `PI_PY` overrides). */
 export function resolveEvalBackends(session: ToolSession): EvalBackendsAllowance {
-	return {
-		python: cfgEvalPy.get(session.settings),
-		js: cfgEvalJs.get(session.settings),
-	};
+	return { python: cfgEvalPy.get(session.settings) };
 }

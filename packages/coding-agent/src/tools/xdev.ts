@@ -40,14 +40,13 @@ import { type Tool as AiTool, jsonSchemaToTypeScript, toolWireSchema } from "@oh
 import { schemaDeclaresIntentField } from "../utils/tool-schema";
 import { stripXdUrlPrefix, XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { truncateHeadBytes } from "@oh-my-pi/pi-tui/tools/streaming-output";
-import { resolveToolTier, type ToolTier } from "./approval";
 import type { Tool } from "./index";
 import { renderError, ToolAbortError } from "./tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 
 /**
  * Discoverable built-ins that must stay top-level even when xdev mounting is
- * active: `todo` feeds the todo prelude/prewalk machinery, `ask` is the
+ * active: `todo` feeds the todo machinery, `ask` is the
  * model's user-interaction affordance, `grep` is the redirect target of the
  * bash interceptor rules, and `web_search` is invoked directly by most models
  * (which have no notion of the `xd://` protocol) so hiding it behind dispatch
@@ -93,19 +92,6 @@ export interface XdevDispatch {
 	mode: "help" | "execute";
 	/** Validated inner args, kept for renderer delegation on result rebuilds. */
 	args?: Record<string, unknown>;
-	/**
-	 * Approval tier of the wrapped tool for {@link args} (`read` = no workspace
-	 * mutation). Absent for `help` dispatches and calls whose tier could not be
-	 * resolved. Consumed by the prewalk coordinator to skip read-only device
-	 * calls when deciding the model hand-off (issue #7312).
-	 */
-	tier?: ToolTier;
-	/**
-	 * The wrapped MCP tool declared itself read-only (`annotations.readOnlyHint`).
-	 * Captured at dispatch so the prewalk coordinator classifies the tool that ran,
-	 * not whatever a later MCP tool refresh put under its name.
-	 */
-	readOnlyHint?: true;
 	/** Details object returned by the wrapped tool, when executed. */
 	inner?: unknown;
 }
@@ -480,19 +466,7 @@ export async function dispatchXdevTool(
 		}
 
 		const validated = parseDeviceArgs(canonical, content, toolCallId, () => renderDocs(canonical));
-		// Record the wrapped tool's approval tier so the prewalk coordinator can
-		// tell a read-only device call (e.g. `lsp` navigation) from a real
-		// workspace mutation without re-decoding the payload. Best-effort: a
-		// throwing approval leaves the tier absent (prewalk then declines to
-		// switch), unlike the write gate which fails closed to `exec`.
-		let tier: ToolTier | undefined;
-		try {
-			tier = resolveToolTier(canonical, validated);
-		} catch {
-			tier = undefined;
-		}
-		xdev = { ...xdev, args: validated, tier };
-		if ("mcpReadOnlyHint" in canonical && canonical.mcpReadOnlyHint === true) xdev.readOnlyHint = true;
+		xdev = { ...xdev, args: validated };
 		const innerOnUpdate: AgentToolUpdateCallback | undefined = onUpdate
 			? partial =>
 					onUpdate({
@@ -502,15 +476,7 @@ export async function dispatchXdevTool(
 					})
 			: undefined;
 		const executable = state.decorateExecution?.(canonical) ?? canonical;
-		const executionContext = context
-			? {
-					...context,
-					xdevTierResolved: (effectiveTier: ToolTier) => {
-						xdev = { ...xdev, tier: effectiveTier };
-					},
-				}
-			: undefined;
-		const result = await executable.execute(toolCallId, validated as never, signal, innerOnUpdate, executionContext);
+		const result = await executable.execute(toolCallId, validated as never, signal, innerOnUpdate, context);
 		return { result, xdev: { ...xdev, inner: result.details } };
 	} catch (error) {
 		if (

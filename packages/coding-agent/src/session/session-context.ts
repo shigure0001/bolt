@@ -11,14 +11,9 @@ import { isRecord } from "@oh-my-pi/pi-utils";
 import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
-	createCustomMessage,
 	INTERRUPTED_THINKING_MESSAGE_TYPE,
 	isEmptyErrorTurn,
-	PREWALK_PLAN_MESSAGE_TYPE,
-	REWIND_REPORT_MESSAGE_TYPE,
-	VIBE_MODE_CONTEXT_MESSAGE_TYPE,
 } from "./messages";
-import { CONTEXT_NOTES_ENTRY_TYPE, getContextNotes, renderContextNotes } from "./context-notes";
 import {
 	type CompactionEntry,
 	type CustomMessageEntry,
@@ -37,16 +32,6 @@ const LEGACY_SNAPCOMPACT_ARCHIVE_TEXT_GUARD = 250_000;
 const LEGACY_SNAPCOMPACT_TRUNCATED_CHARS_GUARD = 1_000_000;
 const SUPERSEDED_COMPACTION_SUMMARY = "[Superseded compaction summary elided after a newer compaction]";
 const SUPERSEDED_COMPACTION_SHORT_SUMMARY = "Superseded compaction elided";
-
-function isRolloverRequestEntry(entry: SessionEntry): boolean {
-	return (
-		isUserRequestEntry(entry) ||
-		(entry.type === "custom_message" &&
-			entry.customType === "irc:incoming" &&
-			isRecord(entry.details) &&
-			entry.details.fromParent === true)
-	);
-}
 
 function hasLegacySnapcompactFrames(archive: snapcompact.Archive): boolean {
 	return archive.frames.some(frame => frame.font === undefined && frame.variant === undefined);
@@ -396,25 +381,6 @@ export function buildSessionContext(
 		cacheMissExplainedAt.push(trackMessageCacheState(msg));
 	};
 
-	// A rewind persists its report twice: as the branch_summary closing the
-	// exploration branch (shown in the transcript) and as the rewind-report
-	// message that follows it (the model-facing framing). Model context keeps
-	// only the latter so each report reaches the provider once.
-	const rewindSummaryIds = new Set<string>();
-	if (!options?.transcript) {
-		for (let i = 1; i < path.length; i++) {
-			const entry = path[i];
-			const previous = path[i - 1];
-			if (
-				entry.type === "custom_message" &&
-				entry.customType === REWIND_REPORT_MESSAGE_TYPE &&
-				previous.type === "branch_summary"
-			) {
-				rewindSummaryIds.add(previous.id);
-			}
-		}
-	}
-
 	const appendMessage = (entry: SessionEntry) => {
 		handleEntryResetTracking(entry);
 		if (entry.type === "message") {
@@ -427,15 +393,9 @@ export function buildSessionContext(
 			}
 			pushMessage(entry.message);
 		} else if (entry.type === "custom_message") {
-			if (
-				!options?.transcript &&
-				(entry.customType === PREWALK_PLAN_MESSAGE_TYPE || entry.customType === VIBE_MODE_CONTEXT_MESSAGE_TYPE)
-			) {
-				return;
-			}
 			const message = customMessageEntryMessage(entry);
 			if (message) pushMessage(message);
-		} else if (entry.type === "branch_summary" && entry.summary && !rewindSummaryIds.has(entry.id)) {
+		} else if (entry.type === "branch_summary" && entry.summary) {
 			pushMessage(createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp));
 		}
 	};
@@ -565,30 +525,6 @@ export function buildSessionContext(
 			pushMessage(compactionSummaryMsg);
 		}
 
-		// Notes-backed windows do not summarize a discarded turn prefix. Recover
-		// its latest authoritative request verbatim, independently of the
-		// disposable tail. Parent IRC delivered while idle is persisted as a
-		// custom message, while a mid-stream parent steer is a user message; both
-		// are request candidates, but peer IRC remains ordinary agent context.
-		// Resolve from the branch journal so repeated rollovers and resume retain
-		// it too, without copying messages into compaction metadata or transcripts.
-		// Attribution follows the shared turn-initiator semantics so a
-		// user-invoked skill or writable-collab request is retained like an
-		// ordinary one instead of being skipped for an older plain user message.
-		if (
-			!options?.transcript &&
-			isRecord(compaction.details) &&
-			compaction.details.kind === "experimental-context-rollover"
-		) {
-			const firstKeptIdx = path.findIndex(entry => entry.id === compaction.firstKeptEntryId);
-			for (let i = compactionIdx - 1; i > resetBoundaryIdx; i--) {
-				const entry = path[i];
-				if (!isRolloverRequestEntry(entry)) continue;
-				if (i < firstKeptIdx) appendMessage(entry);
-				break;
-			}
-		}
-
 		// The remote replacement payload (OpenAI remote compaction) carries the
 		// kept turns for the LLM context only; it is not rendered as visible
 		// messages. The collapsed display transcript must still emit the kept
@@ -661,33 +597,6 @@ export function buildSessionContext(
 		// No compaction - emit all messages, handle branch summaries and custom messages
 		for (const entry of path) {
 			appendMessage(entry);
-		}
-	}
-
-	if (!options?.transcript) {
-		const notes = getContextNotes(path);
-		const renderedNotes = renderContextNotes(path);
-		if (notes && renderedNotes.length > 0) {
-			const sourceEntry = path.find(entry => entry.id === notes.entryId);
-			if (sourceEntry) {
-				// A native Anthropic compaction block must open the request, and the
-				// provider folds it into a directly following retained assistant turn
-				// (whose signed thinking is bound to that prefix). Nothing may precede
-				// the block or split that fold, so the notes follow the summary and any
-				// retained assistant turn with its tool results.
-				const head = messages[0];
-				let insertAt = 0;
-				if (head?.role === "compactionSummary" && head.providerPayload?.type === "anthropicCompaction") {
-					insertAt = 1;
-					if (messages[insertAt]?.role === "assistant") insertAt++;
-					while (messages[insertAt]?.role === "toolResult") insertAt++;
-				}
-				messages.splice(
-					insertAt,
-					0,
-					createCustomMessage(CONTEXT_NOTES_ENTRY_TYPE, renderedNotes, false, undefined, sourceEntry.timestamp),
-				);
-			}
 		}
 	}
 

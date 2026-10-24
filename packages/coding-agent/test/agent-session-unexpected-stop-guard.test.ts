@@ -81,7 +81,6 @@ async function createHarness(
 		"compaction.enabled": false,
 		"retry.enabled": false,
 		"todo.enabled": false,
-		"todo.eager": "default",
 		"todo.reminders": false,
 		...settingsOverrides,
 		modelRoles: { default: modelSelector, judge: modelSelector },

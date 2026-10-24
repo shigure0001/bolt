@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, it } from "bun:test";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { acquireBrowser, holdBrowser, releaseBrowser } from "@oh-my-pi/pi-coding-agent/tools/browser/registry";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
@@ -54,7 +53,6 @@ function valueFrom<T>(result: { details?: unknown }): T {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 });
 
 describe.skipIf(!CHROMIUM_AVAILABLE)("browser WebMCP helpers", () => {

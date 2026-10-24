@@ -334,7 +334,6 @@ function redactShareEntry(
 				task: o.obfuscate(entry.task, sharedRegexSecretValues),
 				outputSchema: undefined,
 				// Revival-only state; its item ids can carry user text.
-				workPoolYieldItems: undefined,
 			};
 		case "label":
 			return {

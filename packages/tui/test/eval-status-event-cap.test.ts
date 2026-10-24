@@ -98,13 +98,13 @@ describe("eval status event log", () => {
 
 	function renderCell(statusEvents: EvalStatusEvent[], statusEventsElided: number): string {
 		const details: EvalToolDetails = {
-			language: "js",
-			languages: ["js"],
+			language: "python",
+			languages: ["python"],
 			cells: [
 				{
 					index: 0,
 					code: "while (true) await tab.evaluate('1')",
-					language: "js",
+					language: "python",
 					output: "",
 					status: "complete",
 					statusEvents,

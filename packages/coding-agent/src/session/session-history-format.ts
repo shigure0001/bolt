@@ -201,10 +201,6 @@ function primaryArgText(name: string, args: Record<string, unknown> | undefined)
 		const paths = primaryArgValue(args.pattern) || primaryArgValue(args.path) || primaryArgValue(args.paths);
 		if (paths) return paths;
 	}
-	if (name === "ast_grep") {
-		const pattern = primaryArgValue(args.pat);
-		if (pattern) return pattern;
-	}
 	for (const key of PRIMARY_ARG_KEYS) {
 		const value = args[key];
 		const summary = primaryArgValue(value);
@@ -456,8 +452,6 @@ function customOneLiner(msg: CustomMessage | HookMessage, transform?: ToolIOTran
 			return `[irc] ${str("from") || "?"} → me: ${previewLine(str("message"), transform)}`;
 		case "irc:relay":
 			return `[irc] ${str("from") || "?"} → ${str("to") || "?"}: ${previewLine(str("body"), transform)}`;
-		case "irc:workpool":
-			return `[pool] ${str("pool")} → ${str("to") || "?"}: ${previewLine(str("body"), transform)}`;
 		case "async-result": {
 			const jobs = Array.isArray(details.jobs) && details.jobs.length > 0 ? details.jobs : [details];
 			const labels = jobs

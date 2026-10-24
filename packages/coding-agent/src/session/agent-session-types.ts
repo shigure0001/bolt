@@ -120,15 +120,6 @@ export interface AsyncJobTree {
 export type { ShakeMode, ShakeResult } from "./shake-types";
 
 /**
- * Prewalk switches an active session one-way from its starting model to a
- * fast/cheap target after implementation begins.
- */
-export interface Prewalk {
-	target: Model;
-	thinkingLevel?: ConfiguredThinkingLevel;
-}
-
-/**
  * PlanYolo starts in read-only plan mode, auto-approves the proposal, then
  * switches to a target model for implementation.
  */
@@ -214,10 +205,6 @@ export interface AgentSessionConfig {
 	 * slow-verdict boundary runs in milliseconds; production never sets it.
 	 */
 	unexpectedStopJudgeTimeoutMs?: number;
-	/** Prewalk from the starting model to a fast/cheap target after implementation begins. */
-	prewalk?: Prewalk;
-	/** Keep `prewalk.auto` away from this session until `/new` (`--no-prewalk`). */
-	suppressAutoPrewalk?: boolean;
 	/** Force read-only plan mode at start, auto-approve, then switch to the target. */
 	planYolo?: PlanYolo;
 	/** Initial per-family service tiers for the live session. */
@@ -257,8 +244,6 @@ export interface AgentSessionConfig {
 	memoryTaskDepth?: number;
 	/** Creates built-in memory tools for the current backend. */
 	createMemoryTools?: () => Promise<AgentTool[]>;
-	/** Creates the private `think` scratchpad tool for runtime setting changes. */
-	createThinkTool?: () => Promise<AgentTool | null>;
 	/** Model registry for API key resolution and model discovery. */
 	modelRegistry: ModelRegistry;
 	/**
@@ -280,8 +265,6 @@ export interface AgentSessionConfig {
 	rebindModelAfterDiscovery?: boolean;
 	/** Tool registry for LSP and settings. */
 	toolRegistry?: Map<string, AgentTool>;
-	/** Creates tools registered only while vibe mode is active. */
-	createVibeTools?: () => AgentTool[];
 	/** Names whose current registry entry is the built-in implementation. */
 	builtInToolNames?: Iterable<string>;
 	/** MCP names whose initial registry entries came from the manager snapshot. */

@@ -143,8 +143,6 @@ export function renderJobWidgetPrompt(request: JobWidgetAuthorRequest, redact: (
 		command: excerpt(brief.command),
 		task: excerpt(brief.task),
 		intent: excerpt(brief.intent),
-		watch: excerpt(brief.watch),
-		stage: excerpt(brief.stage),
 		sources: buildPromptSources(request.sources, redact),
 		previous: request.previous && {
 			reason: request.previous.reason,

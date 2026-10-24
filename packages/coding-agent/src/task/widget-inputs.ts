@@ -95,8 +95,6 @@ export function createTaskWidgetInputs(options: TaskWidgetInputsOptions): JobWid
 			kind: "task",
 			task: progress.assignment ?? progress.task,
 			...(intent ? { intent } : {}),
-			...(progress.watch ? { watch: progress.watch } : {}),
-			...(progress.stage ? { stage: progress.stage } : {}),
 		}),
 	};
 }

@@ -61,14 +61,8 @@ interface WidgetEntry {
 	/** No model can write specs: stop asking. */
 	authorUnavailable: boolean;
 	request?: AbortController;
-	/** Whether the installed spec was written knowing the task's `watch` hint. */
-	specHadWatch: boolean;
-	/**
-	 * Set once the author declined (`skip`): the task's `watch` hint at the
-	 * time, `""` without one. A command's job is never asked again; a task's
-	 * is asked again once its subagent names something else to watch.
-	 */
-	skippedWatch?: string;
+	/** The author declined the job; without a new progress hint, do not retry. */
+	skipped: boolean;
 }
 
 /** {@link JobWidgetRegistry} for one root `AsyncJobManager`. */
@@ -114,7 +108,7 @@ export class JobWidgets implements JobWidgetRegistry {
 				frozen: false,
 				attempts: 0,
 				authorUnavailable: false,
-				specHadWatch: false,
+				skipped: false,
 			};
 			this.#entries.set(job.id, entry);
 		}
@@ -182,7 +176,6 @@ export class JobWidgets implements JobWidgetRegistry {
 	#recompute(entry: WidgetEntry, brief: JobWidgetBrief): boolean {
 		const view = entry.runtime.view({
 			label: entry.job.label,
-			stage: brief.stage,
 			// A subagent's tool results are file contents and search hits; only a command's newest line says what it does.
 			lineStage: brief.kind === "bash",
 			authoring: entry.request !== undefined,
@@ -195,32 +188,27 @@ export class JobWidgets implements JobWidgetRegistry {
 	}
 
 	/**
-	 * Start a spec request when the job is old and talkative enough, or
-	 * re-author a spec that stopped fitting. A subagent's job waits for its
-	 * `watch` hint: most subagents read and edit code, and only the subagent
-	 * knows whether some output of its work shows progress.
+	 * Start a spec request when the job has output worth describing, or
+	 * re-author a spec that stopped fitting its output.
 	 */
 	#maybeAuthor(entry: WidgetEntry, brief: JobWidgetBrief, now: number): void {
 		if (!this.#author || entry.request || entry.authorUnavailable || !entry.shown) return;
 		if (entry.attempts >= this.#options.maxAttempts || this.#inFlight >= this.#options.maxInFlight) return;
 		if (now - entry.job.startTime < this.#options.authorAfterMs) return;
-		if (brief.kind === "task" && !brief.watch) return;
-		const skipped = entry.skippedWatch;
-		if (skipped !== undefined && (brief.kind !== "task" || skipped === brief.watch)) return;
+		if (entry.skipped) return;
 		const runtime = entry.runtime;
 		let previous: JobWidgetAuthorRequest["previous"];
 		if (runtime.spec) {
-			const reason = this.#reauthorReason(entry, brief, now);
+			const reason = this.#reauthorReason(entry, now);
 			if (!reason) return;
 			previous = { spec: runtime.spec, reason };
-		} else if (brief.kind === "bash" && !runtime.samples().some(sample => sample.lines >= MIN_AUTHOR_LINES)) {
+		} else if (!runtime.samples().some(sample => sample.lines >= MIN_AUTHOR_LINES)) {
 			return;
 		}
 		void this.#writeSpec(entry, brief, previous);
 	}
 
-	#reauthorReason(entry: WidgetEntry, brief: JobWidgetBrief, now: number): string | undefined {
-		if (brief.watch && !entry.specHadWatch) return `the subagent now says what to watch: ${brief.watch}`;
+	#reauthorReason(entry: WidgetEntry, now: number): string | undefined {
 		const runtime = entry.runtime;
 		if (runtime.unmatchedLines < this.#options.driftLines) return undefined;
 		const newest = runtime.lastMatchAt;
@@ -244,7 +232,7 @@ export class JobWidgets implements JobWidgetRegistry {
 		const samples = entry.runtime.samples();
 		const request: JobWidgetAuthorRequest = { jobId: entry.job.id, brief, sources: samples, previous };
 		// Where a spec's constant totals and targets may come from, besides the samples.
-		const stated = [brief.command, brief.task, brief.intent, brief.watch, brief.stage].filter(Boolean).join("\n");
+		const stated = [brief.command, brief.task, brief.intent].filter(Boolean).join("\n");
 		let spec: JobWidgetSpec | undefined;
 		try {
 			for (let round = 0; round < 2 && !spec; round++) {
@@ -257,7 +245,7 @@ export class JobWidgets implements JobWidgetRegistry {
 				const skip = jobWidgetSkip(answer);
 				if (skip !== undefined) {
 					logger.debug("Job widget declined", { jobId: entry.job.id, reason: skip });
-					entry.skippedWatch = brief.watch ?? "";
+					entry.skipped = true;
 					break;
 				}
 				const checked = validateJobWidgetSpec(answer, sampleLines(samples), stated);
@@ -276,13 +264,13 @@ export class JobWidgets implements JobWidgetRegistry {
 			if (entry.request === controller) entry.request = undefined;
 		}
 		if (controller.signal.aborted || this.#entries.get(entry.job.id) !== entry) return;
-		if (spec) this.#install(entry, spec, brief);
+		if (spec) this.#install(entry, spec);
 		if (this.#recompute(entry, brief)) this.#notify();
 		this.#syncTimer();
 	}
 
 	/** Drive the widget by `spec`, rereading every source from its oldest retained text. */
-	#install(entry: WidgetEntry, spec: JobWidgetSpec, brief: JobWidgetBrief): void {
+	#install(entry: WidgetEntry, spec: JobWidgetSpec): void {
 		const runtime = new JobWidgetRuntime(spec, entry.job.startTime, this.#now);
 		const inputs = entry.job.widgetInputs;
 		try {
@@ -291,7 +279,6 @@ export class JobWidgets implements JobWidgetRegistry {
 			logger.warn("Job widget refresh failed", { jobId: entry.job.id, error: String(error) });
 		}
 		entry.runtime = runtime;
-		entry.specHadWatch = brief.watch !== undefined && brief.watch.length > 0;
 		entry.lastIngestAt = this.#now();
 	}
 

@@ -25,14 +25,6 @@ export const launchHelp = {
 			description:
 				"Start fresh in goal mode (interactive only; bypasses autoResume; no positional prompt, startup plan mode, or explicit resume)",
 		}),
-		prewalk: Flags.boolean({
-			description:
-				"Switch from the active model to a fast/cheap model at the first edit/write after the plan's todo list exists (default off; see prewalk.enabled)",
-		}),
-		"no-prewalk": Flags.boolean({
-			description: "Disable prewalk, including prewalk.auto, even if prewalk.enabled is set",
-		}),
-		"prewalk-into": Flags.string({ description: 'Target model for prewalk (default the "smol" role)' }),
 		"plan-yolo": Flags.boolean({
 			description:
 				"Force read-only plan mode at start, auto-approve the plan on the model's first resolve call, then switch to --plan-yolo-into to implement it",
@@ -90,10 +82,6 @@ export const launchHelp = {
 		}),
 		advisor: Flags.boolean({
 			description: "Enable the advisor runtime (passively reviews each turn and injects notes)",
-		}),
-		"external-thinking": Flags.boolean({
-			description:
-				"Use a private scratchpad while disabling supported GPT, Claude, and Gemini reasoning (at your own risk: providers have flagged this request shape as abuse)",
 		}),
 		hook: Flags.string({ description: "Load a hook/extension file (can be used multiple times)", multiple: true }),
 		extension: Flags.string({

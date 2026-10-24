@@ -1,4 +1,0 @@
-Finds where a behavior is implemented from a plain-language description and returns files with line ranges. Use it first when you don't know where something lives; use `grep` for known strings, regexes or symbols and `glob` for file names.
-- `query`: plain language, not a regex; quoted phrases must match as a whole. `grep_keywords`: terms likely to appear verbatim in the code, or `[]` if unsure.
-- `path`: one directory or file, or an internal URL (`omp://`, `skill://<name>`, `local://…`); defaults to the workspace root. Scope it to the subsystem when you know it, and batch related questions. It searches the live files (no index) and judges whole files, so it takes no line selector.
-- Results are ordered strongest first as `path:start-end score snippet`; read the returned ranges. Scores are comparable probabilities from 0 to 1. Below about 0.4 the evidence is weak, so broaden the query or use `grep` before concluding something doesn't exist.

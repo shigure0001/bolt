@@ -546,7 +546,7 @@ describe("Coding Agent Tools", () => {
 	let editTool: EditTool;
 	let bashTool: BashTool;
 	let searchTool: GrepTool;
-	let findTool: GlobTool;
+	let globTool: GlobTool;
 	let originalEditVariant: string | undefined;
 
 	beforeAll(async () => {
@@ -572,7 +572,7 @@ describe("Coding Agent Tools", () => {
 		editTool = wrapToolWithMetaNotice(new EditTool(session));
 		bashTool = wrapToolWithMetaNotice(new BashTool(session));
 		searchTool = wrapToolWithMetaNotice(new GrepTool(session));
-		findTool = wrapToolWithMetaNotice(new GlobTool(session));
+		globTool = wrapToolWithMetaNotice(new GlobTool(session));
 	});
 
 	afterEach(() => {
@@ -3235,12 +3235,12 @@ function b() {
 		});
 	});
 
-	describe("find tool", () => {
+	describe("glob tool", () => {
 		it("should return a single file when given a file path", async () => {
 			const testFile = path.join(testDir, "single.txt");
 			fs.writeFileSync(testFile, "single");
 
-			const result = await findTool.execute("test-call-13a", {
+			const result = await globTool.execute("test-call-13a", {
 				pattern: testFile,
 			});
 
@@ -3258,7 +3258,7 @@ function b() {
 			fs.writeFileSync(path.join(hiddenDir, "hidden.txt"), "hidden");
 			fs.writeFileSync(path.join(testDir, "visible.txt"), "visible");
 
-			const result = await findTool.execute("test-call-13", {
+			const result = await globTool.execute("test-call-13", {
 				pattern: `${testDir}/**/*.txt`,
 				hidden: true,
 			});
@@ -3274,7 +3274,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "ignored.txt"), "ignored");
 			fs.writeFileSync(path.join(testDir, "kept.txt"), "kept");
 
-			const result = await findTool.execute("test-call-14", {
+			const result = await globTool.execute("test-call-14", {
 				pattern: `${testDir}/**/*.txt`,
 			});
 
@@ -3299,7 +3299,7 @@ function b() {
 			fs.utimesSync(olderFile, olderTime, olderTime);
 			fs.utimesSync(newerFile, newerTime, newerTime);
 
-			const result = await findTool.execute("test-call-14b", {
+			const result = await globTool.execute("test-call-14b", {
 				pattern: `${testDir}/**/auth-actions.spec.ts`,
 			});
 
@@ -3311,7 +3311,7 @@ function b() {
 			fs.mkdirSync(nestedDir, { recursive: true });
 			fs.writeFileSync(path.join(nestedDir, "daemon-telemetry.ts"), "telemetry\n");
 
-			const result = await findTool.execute("test-call-14c", {
+			const result = await globTool.execute("test-call-14c", {
 				pattern: "apps/daemon/src/**/daemon-telemetry.ts",
 			});
 
@@ -3326,7 +3326,7 @@ function b() {
 			fs.writeFileSync(path.join(daemonDir, "daemon.ts"), "daemon\n");
 			fs.writeFileSync(path.join(clientDir, "client.ts"), "client\n");
 
-			const result = await findTool.execute("test-call-14e", {
+			const result = await globTool.execute("test-call-14e", {
 				pattern: JSON.stringify(["apps/daemon/src/**/*.ts", "apps/client/src/**/*.ts"]),
 			});
 
@@ -3342,7 +3342,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "ignored-generated", ".env.generated"), "SECRET=value\n");
 
 			const startedAt = performance.now();
-			const result = await findTool.execute("test-call-14d", {
+			const result = await globTool.execute("test-call-14d", {
 				pattern: "**/.env*",
 			});
 			const elapsedMs = performance.now() - startedAt;
@@ -3354,19 +3354,14 @@ function b() {
 			expect(elapsedMs).toBeLessThan(1000);
 		});
 
-		// Regression: the empty-result hint promised `gitignore: false` would include
-		// skipped files, but node_modules stays skipped unless the pattern names it.
-		it("points an empty search at the pattern, not gitignore, for node_modules", async () => {
+		it("does not traverse node_modules unless the pattern names it", async () => {
 			fs.mkdirSync(path.join(testDir, "node_modules", "pkg"), { recursive: true });
 			fs.writeFileSync(path.join(testDir, "node_modules", "pkg", "index.d.ts"), "export {};\n");
 
-			const missed = getTextOutput(
-				await findTool.execute("test-call-nm-1", { pattern: "**/*.d.ts", gitignore: false }),
-			);
-			expect(missed).toContain("No files found matching pattern (skipped node_modules");
-			expect(missed).not.toContain("`gitignore: false` includes them");
+			const missed = await globTool.execute("test-call-nm-1", { pattern: "**/*.d.ts", gitignore: false });
+			expect(missed.details?.files).not.toContain("node_modules/pkg/index.d.ts");
 
-			const named = await findTool.execute("test-call-nm-2", {
+			const named = await globTool.execute("test-call-nm-2", {
 				pattern: "node_modules/**/*.d.ts",
 				gitignore: false,
 			});
@@ -3379,7 +3374,7 @@ function b() {
 			fs.writeFileSync(path.join(testDir, "pkg", "file.txt"), "f");
 			fs.writeFileSync(path.join(testDir, "pkg", "nested", "deep.txt"), "d");
 
-			const result = await findTool.execute("test-call-14f", {
+			const result = await globTool.execute("test-call-14f", {
 				pattern: `${testDir}/pkg/**/*`,
 			});
 
@@ -3392,7 +3387,7 @@ function b() {
 			fs.mkdirSync(path.join(testDir, "beta", "tests"), { recursive: true });
 			fs.writeFileSync(path.join(testDir, "alpha", "tests", "a.ts"), "a");
 
-			const result = await findTool.execute("test-call-14g", {
+			const result = await globTool.execute("test-call-14g", {
 				pattern: `${testDir}/**/tests`,
 			});
 
@@ -3407,7 +3402,7 @@ function b() {
 			fs.writeFileSync(path.join(dir, "top.tsx"), "t");
 			fs.writeFileSync(path.join(sub, "nested.tsx"), "n");
 
-			const result = await findTool.execute("test-call-14h", {
+			const result = await globTool.execute("test-call-14h", {
 				pattern: `${dir}/*.tsx`,
 			});
 

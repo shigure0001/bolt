@@ -28,13 +28,10 @@ import {
 import { getKnownRoleIds } from "../config/model-roles";
 import { buildServiceTierByFamily } from "../config/service-tier";
 import type { Settings } from "../config/settings";
-import { containsMagicKeyword } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
-import type { MagicKeywordId } from "../modes/magic-keywords";
 import {
 	AUTO_THINKING,
 	automaticThinkingLevel,
 	type ConfiguredThinkingLevel,
-	clampAutoThinkingEffort,
 	clampThinkingLevelToCeiling,
 	resolveProvisionalAutoLevel,
 	resolveThinkingLevelForModel,
@@ -69,10 +66,9 @@ export interface ModelControlsHost {
 	promptGeneration(): number;
 	resolveActiveEditMode(): EditMode;
 	syncAfterModelChange(previousEditMode: EditMode): Promise<void>;
-	setModelWithProviderSessionReset(model: Model, selection?: "explicit" | "automatic"): Promise<void>;
+	setModelWithProviderSessionReset(model: Model): Promise<void>;
 	clearActiveRetryFallback(): void;
 	clearInheritedProviderPromptCacheKey(): void;
-	magicKeywordEnabled(keyword: MagicKeywordId): boolean;
 	emit(event: AgentSessionEvent): void;
 	emitSessionEvent(event: AgentSessionEvent): Promise<void>;
 	emitNotice(level: "info" | "warning" | "error", message: string, source?: string): void;
@@ -283,7 +279,6 @@ export class ModelControls {
 		model: Model,
 		thinkingLevel?: ConfiguredThinkingLevel,
 		options?: { ephemeral?: boolean },
-		selection: "explicit" | "automatic" = "explicit",
 	): Promise<void> {
 		const previousEditMode = this.#host.resolveActiveEditMode();
 		if (!this.#host.modelRegistry.hasConfiguredAuth(model)) {
@@ -294,7 +289,7 @@ export class ModelControls {
 
 		this.#host.modelRegistry.clearSuppressedSelector(formatModelStringWithRouting(targetModel));
 		this.#host.clearActiveRetryFallback();
-		await this.#host.setModelWithProviderSessionReset(targetModel, selection);
+		await this.#host.setModelWithProviderSessionReset(targetModel);
 		this.#host.sessionManager.appendModelChange(
 			`${targetModel.provider}/${targetModel.id}`,
 			options?.ephemeral ? EPHEMERAL_MODEL_CHANGE_ROLE : "temporary",
@@ -638,42 +633,35 @@ export class ModelControls {
 		if (getSupportedEfforts(model).length === 0) return;
 
 		let resolved: Effort | undefined;
-		if (this.#host.magicKeywordEnabled("ultrathink") && containsMagicKeyword(promptText, "ultrathink")) {
-			// The user explicitly asked for maximum thinking; bypass the classifier
-			// (and the `providers.autoThinkingMaxEffort` ceiling) and jump straight
-			// to the highest supported level for this model.
-			resolved = clampAutoThinkingEffort(model, Effort.Max);
-		} else {
-			const controller = new AbortController();
-			const timer = setTimeout(() => controller.abort(), ModelControls.#AUTO_THINKING_TIMEOUT_MS);
-			const usageOwner = {
-				sessionId: this.#host.sessionManager.getSessionId(),
-				parentId: this.#host.sessionManager.getLeafId(),
-			};
-			try {
-				resolved = await classifyDifficulty(
-					{ request: promptText, solutionSpace },
-					{
-						settings: this.#host.settings,
-						registry: this.#host.modelRegistry,
-						model,
-						sessionId: this.#host.sessionId(),
-						signal: controller.signal,
-						metadataResolver: provider => this.#host.agent.metadataForProvider(provider),
-						onUsage: usage => {
-							const entryId = this.#host.sessionManager.appendModelUsage(usage, usageOwner);
-							if (entryId) usageOwner.parentId = entryId;
-						},
-						telemetry: this.#host.agent.telemetry,
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), ModelControls.#AUTO_THINKING_TIMEOUT_MS);
+		const usageOwner = {
+			sessionId: this.#host.sessionManager.getSessionId(),
+			parentId: this.#host.sessionManager.getLeafId(),
+		};
+		try {
+			resolved = await classifyDifficulty(
+				{ request: promptText, solutionSpace },
+				{
+					settings: this.#host.settings,
+					registry: this.#host.modelRegistry,
+					model,
+					sessionId: this.#host.sessionId(),
+					signal: controller.signal,
+					metadataResolver: provider => this.#host.agent.metadataForProvider(provider),
+					onUsage: usage => {
+						const entryId = this.#host.sessionManager.appendModelUsage(usage, usageOwner);
+						if (entryId) usageOwner.parentId = entryId;
 					},
-				);
-			} catch (error) {
-				logger.debug("auto-thinking: classification failed; using fallback level", {
-					error: error instanceof Error ? error.message : String(error),
-				});
-			} finally {
-				clearTimeout(timer);
-			}
+					telemetry: this.#host.agent.telemetry,
+				},
+			);
+		} catch (error) {
+			logger.debug("auto-thinking: classification failed; using fallback level", {
+				error: error instanceof Error ? error.message : String(error),
+			});
+		} finally {
+			clearTimeout(timer);
 		}
 
 		// Drop the result if the turn was aborted/superseded while classifying.

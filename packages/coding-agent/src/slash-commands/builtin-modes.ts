@@ -1,8 +1,6 @@
 import { clearSubmittedText, restoreDetachedDraft } from "./helpers/draft";
 import * as path from "node:path";
-import { AgentBusyError } from "@oh-my-pi/pi-agent-core";
 import { formatKeyHint } from "@oh-my-pi/pi-tui/app-keybindings";
-import { prompt } from "@oh-my-pi/pi-utils";
 import {
 	formatModelString,
 	getModelMatchPreferences,
@@ -24,12 +22,10 @@ import {
 import { describeLoopCondition } from "../modes/loop-condition";
 import { describeLoopLimitRuntime } from "../modes/loop-limit";
 import type { InteractiveModeContext } from "../modes/types";
-import ratchetKickoffPrompt from "../prompts/ratchet-kickoff.md" with { type: "text" };
 import type { AgentSession } from "../session/agent-session";
 import { CLI_THINKING_LEVELS, getConfiguredThinkingLevelMetadata } from "@oh-my-pi/pi-tui/thinking";
 import { noThinkingMessage, resolveThinkingArgument } from "./helpers/effort";
 import { commandConsumed, errorMessage, usage } from "./helpers/parse";
-import { handleSecurityCommand } from "./helpers/security";
 import type { ParsedSlashCommand, SlashCommandSpec, TuiSlashCommandRuntime } from "./types";
 
 import {
@@ -38,7 +34,6 @@ import {
 	cfgComputerEnabled,
 	cfgComputerMaxHeight,
 	cfgComputerMaxWidth,
-	cfgRatchetEnabled,
 } from "../tools/settings";
 import { cfgSkillful } from "../session/settings";
 import { formatSlowModeResetClock } from "../session/anthropic-slow-mode";
@@ -243,27 +238,6 @@ function applyComputerUseToggle(session: AgentSession, enable: boolean): string 
 		: "Computer use disabled for this session.";
 }
 
-/** Tools the ratchet loop needs: the eval kernel hosts `ratchet()`, `task` runs its analyzer. */
-const RATCHET_REQUIRED_TOOLS = ["eval", "task"] as const;
-
-/**
- * Arm `/ratchet`: enable the ratchet prelude for this session (override, never persisted) and
- * render the kickoff prompt carrying the user's request as data.
- */
-function prepareRatchet(session: AgentSession, request: string): { kickoff: string } | { error: string } {
-	const tools = session.getEnabledToolNames();
-	const missing = RATCHET_REQUIRED_TOOLS.filter(tool => !tools.includes(tool));
-	if (missing.length > 0) return { error: `/ratchet needs the ${missing.join(" and ")} tool active.` };
-	const previous = cfgRatchetEnabled.get(session.settings);
-	if (!previous) cfgRatchetEnabled.override(session.settings, true);
-	if (!session.getEvalPreludes().some(definition => definition.name === "ratchet")) {
-		if (!previous) cfgRatchetEnabled.override(session.settings, previous);
-		return { error: "The ratchet eval prelude is unavailable in this session." };
-	}
-	const kickoff = prompt.render(ratchetKickoffPrompt, { request: request.trim() || undefined, tools }).trim();
-	return { kickoff };
-}
-
 const AUTOCOMPLETE_DETAIL_LIMIT = 48;
 
 function shortDetail(value: string, limit = AUTOCOMPLETE_DETAIL_LIMIT): string {
@@ -276,27 +250,6 @@ export function formatTokenCount(value: number): string {
 }
 
 export const BUILTIN_MODE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
-	{
-		name: "security",
-		icon: "shield",
-		description: "Plan, run, inspect, import, and compare OMP-native security scans",
-		allowArgs: true,
-		acpInputHint: "<plan|scan|status|cancel|scans|show|import|export|validate|compare|disposition>",
-		subcommands: [
-			{ name: "plan", description: "Create an immutable security scan plan" },
-			{ name: "scan", description: "Start a planned or newly planned native scan" },
-			{ name: "status", description: "Show native scan operation status" },
-			{ name: "cancel", description: "Cancel a running native scan" },
-			{ name: "scans", description: "List stored project security scans" },
-			{ name: "show", description: "Render a scan or security:// resource" },
-			{ name: "import", description: "Import SARIF or a Codex Security bundle" },
-			{ name: "export", description: "Export a canonical bundle, SARIF, or report" },
-			{ name: "validate", description: "Validate one finding with OMP-native tools" },
-			{ name: "compare", description: "Compare finding lineage across two scans" },
-			{ name: "disposition", description: "Set a finding disposition with rationale" },
-		],
-		handle: handleSecurityCommand,
-	},
 	{
 		name: "settings",
 		icon: "settings",
@@ -354,24 +307,6 @@ export const BUILTIN_MODE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 		handleTui: async (_command, runtime) => {
 			await runtime.ctx.openPlanReview();
 			clearSubmittedText(runtime);
-		},
-	},
-	{
-		name: "vibe",
-		icon: "wave",
-		description: "Toggle vibe mode (direct persistent fast/good worker sessions; read-only toolset)",
-		inlineHint: "[prompt]",
-		allowArgs: true,
-		getTuiAutocompleteDescription: runtime => {
-			if (runtime.ctx.vibeModeEnabled) return "Vibe: on";
-			if (runtime.ctx.planModeEnabled) return "Vibe: blocked by plan mode";
-			if (runtime.ctx.goalModeEnabled) return "Vibe: blocked by goal mode";
-			return "Vibe: off";
-		},
-		handleTui: async (command, runtime) => {
-			await runWithDetachedModeDraft(command, runtime, () =>
-				runtime.ctx.handleVibeModeCommand(command.args || undefined, runtime.input),
-			);
 		},
 	},
 	{
@@ -729,103 +664,6 @@ export const BUILTIN_MODE_SLASH_COMMANDS: ReadonlyArray<SlashCommandSpec> = [
 			}
 			runtime.ctx.showStatus("Usage: /computer [on|off|status]");
 			clearSubmittedText(runtime);
-		},
-	},
-	{
-		name: "ratchet",
-		icon: "loop",
-		description: "Build (or reuse) an eval for an LLM flow, then hillclimb it unattended",
-		inlineHint: "[flow and goal]",
-		allowArgs: true,
-		handle: (command, runtime) => {
-			const armed = prepareRatchet(runtime.session, command.args);
-			if ("error" in armed) return usage(armed.error, runtime);
-			return { prompt: armed.kickoff };
-		},
-		handleTui: async (command, runtime) => {
-			const { session } = runtime.ctx;
-			const armed = prepareRatchet(session, command.args);
-			clearSubmittedText(runtime);
-			if ("error" in armed) {
-				runtime.ctx.showWarning(armed.error);
-				return;
-			}
-			// Same delivery as /guided-goal: the kickoff is a hidden developer message queued behind
-			// any in-flight run; the agent's batched `ask` is the first thing the user sees.
-			const images = runtime.input?.images?.length ? runtime.input.images : undefined;
-			if (session.isStreaming) {
-				await session.followUp(armed.kickoff, images, { synthetic: true });
-				return;
-			}
-			try {
-				await session.prompt(armed.kickoff, images ? { synthetic: true, images } : { synthetic: true });
-			} catch (error) {
-				if (!(error instanceof AgentBusyError)) throw error;
-				await session.followUp(armed.kickoff, images, { synthetic: true });
-			}
-		},
-	},
-	{
-		name: "prewalk",
-		icon: "prewalk",
-		description: "Arm, restart, or cancel a one-shot model handoff",
-		allowArgs: true,
-		acpDescription: "Arm, restart, or cancel prewalk",
-		acpInputHint: "[restart|off]",
-		subcommands: [
-			{ name: "restart", description: "Return to @default and re-arm the handoff to @smol" },
-			{ name: "off", description: "Cancel this session's handoff without changing the active model" },
-		],
-		handle: async (command, runtime) => {
-			const arg = command.args.trim().toLowerCase();
-			if (arg && arg !== "restart" && arg !== "off") return usage("Usage: /prewalk [restart|off]", runtime);
-			if (arg === "off") {
-				const armed = runtime.session.getPrewalkState() !== undefined;
-				runtime.session.disarmPrewalk();
-				await runtime.output(
-					armed
-						? "Prewalk off: canceled this session's pending handoff; keeping the active model."
-						: "Prewalk already off for this session; keeping the active model.",
-				);
-				return commandConsumed();
-			}
-			const target = resolveSessionModelSelector("@smol", runtime.session, runtime.settings);
-			if (target.error || !target.model) {
-				return usage(target.error ?? 'Model "@smol" not found', runtime);
-			}
-			if (!runtime.session.modelRegistry.hasConfiguredAuth(target.model)) {
-				return usage(`No API key for ${target.model.provider}/${target.model.id}`, runtime);
-			}
-			if (arg === "restart") {
-				const source = resolveSessionModelSelector("@default", runtime.session, runtime.settings);
-				if (source.error || !source.model) {
-					return usage(source.error ?? 'Model "@default" not found', runtime);
-				}
-				if (!runtime.session.modelRegistry.hasConfiguredAuth(source.model)) {
-					return usage(`No API key for ${source.model.provider}/${source.model.id}`, runtime);
-				}
-				const result = await runtime.session.restartPrewalk(
-					source.model,
-					source.thinkingLevel,
-					target.model,
-					target.thinkingLevel,
-				);
-				if (result === "rejected") return commandConsumed();
-				const restartSource = `${source.model.provider}/${source.model.id}`;
-				await runtime.output(
-					result === "armed"
-						? `Prewalk restarted: using @default (${restartSource}) for planning, then switching to @smol (${target.model.provider}/${target.model.id}) at the next edit/write (todo-gated).`
-						: `Prewalk reset: using @default (${restartSource}); @smol resolves to the same model and thinking level, so no handoff was armed.`,
-				);
-				return commandConsumed();
-			}
-			const armed = runtime.session.armPrewalk(target.model, target.thinkingLevel);
-			if (armed) {
-				await runtime.output(
-					`Prewalk on: switching to ${target.model.provider}/${target.model.id} at the next edit/write (todo-gated).`,
-				);
-			}
-			return commandConsumed();
 		},
 	},
 	{

@@ -8,6 +8,3 @@ Reads files, directories, archives, SQLite, PDFs/office docs, notebooks, images 
 - File output starts with a `[file.ts#1A2B]` snapshot tag and numbered lines. Copy the tag exactly into anchored edits; never invent one.
 {{/if}}
 - Directories list children up to 12 per subdirectory. `x.db` lists tables, `x.db:table[:key]` rows (`?where=`, `?q=SELECT …`). `x.zip` lists members, `x.zip:inner/path` reads one. `x.json?q=<jq filter>`. URLs return readable text, `:raw` the HTML. `:conflicts` lists merge conflicts.
-{{#if BINARY_VIEWS}}
-- Executables (ELF, PE, Mach-O): an overview and function list; `bin:<func or 0xaddr>` decompiles, `bin:<func>:asm` disassembles, plus `:imports`, `:exports`, `:strings`, `:xrefs:<func>`.
-{{/if}}

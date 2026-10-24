@@ -2688,16 +2688,6 @@ export class Settings {
 			delete taskObj.simple;
 		}
 
-		// task.eager / todo.eager: boolean -> enum (default | preferred | always).
-		// `true` reproduced the previous "on" behavior, which is now `always`.
-		if (taskObj && typeof taskObj.eager === "boolean") {
-			taskObj.eager = taskObj.eager ? "always" : "default";
-		}
-		const todoObj = raw.todo as Record<string, unknown> | undefined;
-		if (todoObj && typeof todoObj.eager === "boolean") {
-			todoObj.eager = todoObj.eager ? "always" : "default";
-		}
-
 		// features.unexpectedStopDetection (boolean) -> enum none|mechanical|smart.
 		// `true` reproduced the previous small-model-classified behavior, which is
 		// now "smart"; `false` maps to "none" so explicitly disabled configs remain
@@ -2858,17 +2848,6 @@ export class Settings {
 		// turns it on only for Gemini models.
 		if (typeof raw.inlineToolDescriptors === "boolean") {
 			raw.inlineToolDescriptors = raw.inlineToolDescriptors ? "on" : "off";
-		}
-
-		// find.enabled: boolean -> enum (auto | on | off). Preserve an explicit
-		// choice; unset installs get `auto`, which enables `find` only when the
-		// judge role resolves to a native System One model.
-		const findObj = isRecord(raw.find) ? raw.find : undefined;
-		if (findObj && typeof findObj.enabled === "boolean") {
-			findObj.enabled = findObj.enabled ? "on" : "off";
-		}
-		if (typeof raw["find.enabled"] === "boolean") {
-			raw["find.enabled"] = raw["find.enabled"] ? "on" : "off";
 		}
 
 		// spelling.autocomplete: boolean -> engine enum. `true` was the macOS
@@ -3177,31 +3156,13 @@ export class Settings {
 			delete raw["advisor.subagents"];
 		}
 
-		// task.completionProbeMs (poll period, 0 = off) → task.completionProbe
-		// (on/off with a built-in backoff schedule). Mapped IN THE SAME LAYER so a
-		// project-level `0` keeps overriding a global period; an explicit new key wins.
-		{
-			const taskObj = isRecord(raw.task) ? raw.task : undefined;
-			const legacyProbeMs =
-				taskObj && "completionProbeMs" in taskObj ? taskObj.completionProbeMs : raw["task.completionProbeMs"];
-			if (typeof legacyProbeMs === "number") {
-				const target = taskObj ?? {};
-				if (!("completionProbe" in target) && !("task.completionProbe" in raw)) {
-					target.completionProbe = legacyProbeMs > 0;
-				}
-				raw.task = target;
-			}
-			if (taskObj) delete taskObj.completionProbeMs;
-			delete raw["task.completionProbeMs"];
-		}
-
 		// Early per-agent toggles were persisted as booleans even though the
 		// runtime record contract is "on"/"off"/model pattern. Normalize each
 		// layer before merging so project-level false still overrides global true.
 		{
 			const taskObj = isRecord(raw.task) ? raw.task : undefined;
 			if (taskObj) {
-				for (const key of ["agentPrewalk", "agentAdvisor"]) {
+				for (const key of ["agentAdvisor"]) {
 					const overrides = isRecord(taskObj[key]) ? taskObj[key] : undefined;
 					if (!overrides) continue;
 					for (const agentName in overrides) {

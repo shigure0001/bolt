@@ -65,15 +65,15 @@ describe("TreeSelectorComponent system-wrapper message rendering", () => {
 		await themeModule.initTheme(false, undefined, undefined, "dark", "light");
 	});
 
-	it("strips the <system-reminder> wrapper from a mid-run-todo-nudge row", () => {
+	it("strips the <system-reminder> wrapper from a todo error notice", () => {
 		const rendered = render(
 			customMessageTree(
-				"mid-run-todo-nudge",
+				"todo-error-reminder",
 				"<system-reminder>\n2 todo items still open. Keep working.\n</system-reminder>",
 			),
 		);
 
-		expect(rendered).toContain("[mid-run-todo-nudge]: 2 todo items still open. Keep working.");
+		expect(rendered).toContain("[todo-error-reminder]: 2 todo items still open. Keep working.");
 		expect(rendered).not.toContain("<system-reminder>");
 		expect(rendered).not.toContain("</system-reminder>");
 	});

@@ -12,7 +12,6 @@ import type { ModelRegistry } from "../config/model-registry";
 import {
 	resolveAgentAdvisorSelection,
 	resolveAgentModelPatterns,
-	resolveAgentPrewalkPattern,
 	resolveConfiguredModelPatterns,
 	resolveModelOverride,
 } from "../config/model-resolver";
@@ -22,16 +21,9 @@ import agentCreationUserPrompt from "../prompts/system/agent-creation-user.md" w
 import { createAgentSession } from "../sdk";
 import { refreshAgentDiscovery } from "../task";
 import { discoverAgents } from "../task/discovery";
-import { resolveAgentPrewalkDefault } from "../task/prewalk";
 import { createModelBrowserSource } from "./model-browser-source";
 
-import {
-	cfgTaskAgentAdvisor,
-	cfgTaskAgentModelOverrides,
-	cfgTaskAgentPrewalk,
-	cfgTaskDisabledAgents,
-	cfgTaskPrewalk,
-} from "../task/settings";
+import { cfgTaskAgentAdvisor, cfgTaskAgentModelOverrides, cfgTaskDisabledAgents } from "../task/settings";
 
 function extractAssistantText(messages: AgentMessage[]): string | null {
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -68,7 +60,6 @@ export function createAgentsHubDeps(
 			const { agents } = await discoverAgents(cwd, undefined, extensionRoots());
 			const disabled = new Set(cfgTaskDisabledAgents.get(settings));
 			const overrides = cfgTaskAgentModelOverrides.get(settings);
-			const prewalkOverrides = cfgTaskAgentPrewalk.get(settings);
 			const advisorOverrides = cfgTaskAgentAdvisor.get(settings);
 			return agents.map(agent => {
 				const override = overrides[agent.name];
@@ -77,7 +68,6 @@ export function createAgentsHubDeps(
 					...agent,
 					disabled: disabled.has(agent.name),
 					overrideModel: overrideModel || undefined,
-					prewalkOverride: prewalkOverrides[agent.name]?.trim() || undefined,
 					advisorOverride: advisorOverrides[agent.name]?.trim() || undefined,
 				};
 			});
@@ -102,11 +92,6 @@ export function createAgentsHubDeps(
 			const level = explicitThinkingLevel && thinkingLevel ? `:${thinkingLevel}` : "";
 			return `${model.provider}/${model.id}${level}`;
 		},
-		effectivePrewalkPattern: agent =>
-			resolveAgentPrewalkPattern({
-				settingsOverride: agent.prewalkOverride,
-				agentPrewalk: resolveAgentPrewalkDefault(agent, cfgTaskPrewalk.get(settings)),
-			}),
 		effectiveAdvisorPattern: agent => {
 			const selection = resolveAgentAdvisorSelection({
 				settingsOverride: agent.advisorOverride,
@@ -116,12 +101,7 @@ export function createAgentsHubDeps(
 		},
 		setAgentDisabled: (name, { disabled }) => cfgTaskDisabledAgents.setMember(settings, name, { member: disabled }),
 		setAgentOverride: (property, name, value) => {
-			const setting =
-				property === "model"
-					? cfgTaskAgentModelOverrides
-					: property === "prewalk"
-						? cfgTaskAgentPrewalk
-						: cfgTaskAgentAdvisor;
+			const setting = property === "model" ? cfgTaskAgentModelOverrides : cfgTaskAgentAdvisor;
 			if (property !== "model") {
 				setting.setEntry(settings, name, value);
 				return;

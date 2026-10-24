@@ -2,25 +2,40 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Removed the `ast_grep`, `ast_edit`, `find`, `debug` (DAP), `ida`, and `security_scan` tools, the archive and ratchet preludes, their settings and related slash commands; the separate `/debug` diagnostics screen remains available.
+- Removed site-specific `read` handlers for 45 services; affected URLs now use the remaining generic web readers.
+- Removed `task.completionProbe`, `task.eager`, and `todo.eager`; subagent completion percentages, eager task/todo nudges, and mid-run todo nudges are no longer emitted.
+- Removed the `checkpoint` and `rewind` model tools and `checkpoint.enabled`; double-Esc rewind and `/branch` remain available.
+- Removed `context_notes`, `new_context`, the `compaction.experimentalContextManagement` setting, and `history://current/full`; existing `history://<id>` transcripts and normal compaction remain available.
+- Removed the model-facing `think` scratchpad tool, `externalThinking` setting, and `--external-thinking` flag; native model reasoning remains available.
+- Removed magic keyword notices, settings, and editor effects for `ultrathink`, `orchestrate`, `workflowz`, and `jevify`; auto-thinking now always classifies turns, with `providers.autoThinkingMaxEffort: max` required to select the top tier.
+- Removed prewalk: `prewalk.enabled`, `prewalk.auto`, `prewalk.autoTarget`, `task.prewalk`, `task.agentPrewalk`, the `prewalk` agent frontmatter field, the `--prewalk`, `--no-prewalk`, and `--prewalk-into` flags, the `/prewalk` command, the auto-prewalk judge, and the status-line mode; sessions keep their selected model, and `--plan-yolo` remains for plan-then-implement runs.
+- Removed vibe mode: `/vibe`, the `vibe_spawn`/`vibe_send`/`vibe_wait`/`vibe_kill`/`vibe_list` tools, the director toolset and context, the status-line mode, and the `vibe-session-lifecycle` session entries; existing sessions that recorded vibe mode resume with the normal toolset.
+- `eval` runs Python only: the JavaScript backend, its `%bun add`/`%environment` commands and managed package environment (`eval.js`, `PI_JS`, `eval.autoProvision`) are gone, and `eval` takes `code` with no `language` field.
+- Removed the `agent()`, `completion()`, `wait()`, `workpool()` and `judge()`/`judge_batch()` eval helpers with their host bridges, work-pool yield plumbing, kernel-defined `@tool` functions with their advertising (`eval.tools.enabled`, `eval.workpool.freshAgents`) and the task `tools` field, and the `judge_batch` progress row.
+- Removed speculative execution for `read` and the `tools.speculativeExecution.*` settings; `task.speculativeLaunch` still starts streamed subagents early.
+
 ### Added
 
 - Anthropic web search and Files API uploads follow `PI_ANTHROPIC_API_VERSION=2026-10-21`; web search omits `temperature` under that version ([#16706](https://github.com/can1357/oh-my-pi/pull/16706) by [@H4vC](https://github.com/H4vC))
 - llama.cpp auto-discovery now also finds local servers on llama-server's new default port 9931 when nothing answers on 8080 ([#16675](https://github.com/can1357/oh-my-pi/pull/16675) by [@bartbroere](https://github.com/bartbroere))
-- `load_tools` and `tools.deferred`: tools matching the `tools.deferred` globs (default: task, eval, lsp, ast_edit, ast_grep, ask, wait, todo, web_search, find, debug, github, checkpoint, rewind, security_scan, ida and all MCP tools) stay registered but off the request; `load_tools` lists them one line each and activates the ones the model names, which are then ordinary tools for the rest of the session. Explicit tool lists (subagent definitions, `--tools`) and restricted selections such as plan mode are never deferred
+- `load_tools` and `tools.deferred`: tools matching the `tools.deferred` globs (default: task, eval, lsp, ask, wait, todo, web_search and all MCP tools) stay registered but off the request; `load_tools` lists them one line each and activates the ones the model names, which are then ordinary tools for the rest of the session. Explicit tool lists (subagent definitions, `--tools`) and restricted selections such as plan mode are never deferred
 
 ### Changed
 
 - `readLineNumbers` now defaults to on: `read` output shows `N|line` row prefixes even in replace edit mode
 - `edit.mode` now defaults to `replace` (path / old_string / new_string), so `read` and `grep` output carries no hashline anchors by default
 - `tools.intentTracing` now defaults to off: tools no longer take a required `i` intent argument, and the TUI shows the tool label instead
-- `tools.xdev` now defaults to off: LSP, AST, debug and MCP tools are ordinary top-level tools instead of `xd://` devices
+- `tools.xdev` now defaults to off: LSP and MCP tools are ordinary top-level tools instead of `xd://` devices
 - `dev.autoqa` now defaults to off: no automatic tool-issue reporting unless enabled
 - `read` line ranges (`:N-M`, `:N+K`, `:-N`) now return exactly the requested lines, without extra context lines before and after
 - The task tool's `solutionSpace` field is now optional
 - `delegation-bias` for Claude models is now `restrained`: subagents are reserved for genuinely parallel slices
 - Renamed the CLI from `omp` to `bolt`: the binary is `bolt`, user state lives in `~/.bolt` (XDG: `$XDG_*_HOME/bolt`), project config in `<project>/.bolt`, and `bolt` shares no sessions, memory, history or credentials with an installed `omp`
 - Rewrote the main system prompt, project footer, subagent prompt and default personality in plain prose: no RFC 2119 legend, `§` sections or duplicated `<critical>` blocks; the redundant tool-name inventory is gone in native tool mode and formatting guidance appears only when the TUI renders it
-- Rewrote the built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, ast_grep, ast_edit, debug, find, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
+- Rewrote the remaining built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
 - `read` ranges no longer add enclosing-block lines: every read shows exactly the requested lines, and the footer matches what is shown
 - `edit` results in non-hashline modes number rows `N|text`, matching `read` and `grep` output, instead of hashline-style `N:text`
 - The `bash` description says commands run in a built-in bash-compatible shell on every platform (with Windows-specific guidance)
@@ -45,14 +60,11 @@
 - `read`'s numbered code outline omits blank rows (their line numbers already show the gap)
 - The `bash` description says each call starts in `cwd` (a `cd` doesn't carry over; variables and functions do) and that `wait` loads through `load_tools` while deferred; the system prompt opens with "You work inside bolt" instead of a second "You are"
 - The system prompt says bolt is an omp fork, treats doc and changelog updates as part of the task, and drops the duplicated parallel-call line and the auto-chart note
-- `debug.enabled` now defaults to off; the DAP debugger tool (the largest tool schema) is opt-in
-- Cut the always-on context to about 4.3k tokens for a default session (from about 15k): a compact system prompt and core tool descriptions, two `ast_edit` examples instead of six, `agent://`/`history://` advertised only while `task` is active, no `<critical>` block repeating the main agent's rules, and no subagent bullets duplicated from the `task` description
-- Clearer parameter descriptions for `ask` (`header`, `preview`, `recommended`), `bash` (`name`, `timeout`), `ast_edit` and `lsp` (`timeout`)
 - The `read`/`grep`/`glob` guidance targets standalone shell reads; filtering a command's output in a pipeline is fine, and `write` no longer discourages new docs (the system prompt's scope rule covers it)
 - A `bash` call made while the session shell is busy (parallel calls, or one overlapping a background job) runs in a separate shell seeded with the session's exported variables as of its last finished command, instead of a bare shell; the notice and the description say so
 - `pwd` prints forward slashes on Windows (no `\\?\` prefix), matching the shell's POSIX paths
 - A timed-out or cancelled `bash` command no longer adds a redundant `error: interrupted` line to its output
-- Plain `grep` and `ast_grep` output right-aligns line numbers within a file (`* 9|`, ` 10|`)
+- Plain `grep` output right-aligns line numbers within a file (`* 9|`, ` 10|`)
 - Skill descriptions awaiting compression cut at a sentence or clause break (` — `, `; `, `: `, ` (`) and fall back to a word cut with `…` only when there is none, instead of cutting most of them mid-list
 - `load_tools` catalog summaries say what each tool is for (`lsp`: cross-file rename; `task`: independent work in parallel; `todo`: multi-step tasks); the system prompt says to load one as soon as the task needs it, and `load_tools` accepts names written with a provider's wire prefix (`_wait`)
 - The formatting section says why a leading emoji is allowed (the UI shows it as a reaction badge) and why SVG colors use `currentColor`/`var(--fg)` (they follow the theme)

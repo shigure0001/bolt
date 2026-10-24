@@ -27,7 +27,6 @@ import {
 	formatModelStringWithRouting,
 	resolveAgentAdvisorRolePattern,
 	resolveAgentAdvisorSelection,
-	resolveAgentPrewalkPattern,
 	resolveConfiguredModelPatterns,
 	resolveExplicitModelRole,
 	resolveModelOverride,
@@ -70,7 +69,6 @@ import {
 import {
 	type AgentSession,
 	type AgentSessionEvent,
-	type Prewalk,
 	PromptDroppedError,
 	type PromptOptions,
 } from "../session/agent-session";
@@ -80,12 +78,7 @@ import type { AuthStorage } from "../session/auth-storage";
 import { SKILL_PROMPT_MESSAGE_TYPE } from "../session/messages";
 import { hasConversationalHistory, SessionManager } from "../session/session-manager";
 import { truncateTail } from "@oh-my-pi/pi-tui/tools/streaming-output";
-import {
-	type ConfiguredThinkingLevel,
-	prewalkWouldBeNoop,
-	resolveTaskEffortLevel,
-	type TaskEffort,
-} from "@oh-my-pi/pi-tui/thinking";
+import { type ConfiguredThinkingLevel, resolveTaskEffortLevel, type TaskEffort } from "@oh-my-pi/pi-tui/thinking";
 import type { ContextFileEntry, ToolSession } from "../tools";
 import { resolveEvalBackends } from "../tools/eval-backends";
 import { isIrcEnabled } from "../irc/messaging";
@@ -99,17 +92,14 @@ import { type EventBus, emitSubagentFrame } from "../utils/event-bus";
 import { trackLateCleanup } from "../utils/late-cleanup";
 import { buildNamedToolChoice } from "../utils/tool-choice";
 import type { WorkspaceTree } from "../workspace-tree";
-import { isCompletionProbeEnabled, startCompletionProbe } from "./completion-probe";
 import { appendToolResult, createTaskWidgetInputs, TOOLS_SOURCE_LABEL } from "./widget-inputs";
 import { TextTap } from "../job-widgets/text-tap";
 import { TOOLS_SOURCE_ID } from "../job-widgets/types";
 import { attributeSubagentError } from "./error-attribution";
 import { generateTaskLabel } from "./label";
-import { resolveAgentPrewalkDefault } from "./prewalk";
 import { isReadOnlyAgent } from "./read-only-policy";
 import { formatTaskResultSummary } from "./result-summary";
 import { subprocessToolRegistry } from "./subprocess-tool-registry";
-import type { WorkPoolYieldItem } from "./workpool-yield";
 import {
 	type AgentDefinition,
 	MAX_OUTPUT_BYTES,
@@ -132,8 +122,6 @@ import {
 import { yieldSectionShapes } from "./yield-assembly";
 import { assembleYieldResult } from "@oh-my-pi/pi-tui/tools/task-yield-assembly";
 import {
-	cfgTaskPrewalk,
-	cfgTaskAgentPrewalk,
 	cfgTaskMaxEffort,
 	cfgTaskSoftRequestBudgetNotice,
 	cfgTaskSoftRequestBudget,
@@ -480,8 +468,6 @@ export interface ExecutorOptions {
 	enableMCP?: boolean;
 	/** Kernel-defined tools explicitly exposed by the parent eval session. */
 	customTools?: CustomTool[];
-	/** Workpool items accepted by the child yield tool during this turn. */
-	workPoolYieldItems?: WorkPoolYieldItem[];
 	/**
 	 * Limit the child to its explicit host tool names and the required yield
 	 * tool, suppressing discovered and always-included capabilities.
@@ -547,7 +533,7 @@ export interface ExecutorOptions {
 	/**
 	 * Exact-name `task.agentServiceTierOverrides` entry that task/eval dispatch
 	 * resolved for this agent, applied after model resolution. Spawns that keep
-	 * `tier.subagent` (Vibe workers) omit it.
+	 * `tier.subagent` omit it.
 	 */
 	serviceTierOverride?: ServiceTierInheritSettingValue;
 	/** Exact-name `task.agentCompactionThresholdOverrides` pair selected by dispatch. */
@@ -1236,8 +1222,6 @@ interface RunMonitorArgs {
 	softRequestBudgetNotice: boolean;
 	/** Wall-clock cap in ms; 0 disables the timer. */
 	maxRuntimeMs: number;
-	/** Whether to periodically ask the agent for a completion estimate; see {@link isCompletionProbeEnabled}. */
-	completionProbe: boolean;
 	/** Fires each time a terminal `yield` is recorded for this run. */
 	onYieldAccepted?: () => void;
 }
@@ -1338,7 +1322,6 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		softRequestBudget,
 		softRequestBudgetNotice,
 		maxRuntimeMs,
-		completionProbe,
 	} = args;
 	const startTime = Date.now();
 
@@ -1378,7 +1361,6 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 	const abortController = new AbortController();
 	const abortSignal = abortController.signal;
 	let activeSession: AgentSession | null = null;
-	let completionProbeStarted = false;
 	let yieldCalled = false;
 	let yieldCallPending = false;
 	/**
@@ -1742,9 +1724,6 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 			if (yieldCalled) {
 				yieldInvalidatedByAsync = false;
 				yieldAcceptedAt = Date.now();
-				// Submitted: the remaining work is finalization (or waiting on owned
-				// async jobs), so stop showing the last stale self-estimate.
-				if (completionProbe) progress.completionPercent = 99;
 				args.onYieldAccepted?.();
 			}
 		}
@@ -2335,25 +2314,6 @@ function createSubagentRunMonitor(args: RunMonitorArgs): SubagentRunMonitor {
 		setActiveSession: session => {
 			activeSession = session;
 			publishAdvisorState(session);
-			if (session && completionProbe && !completionProbeStarted) {
-				completionProbeStarted = true;
-				startCompletionProbe({
-					session: () => activeSession,
-					signal: AbortSignal.any([listenerSignal, abortSignal]),
-					onEstimate: (estimate, cost) => {
-						if (resolved) return;
-						// A probe in flight when the yield landed must not pull the bar back from 99%
-						// or relabel the finished run with a stale step.
-						if (!yieldCalled) {
-							progress.completionPercent = estimate.percent;
-							if (estimate.stage !== undefined) progress.stage = estimate.stage;
-						}
-						if (estimate.watch !== undefined) progress.watch = estimate.watch;
-						progress.cost += cost;
-						scheduleProgress(true);
-					},
-				});
-			}
 		},
 		takeActiveSession: () => {
 			const session = activeSession;
@@ -3031,11 +2991,6 @@ export interface IrcWakeTurnMonitorOptions {
 	/** Fallback session file when the registry ref carries none. */
 	sessionFile?: string;
 	maxRuntimeMs?: number;
-	/**
-	 * Whether a turn the owner's own message woke asks for completion estimates
-	 * (see {@link isCompletionProbeEnabled}); a peer-woken turn never does.
-	 */
-	completionProbe?: boolean;
 	/** `false` = the session has no `yield` tool; see {@link ExecutorOptions.structured}. */
 	structured?: boolean;
 	outputSchema?: unknown;
@@ -3316,9 +3271,6 @@ export function attachIrcWakeTurnMonitor(session: AgentSession, options: IrcWake
 			softRequestBudget: 0,
 			softRequestBudgetNotice: false,
 			maxRuntimeMs,
-			// A peer's message gets a short answer, too short to probe; the owner's message is an
-			// assignment the owner waits on.
-			completionProbe: ownerWoken && options.completionProbe === true,
 			signal: jobCancel.signal,
 			onProgress: progress => reportJobProgress?.(progress),
 			onToolResult: result => appendToolResult(tools, result),
@@ -3577,7 +3529,7 @@ export async function finalizeSubagentLifecycle(args: {
 	// a kept-alive agent with a reviver stays resumable like a finished one.
 	// Manager shutdown also preserves the transcript, but disposes and unregisters
 	// the process-local session (restorable as parked). An explicit kill (Agent
-	// Hub, RPC `cancel_subagent`, collab, vibe) publishes the `aborted` tombstone
+	// Hub, RPC `cancel_subagent`, collab) publishes the `aborted` tombstone
 	// before the run observes its abort, and stays terminal.
 	const resumableAbort =
 		args.abortKind !== "shutdown" && args.keepAlive && args.reviveSession !== null && ref?.status !== "aborted";
@@ -3677,10 +3629,6 @@ export interface FollowUpTurnOptions {
 	artifactsDir?: string;
 	/** Wall-clock cap in ms for this turn; 0 disables. */
 	maxRuntimeMs?: number;
-	/** Periodically ask for a completion estimate during this turn; see {@link isCompletionProbeEnabled}. */
-	completionProbe?: boolean;
-	/** Workpool items accepted by the child yield tool during this turn. */
-	workPoolYieldItems?: WorkPoolYieldItem[];
 }
 
 /**
@@ -3700,12 +3648,12 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 	const index = options.index ?? 0;
 	const startTime = Date.now();
 	let session = await AgentLifecycleManager.global().ensureLive(id);
-	// Acquire turn ownership before mutating the shared yield contract: installing
-	// pooled items under a running ordinary wake would reject its in-flight tool
+	// Acquire turn ownership before mutating the shared yield contract: resetting
+	// a running ordinary wake's yield state would reject its in-flight tool
 	// calls. The check-to-install section below has no await, so once idle is
 	// observed no wake dispatch can interleave before the synchronous mutation.
-	// Bounded: a worker that never settles fails its batch instead of installing
-	// under the active turn or hanging the pool.
+	// Bounded: a worker that never settles fails its batch instead of driving
+	// it under the active turn or hanging the follow-up.
 	let ownershipWaits = 0;
 	const acquireOwnership = async (): Promise<void> => {
 		while (session.isStreaming && ownershipWaits < 3) {
@@ -3718,25 +3666,24 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 		}
 		if (session.isStreaming) {
 			throw new Error(
-				`Subagent ${id} stayed busy through 3 ownership waits; refusing to install the pooled yield contract under an active turn`,
+				`Subagent ${id} stayed busy through 3 ownership waits; refusing to drive the follow-up under an active turn`,
 			);
 		}
 	};
 	await acquireOwnership();
-	// Revalidate until the worker survives an install round-trip unchanged: the
-	// waits/rebuild above can outlast the idle TTL, letting park() detach this
-	// instance mid-install. Each observed replacement means another full park
-	// cycle, so reinstall on the fresh session (a revival restores only the last persisted contract) and check
-	// again; genuine churn fails fast instead of driving a stale instance, and
-	// a released worker throws instead of driving a corpse. A replacement may
-	// already be streaming a wake, so ownership is reacquired every round.
+	// Revalidate until the worker survives a check round-trip unchanged: the
+	// waits above can outlast the idle TTL, letting park() detach this instance
+	// mid-turn. Each observed replacement means another full park cycle, so
+	// reacquire ownership on the fresh session and check again; genuine churn
+	// fails fast instead of driving a stale instance, and a released worker
+	// throws instead of driving a corpse. A replacement may already be
+	// streaming a wake, so ownership is reacquired every round.
 	for (let acquireAttempts = 0; ; acquireAttempts++) {
-		await session.setWorkPoolYieldItems(options.workPoolYieldItems ?? []);
 		const live = await AgentLifecycleManager.global().ensureLive(id);
 		if (live === session) break;
 		if (acquireAttempts >= 2) {
 			throw new Error(
-				`Subagent ${id} was replaced during every install attempt; refusing to drive a stale worker session`,
+				`Subagent ${id} was replaced on every revalidation attempt; refusing to drive a stale worker session`,
 			);
 		}
 		session = live;
@@ -3766,7 +3713,6 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 		softRequestBudget: 0,
 		softRequestBudgetNotice: false,
 		maxRuntimeMs: options.maxRuntimeMs ?? 0,
-		completionProbe: options.completionProbe ?? false,
 	});
 
 	const startedPayload = {
@@ -3802,14 +3748,12 @@ export async function runSubagentFollowUpTurn(options: FollowUpTurnOptions): Pro
 			onPromptBusy: async () => {
 				attemptUnsubscribe();
 				logger.debug("Subagent follow-up lost the prompt race to an IRC wake; backing off", { id });
-				await session.setWorkPoolYieldItems([]);
 				if (signal) {
 					await untilAborted(signal, () => session.waitForIdle());
 				} else {
 					await session.waitForIdle();
 				}
 				resetYieldTurnState(session.getToolByName("yield"));
-				await session.setWorkPoolYieldItems(options.workPoolYieldItems ?? []);
 				attemptUnsubscribe = monitor.attach(session);
 			},
 		});
@@ -3900,7 +3844,6 @@ interface SubagentSessionSpec {
 
 /** Launch-only session inputs: a revived session restores these from its transcript or goes without. */
 interface SubagentLaunchInputs {
-	workPoolYieldItems: readonly WorkPoolYieldItem[];
 	resolveServiceTierByFamily?: CreateAgentSessionOptions["resolveServiceTierByFamily"];
 	onFirstChatDispatch?: () => void;
 }
@@ -3951,13 +3894,6 @@ function buildSubagentSessionOptions(
 				structured: inputs.structured,
 				outputSchema: inputs.outputSchema,
 				outputSchemaOverridesAgent: inputs.outputSchemaOverridesAgent,
-				// Read the live item set through the registry instead of capturing the session, which
-				// would pin its whole graph past park. A revive builds while the registry session is
-				// null, so it renders the cleared set rather than the launch-time pooled instructions.
-				workPoolYieldItems:
-					AgentRegistry.global().get(inputs.id)?.session?.getWorkPoolYieldItems?.() ??
-					launch?.workPoolYieldItems ??
-					[],
 				ircPeers: ircRoster?.peers ?? [],
 				ircParkedCount: ircRoster?.parkedCount ?? 0,
 				ircOmittedCount: ircRoster?.omittedCount ?? 0,
@@ -4039,8 +3975,6 @@ interface WarmReviveCapture {
 	/** Re-captured whenever the live session is disposed, so a revive restores its latest settings writes. */
 	settings: SubagentSettingsRecipe;
 	parentArtifactManager: ArtifactManager | undefined;
-	/** Todos are parent-owned and stripped from subagents, except under prewalk (its todo gate needs them). */
-	keepTodo: boolean;
 	wake: IrcWakeTurnMonitorOptions;
 	/** Exact agent name the live `task.agentAccountPools` entry is looked up by on revive. */
 	agentName: string;
@@ -4106,8 +4040,7 @@ function createWarmSubagentReviver(capture: WarmReviveCapture): AgentReviver {
 			mcpFollower?.bind(revived);
 			trackSubagentSettings(revived, capture);
 			trackSubagentIrcRoster(revived, capture.spec.prompt);
-			const withoutParentOwnedTools = (toolNames: string[]): string[] =>
-				capture.keepTodo ? toolNames : toolNames.filter(name => name !== "todo");
+			const withoutParentOwnedTools = (toolNames: string[]): string[] => toolNames.filter(name => name !== "todo");
 			// Strip what the spawn stripped, before extensions start: the rebuilt session enables its defaults again.
 			const revivedToolNames = revived.getEnabledToolNames();
 			const subagentToolNames = withoutParentOwnedTools(revivedToolNames);
@@ -4256,7 +4189,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 	if (toolNames?.includes("exec")) {
 		const backends = resolveEvalBackends({ settings } as ToolSession);
 		const expanded = toolNames.filter(name => name !== "exec");
-		if (backends.python || backends.js) expanded.push("eval");
+		if (backends.python) expanded.push("eval");
 		expanded.push("bash");
 		toolNames = Array.from(new Set(expanded));
 	}
@@ -4290,9 +4223,7 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				: agent.spawns.join(",");
 
 	const lspEnabled = enableLsp ?? true;
-	const skipPythonPreflight = Array.isArray(toolNames) && !toolNames.includes("eval");
 
-	const completionProbe = isCompletionProbeEnabled(settings, parentDepth);
 	const monitor = createSubagentRunMonitor({
 		index,
 		id,
@@ -4316,7 +4247,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 		softRequestBudget,
 		softRequestBudgetNotice,
 		maxRuntimeMs,
-		completionProbe,
 	});
 	const progress = monitor.progress;
 	let unsubscribe: (() => void) | null = null;
@@ -4330,7 +4260,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 		id,
 		index,
 		agent,
-		completionProbe,
 		description: options.description,
 		modelOverride,
 		modelRole,
@@ -4531,42 +4460,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			// Setup below can fail before this promise's consumption boundary.
 			// Observe rejection immediately while preserving it for the later await.
 			sessionManagerPromise.catch(() => {});
-			// Per-agent prewalk: the agent definition's `prewalk` frontmatter or the
-			// `task.agentPrewalk` settings override hands the subagent off to a
-			// fast/cheap target at its first edit/write — the same mechanism as the
-			// session-level --prewalk. The bundled generic `task` agent has no
-			// frontmatter default; the `task.prewalk` toggle (default off) arms it.
-			// Resolution failures skip prewalk instead of failing the spawn.
-			let prewalk: Prewalk | undefined;
-			const prewalkPattern = preparedSession
-				? undefined
-				: resolveAgentPrewalkPattern({
-						settingsOverride: cfgTaskAgentPrewalk.get(settings)[agent.name],
-						agentPrewalk: resolveAgentPrewalkDefault(agent, cfgTaskPrewalk.get(settings)),
-					});
-			if (prewalkPattern) {
-				await awaitAbortable(modelRegistry.awaitBackgroundRefresh());
-				const resolvedPrewalk = resolveModelOverride([prewalkPattern], modelRegistry, settings);
-				const target = resolvedPrewalk.model;
-				if (!target || !modelRegistry.hasConfiguredAuth(target)) {
-					logger.warn("Subagent prewalk target unavailable; skipping prewalk", {
-						agent: agent.name,
-						pattern: prewalkPattern,
-						warning: resolvedPrewalk.warning,
-					});
-				} else if (prewalkWouldBeNoop(model, effectiveThinkingLevel, target, resolvedPrewalk.thinkingLevel)) {
-					// Same model AND same effective thinking level: switching would only
-					// inject the plan/checklist nudges for no gain — skip. An effort-only
-					// delta on the same model still arms (it is a real cheapening hand-off).
-					logger.debug("Subagent prewalk target matches starting model and thinking level; skipping prewalk", {
-						agent: agent.name,
-						pattern: prewalkPattern,
-					});
-				} else {
-					prewalk = { target, thinkingLevel: resolvedPrewalk.thinkingLevel };
-				}
-			}
-
 			const enableMCP = !restrictToolNames && (options.enableMCP ?? true);
 			const mcpManager = enableMCP ? options.mcpManager : undefined;
 
@@ -4649,7 +4542,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					preloadedPreparedExtensions: options.preloadedPreparedExtensions,
 					preloadedCustomToolPaths: restrictToolNames ? [] : options.preloadedCustomToolPaths,
 					hasUI: false,
-					prewalk,
 					spawns: spawnsEnv,
 					taskDepth: childDepth,
 					// The whole spawn tree shares the root session's observability bus,
@@ -4666,7 +4558,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 					agentName: agent.name,
 					enableLsp: lspEnabled,
 					enableIrc: options.enableIrc,
-					skipPythonPreflight,
 					enableMCP,
 					mcpManager,
 					// MCP proxies are minted per build as `mcpTools` in buildSubagentSessionOptions.
@@ -4716,7 +4607,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			try {
 				sessionPromise = createAgentSession(
 					buildSubagentSessionOptions(sessionSpec, subagentSettings, sessionManager, null, {
-						workPoolYieldItems: options.workPoolYieldItems ?? [],
 						// A revived session restores the tier history it persisted (including
 						// tiers a provider rejected or an extension changed since spawn); only
 						// the fresh spawn resolves the per-agent override.
@@ -4781,17 +4671,14 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 				// createAgentSession was returning.
 				if (runRef.status === "aborted") monitor.requestAbort("signal");
 			}
-			// Todos are parent-owned bookkeeping and stripped from subagents —
-			// except under prewalk, whose plan nudge + todo gate require the
-			// subagent to commit its own todo list before the hand-off.
-			const isParentOwnedTool = (name: string): boolean => !prewalk && name === "todo";
+			// Todos are parent-owned bookkeeping and stripped from subagents.
+			const isParentOwnedTool = (name: string): boolean => name === "todo";
 			if (sessionFile !== null) {
 				const reviveCapture: WarmReviveCapture = {
 					sessionFile,
 					spec: sessionSpec,
 					settings: captureSubagentSettings(settings, subagentSettings),
 					parentArtifactManager: preparedSession ? undefined : options.parentArtifactManager,
-					keepTodo: prewalk !== undefined,
 					wake: wakeOptions,
 					agentName: agent.name,
 				};
@@ -4818,9 +4705,6 @@ export async function runSubprocess(options: ExecutorOptions): Promise<SingleRes
 			const filteredSubagentTools = subagentToolNames.filter(name => !isParentOwnedTool(name));
 			if (filteredSubagentTools.length !== subagentToolNames.length) {
 				await awaitAbortable(session.setActiveToolsByName(filteredSubagentTools));
-			}
-			if (options.workPoolYieldItems) {
-				await awaitAbortable(session.setWorkPoolYieldItems(options.workPoolYieldItems));
 			}
 			const enabledSubagentTools = session.getEnabledToolNames();
 			// The enabled set includes the synthetic write transport injected for

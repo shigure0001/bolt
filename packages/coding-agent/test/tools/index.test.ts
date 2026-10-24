@@ -69,9 +69,7 @@ describe("createTools", () => {
 	});
 
 	it("normalizes legacy explicit tool names", async () => {
-		const session = createTestSession({
-			settings: createSettingsWithOverrides({ "astGrep.enabled": false }),
-		});
+		const session = createTestSession();
 		const tools = await createTools(session, ["search", "glob", "grep"]);
 		const names = tools.map(t => t.name);
 
@@ -80,21 +78,16 @@ describe("createTools", () => {
 		expect(names).not.toContain("search");
 	});
 
-	it("still exposes eval when only the js backend is allowed", async () => {
-		const session = createTestSession({
-			settings: createSettingsWithOverrides({
-				"eval.py": false,
-				"eval.js": true,
-			}),
-		});
+	it("hides eval when the Python backend is disabled", async () => {
+		const session = createTestSession({ settings: createSettingsWithOverrides({ "eval.py": false }) });
 		const tools = await createTools(session);
 		const names = tools.map(t => t.name);
 
 		expect(names).toContain("bash");
-		expect(names).toContain("eval");
+		expect(names).not.toContain("eval");
 	});
 
-	it("still exposes eval when python kernel is unavailable (dispatches to js)", async () => {
+	it("keeps eval exposed when the interpreter is missing, so the call reports the backend error", async () => {
 		const session = createTestSession();
 		vi.spyOn(
 			await import("@oh-my-pi/pi-coding-agent/eval/py/kernel"),
@@ -172,33 +165,10 @@ describe("createTools", () => {
 		expect(names).toContain("yield");
 	});
 
-	it("updates an already-created yield tool to the active workpool key schema", async () => {
-		let items: Array<{ id: string; index: number }> = [];
-		const session = createTestSession({
-			requireYieldTool: true,
-			getWorkPoolYieldItems: () => items,
-		});
-		const tools = await createTools(session);
-		const yieldTool = tools.find(tool => tool.name === "yield");
-		if (!yieldTool) throw new Error("Missing yield tool");
-		expect(Reflect.get(yieldTool.parameters, "properties")).toHaveProperty("type");
-		expect(Reflect.get(yieldTool.parameters, "properties")).not.toHaveProperty("key");
-
-		items = [{ id: "pool#1", index: 1 }];
-		expect(Reflect.get(yieldTool.parameters, "required")).toEqual(["key"]);
-		const properties = Reflect.get(yieldTool.parameters, "properties");
-		expect(properties).toHaveProperty("key");
-		expect(properties).not.toHaveProperty("type");
-	});
-	it("excludes todo from yield sessions unless prewalk is armed", async () => {
-		// Subagents (requireYieldTool) never get todo — except when the spawn is
-		// prewalk-armed: the prewalk plan nudge + todo gate need the child to
-		// commit its own todo list before the model hand-off.
+	it("excludes todo from yield sessions", async () => {
+		// Todos are parent-owned bookkeeping; a structured subagent never gets them.
 		const subagent = await createTools(createTestSession({ requireYieldTool: true }));
 		expect(subagent.map(t => t.name)).not.toContain("todo");
-
-		const prewalkSubagent = await createTools(createTestSession({ requireYieldTool: true, prewalkArmed: true }));
-		expect(prewalkSubagent.map(t => t.name)).toContain("todo");
 	});
 
 	it("excludes ask tool when hasUI is false", async () => {
@@ -241,8 +211,6 @@ describe("createTools", () => {
 			settings: createSettingsWithOverrides({
 				"glob.enabled": false,
 				"grep.enabled": false,
-				"astGrep.enabled": false,
-				"astEdit.enabled": false,
 				"bash.enabled": false,
 				"launch.enabled": false,
 				"web_search.enabled": false,
@@ -256,8 +224,6 @@ describe("createTools", () => {
 		expect(names).not.toContain("launch");
 		expect(names).not.toContain("glob");
 		expect(names).not.toContain("grep");
-		expect(names).not.toContain("ast_grep");
-		expect(names).not.toContain("ast_edit");
 		expect(names).not.toContain("web_search");
 		expect(names).not.toContain("browser");
 
@@ -303,122 +269,11 @@ describe("createTools", () => {
 		expect(session.isToolActive?.("read")).toBe(false);
 	});
 
-	it("allows checkpoint/rewind in subagent when explicitly requested and enabled", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["checkpoint", "rewind"],
-			)
-		).map(t => t.name);
-		expect(names).toContain("checkpoint");
-		expect(names).toContain("rewind");
-	});
-
 	it("grants wait to subagents when explicitly requested", async () => {
 		const settings = createSettingsWithOverrides({ "async.enabled": true });
 		const main = (await createTools(createTestSession({ settings }), ["read", "wait"])).map(t => t.name);
 		const sub = (await createTools(createTestSession({ taskDepth: 1, settings }), ["read", "wait"])).map(t => t.name);
 		expect(main).toContain("wait");
 		expect(sub).toContain("wait");
-	});
-
-	it("excludes checkpoint/rewind from subagent when not explicitly requested", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-			)
-		).map(t => t.name);
-		expect(names).not.toContain("checkpoint");
-		expect(names).not.toContain("rewind");
-	});
-
-	it("excludes checkpoint/rewind from subagent when disabled even if explicitly requested", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": false }),
-				}),
-				["checkpoint", "rewind"],
-			)
-		).map(t => t.name);
-		expect(names).not.toContain("checkpoint");
-		expect(names).not.toContain("rewind");
-	});
-
-	it("allows checkpoint/rewind at top level when enabled and explicitly requested", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["checkpoint", "rewind"],
-			)
-		).map(t => t.name);
-		expect(names).toContain("checkpoint");
-		expect(names).toContain("rewind");
-	});
-
-	it("auto-includes rewind when only checkpoint is in the explicit list", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["checkpoint"],
-			)
-		).map(t => t.name);
-		expect(names).toContain("checkpoint");
-		expect(names).toContain("rewind");
-	});
-
-	it("auto-includes checkpoint when only rewind is in the explicit list", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["rewind"],
-			)
-		).map(t => t.name);
-		expect(names).toContain("checkpoint");
-		expect(names).toContain("rewind");
-	});
-
-	it("does not auto-include checkpoint/rewind when neither is requested", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["read"],
-			)
-		).map(t => t.name);
-		expect(names).not.toContain("checkpoint");
-		expect(names).not.toContain("rewind");
-	});
-
-	it("auto-pairs checkpoint/rewind in a restricted subagent with one-sided list", async () => {
-		const names = (
-			await createTools(
-				createTestSession({
-					taskDepth: 1,
-					restrictToolNames: true,
-					settings: createSettingsWithOverrides({ "checkpoint.enabled": true }),
-				}),
-				["checkpoint"],
-			)
-		).map(t => t.name);
-		expect(names).toContain("checkpoint");
-		expect(names).toContain("rewind");
 	});
 });

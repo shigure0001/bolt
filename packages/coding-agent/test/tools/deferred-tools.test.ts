@@ -59,15 +59,19 @@ describe("promptCatalogSummary", () => {
 		promptCatalogSummary({ name: "t", description } as unknown as Tool, max);
 
 	it("cuts at the last clause end instead of mid-word", () => {
-		const out = summaryOf("Execute Python or JavaScript in persistent kernels; load scripts or install packages on demand");
+		const out = summaryOf(
+			"Execute Python or JavaScript in persistent kernels; load scripts or install packages on demand",
+		);
 		expect(out).toBe("Execute Python or JavaScript in persistent kernels");
 	});
 
 	it("keeps whole sentences and ignores abbreviation dots", () => {
-		expect(summaryOf("Search the web for pages. Returns ranked results with titles and urls for every hit found")).toBe(
-			"Search the web for pages.",
+		expect(
+			summaryOf("Search the web for pages. Returns ranked results with titles and urls for every hit found"),
+		).toBe("Search the web for pages.");
+		const abbreviated = summaryOf(
+			"Fetch a page and convert it to markdown, e.g. for reading docs and articles online today",
 		);
-		const abbreviated = summaryOf("Fetch a page and convert it to markdown, e.g. for reading docs and articles online today");
 		expect(abbreviated.endsWith("e.g.")).toBe(false);
 	});
 

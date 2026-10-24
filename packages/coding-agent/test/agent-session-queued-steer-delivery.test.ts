@@ -23,7 +23,6 @@ import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
 import type { PromptTemplate } from "@oh-my-pi/pi-coding-agent/config/prompt-templates";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { tryRunRpcSkillCommand } from "@oh-my-pi/pi-coding-agent/modes/rpc/rpc-mode";
-import { cfgMagicKeyword, cfgMagicKeywordsEnabled } from "@oh-my-pi/pi-coding-agent/modes/settings";
 import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { convertToLlm, type CustomMessage, USER_INTERRUPT_LABEL } from "@oh-my-pi/pi-coding-agent/session/messages";
@@ -404,34 +403,7 @@ describe("AgentSession queued steer delivery", () => {
 		expect(settles).toEqual([true]);
 	});
 
-	it("dequeuing an ultrathink prompt mid-stream restores the text and drops its companion notice", async () => {
-		const { session } = await createSession([{ content: ["host answer"] }]);
-		let queuedShape: string[] | undefined;
-		let clearedSteering: unknown;
-		let hasQueuedAfterClear: boolean | undefined;
-		let injected = false;
-		session.agent.setOnBeforeYield(async () => {
-			if (injected) return;
-			injected = true;
-			// Real path: a magic-keyword prompt steered mid-stream enqueues the hidden
-			// notice immediately before the user message.
-			await session.prompt("ultrathink fix it", { streamingBehavior: "steer" });
-			queuedShape = session.agent.peekSteeringQueue().map(m => (m.role === "custom" ? m.customType : m.role));
-			// Alt+Up restore mid-flight: only the user's text returns; the companion
-			// notice must not be left orphaned in the queue.
-			const cleared = session.clearQueue();
-			clearedSteering = cleared.steering;
-			hasQueuedAfterClear = session.agent.hasQueuedMessages();
-		});
-
-		await session.prompt("hello");
-
-		expect(queuedShape).toEqual(["ultrathink-notice", "user"]);
-		expect(clearedSteering).toEqual([{ text: "ultrathink fix it", images: undefined }]);
-		expect(hasQueuedAfterClear).toBe(false);
-	});
-
-	it("keeps the attachment of a keyword prompt steered mid-stream", async () => {
+	it("keeps the attachment of a prompt steered mid-stream", async () => {
 		const { session } = await createSession([{ content: ["host answer"] }]);
 		const image = {
 			type: "image" as const,
@@ -443,10 +415,9 @@ describe("AgentSession queued steer delivery", () => {
 		session.agent.setOnBeforeYield(async () => {
 			if (injected) return;
 			injected = true;
-			// The mid-stream branch queues before normalization runs: its
-			// companion notices must not be mistaken for prepared attachments,
-			// or the image never reaches the queued message.
-			await session.prompt("ultrathink look at this", { images: [image], streamingBehavior: "steer" });
+			// The mid-stream branch queues before normalization runs; the image
+			// still has to reach the queued message.
+			await session.prompt("look at this", { images: [image], streamingBehavior: "steer" });
 			const queued = session.agent.peekSteeringQueue();
 			const userMessage = queued.find(message => message.role === "user");
 			queuedUserContent = Array.isArray(userMessage?.content)
@@ -605,14 +576,13 @@ describe("AgentSession queued steer delivery", () => {
 
 	describe("removeQueuedMessage", () => {
 		for (const kind of ["prompt", "skill"] as const) {
-			it(`claims concurrent ${kind} companions atomically in one-at-a-time mode`, async () => {
+			it(`claims concurrent ${kind} submissions atomically in one-at-a-time mode`, async () => {
 				const { session, mock } = await createSession([{ content: ["initial"] }, { content: ["kept B"] }]);
 				const queue = kind === "prompt" ? "steering" : "followUp";
 				const streamingBehavior = kind === "prompt" ? "steer" : "followUp";
 				session.agent.setSteeringMode("one-at-a-time");
 				session.agent.setFollowUpMode("one-at-a-time");
-				const chip = (name: string) =>
-					kind === "prompt" ? `ultrathink ${name}` : `/skill:reviewer ultrathink ${name}`;
+				const chip = (name: string) => (kind === "prompt" ? `review ${name}` : `/skill:reviewer review ${name}`);
 				const submit = (name: string) =>
 					kind === "prompt"
 						? session.prompt(chip(name), { streamingBehavior })
@@ -622,7 +592,7 @@ describe("AgentSession queued steer delivery", () => {
 									content: `Expanded review context for ${name}`,
 									display: true,
 									attribution: "user",
-									details: { name: "reviewer", args: `ultrathink ${name}` },
+									details: { name: "reviewer", args: `review ${name}` },
 								},
 								{ streamingBehavior, queueChipText: chip(name) },
 							);
@@ -661,48 +631,40 @@ describe("AgentSession queued steer delivery", () => {
 
 				const userRole = kind === "prompt" ? "user" : "skill-prompt";
 				expect(queued.map(message => (message.role === "custom" ? message.customType : message.role))).toEqual([
-					"ultrathink-notice",
 					userRole,
-					"ultrathink-notice",
 					userRole,
 				]);
 				expect(removed).toBe(true);
-				expect(remaining).toEqual(queued.slice(2));
+				expect(remaining).toEqual(queued.slice(1));
 				expect(pendingAtFirstRecord).toEqual([]);
 				expect(removedAfterClaim).toBe(false);
-				const notices = session.messages.filter(
-					(message): message is CustomMessage =>
-						message.role === "custom" && message.customType === "ultrathink-notice",
-				);
-				expect<readonly AgentMessage[]>(notices).toEqual([queued[2]]);
 				expect(mock.calls).toHaveLength(2);
 				const delivered = JSON.stringify(mock.calls[1].context.messages);
 				expect(delivered).toContain("keep B");
 				expect(delivered).not.toContain("cancel A");
-				expect(delivered).toContain(JSON.stringify(notices[0].content).slice(1, -1));
 				expect(session.agent.hasQueuedMessages()).toBe(false);
 			});
 		}
 
 		for (const queue of ["steering", "followUp"] as const) {
-			it(`prevents delivery of a ${queue} prompt and its hidden companions`, async () => {
+			it(`prevents delivery of a removed ${queue} prompt`, async () => {
 				const { session, mock } = await createSession([{ content: ["initial"] }]);
 				let injected = false;
 				let removed: boolean | undefined;
 				session.agent.setOnBeforeYield(async () => {
 					if (injected) return;
 					injected = true;
-					await session.prompt("cancel this ultrathink", {
+					await session.prompt("cancel this request", {
 						streamingBehavior: queue === "steering" ? "steer" : "followUp",
 					});
-					removed = session.removeQueuedMessage("cancel this ultrathink", queue);
+					removed = session.removeQueuedMessage("cancel this request", queue);
 				});
 
 				await session.prompt("start");
 				await session.waitForIdle();
 
 				expect(removed).toBe(true);
-				expect(session.removeQueuedMessage("cancel this ultrathink", queue)).toBe(false);
+				expect(session.removeQueuedMessage("cancel this request", queue)).toBe(false);
 				expect(session.agent.hasQueuedMessages()).toBe(false);
 				expect(mock.calls).toHaveLength(1);
 				expect(session.messages.filter(message => message.role === "user" || message.role === "custom")).toEqual([
@@ -734,12 +696,16 @@ describe("AgentSession queued steer delivery", () => {
 					display: false,
 					timestamp: 2,
 				};
-				const keyword: AgentMessage = { ...companion, customType: "ultrathink-notice" };
+				const sessionAgent: AgentMessage = {
+					...companion,
+					customType: "session-agent-notice",
+					attribution: "agent",
+				};
 				const video: AgentMessage = { ...companion, customType: "video-attachment" };
 				const first: AgentMessage = { role: "user", content: "duplicate", timestamp: 3 };
 				const keptCompanion: AgentMessage = { ...companion, timestamp: 4 };
 				const duplicate: AgentMessage = { ...first, timestamp: 5 };
-				const selected = [internal, internalUser, keyword, video, companion, first, keptCompanion, duplicate];
+				const selected = [internal, internalUser, sessionAgent, video, companion, first, keptCompanion, duplicate];
 				const other = [
 					{ ...companion, timestamp: 6 },
 					{ ...first, timestamp: 7 },
@@ -828,7 +794,7 @@ describe("AgentSession queued steer delivery", () => {
 				skillPath,
 				"---\nname: reviewer\ndescription: Review code\n---\n\nReview the supplied code.\n",
 			);
-			const invocation = "/skill:reviewer  ultrathink focus on risks\nand correctness";
+			const invocation = "/skill:reviewer  focus on risks\nand correctness";
 			let injected = false;
 			let removed: boolean | undefined;
 			let queued: readonly string[] | undefined;
@@ -992,9 +958,9 @@ describe("AgentSession queued steer delivery", () => {
 			session.agent.followUp({ role: "user", content: "target", attribution: "agent", timestamp: 2 });
 			session.agent.followUp({
 				role: "custom",
-				customType: "ultrathink-notice",
+				customType: "session-agent-notice",
 				content: "target",
-				attribution: "user",
+				attribution: "agent",
 				display: false,
 				timestamp: 3,
 			});
@@ -1080,10 +1046,11 @@ describe("AgentSession queued steer delivery", () => {
 				display: false,
 				timestamp: 10,
 			};
-			const keywordNotice: AgentMessage = {
+			const sessionAgentNotice: AgentMessage = {
 				...companion,
-				customType: "ultrathink-notice",
-				content: "Use extended reasoning for this request.",
+				customType: "session-agent-notice",
+				content: "The user tagged this model agent.",
+				attribution: "agent",
 				timestamp: 9,
 			};
 			const videoNotice: AgentMessage = {
@@ -1121,7 +1088,7 @@ describe("AgentSession queued steer delivery", () => {
 				injected = true;
 				session.agent.replaceQueues(
 					[],
-					[videoNotice, keywordNotice, companion, imagePrompt, customPrompt, otherCompanion, otherPrompt],
+					[videoNotice, sessionAgentNotice, companion, imagePrompt, customPrompt, otherCompanion, otherPrompt],
 				);
 				promoted = [session.promoteQueuedMessage("[Image]"), session.promoteQueuedMessage("/guest request")];
 			});
@@ -1133,7 +1100,7 @@ describe("AgentSession queued steer delivery", () => {
 			const delivered = session.messages.filter(message => message.role === "custom" || message.role === "user");
 			expect(delivered.slice(1)).toEqual([
 				videoNotice,
-				keywordNotice,
+				sessionAgentNotice,
 				companion,
 				{ ...imagePrompt, steering: true },
 				customPrompt,
@@ -1150,7 +1117,7 @@ describe("AgentSession queued steer delivery", () => {
 			).toBe(true);
 			const firstSteeredContext = JSON.stringify(mock.calls[1].context.messages);
 			expect(firstSteeredContext).toContain(companion.content as string);
-			expect(firstSteeredContext).toContain(keywordNotice.content as string);
+			expect(firstSteeredContext).toContain(sessionAgentNotice.content as string);
 			expect(firstSteeredContext).toContain(videoNotice.content as string);
 			expect(firstSteeredContext).not.toContain(customPrompt.content as string);
 			expect(firstSteeredContext).not.toContain(otherPrompt.content as string);
@@ -1192,81 +1159,6 @@ describe("AgentSession queued steer delivery", () => {
 				"user",
 			]);
 			expect(JSON.stringify(steering[0])).toContain(IMAGE_SOURCE_PATH);
-		});
-
-		it("enqueues live keyword companion groups synchronously during streaming in one-at-a-time mode", async () => {
-			const { session, mock } = await createSession([{ content: ["initial"] }, { content: ["steered"] }]);
-			cfgMagicKeywordsEnabled.set(session.settings, true);
-			cfgMagicKeyword.ultrathink.set(session.settings, true);
-			session.setSteeringMode("one-at-a-time");
-			const image = {
-				type: "image" as const,
-				mimeType: "image/png",
-				data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=",
-			};
-
-			let steerPromise: Promise<boolean> | undefined;
-			session.agent.setOnBeforeYield(async () => {
-				if (steerPromise) return;
-				steerPromise = session.prompt("review this ?ultrathink", {
-					images: [image],
-					streamingBehavior: "steer",
-				});
-			});
-
-			await session.prompt("start");
-			await steerPromise;
-			await session.waitForIdle();
-
-			expect(mock.calls).toHaveLength(2);
-			const steeredContext = JSON.stringify(mock.calls[1].context.messages);
-			expect(steeredContext).toContain("Multi-step reasoning");
-			expect(steeredContext).toContain("review this ?ultrathink");
-			// The early streaming branch queues before normalization runs; its
-			// notice-only metadata must not be mistaken for prepared attachments,
-			// or the attachment never reaches the model.
-			expect(
-				mock.calls[1].context.messages.some(
-					message =>
-						message.role === "user" &&
-						Array.isArray(message.content) &&
-						message.content.some(part => part.type === "text" && part.text.includes("review this")) &&
-						message.content.some(part => part.type === "image"),
-				),
-			).toBe(true);
-			expect(session.agent.hasQueuedMessages()).toBe(false);
-			const ultrathinkMessage = session.messages.find(
-				message => message.role === "custom" && message.customType === "ultrathink-notice",
-			);
-			expect(ultrathinkMessage).toBeDefined();
-		});
-
-		it("promotes live keyword companion groups queued as follow-ups into steering atomically", async () => {
-			const { session, mock } = await createSession([{ content: ["initial"] }, { content: ["steered"] }]);
-			cfgMagicKeywordsEnabled.set(session.settings, true);
-			cfgMagicKeyword.ultrathink.set(session.settings, true);
-			session.setSteeringMode("one-at-a-time");
-
-			let followUpPromise: Promise<boolean> | undefined;
-			let promoted = false;
-			session.agent.setOnBeforeYield(async () => {
-				if (followUpPromise) return;
-				followUpPromise = session.prompt("follow-up with ?ultrathink", {
-					streamingBehavior: "followUp",
-				});
-				await followUpPromise;
-				promoted = session.promoteQueuedMessage("follow-up with ?ultrathink");
-			});
-
-			await session.prompt("start");
-			await session.waitForIdle();
-
-			expect(promoted).toBe(true);
-			expect(mock.calls).toHaveLength(2);
-			const steeredContext = JSON.stringify(mock.calls[1].context.messages);
-			expect(steeredContext).toContain("Multi-step reasoning");
-			expect(steeredContext).toContain("follow-up with ?ultrathink");
-			expect(session.agent.hasQueuedMessages()).toBe(false);
 		});
 
 		it("wakes an idle follow-up and rejects a stale promotion without replaying it", async () => {

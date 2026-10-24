@@ -18,56 +18,6 @@ export const cfgEvalPy = register({
 	},
 });
 
-export const cfgEvalJs = register({
-	id: "eval.js",
-	type: "boolean",
-	default: true,
-	env: "PI_JS",
-	ui: {
-		tab: "shell",
-		group: "Eval & Runtimes",
-		label: "JavaScript Eval Backend",
-		description: "Allow the eval tool to dispatch JavaScript cells to the in-process runtime",
-	},
-});
-
-export const cfgEvalAutoProvision = register({
-	id: "eval.autoProvision",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "shell",
-		group: "Eval & Runtimes",
-		label: "Eval Environment Provisioning",
-		description: "Automatically create the managed JavaScript eval package environment on first install",
-	},
-});
-
-export const cfgEvalToolsEnabled = register({
-	id: "eval.tools.enabled",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "shell",
-		group: "Eval & Runtimes",
-		label: "Eval-Defined Tools",
-		description:
-			"Let eval cells define tools (@tool in Python, tool(fn) in JS) that task, agent(), and workpool() subagents can call",
-	},
-});
-
-export const cfgEvalWorkpoolFreshAgents = register({
-	id: "eval.workpool.freshAgents",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "shell",
-		group: "Eval & Runtimes",
-		label: "Fresh Workpool Agents",
-		description: "Spawn a new subagent for every workpool item instead of reusing workers or batching queued items",
-	},
-});
-
 export const cfgEvalAutoBackgroundEnabled = register({
 	id: "eval.autoBackground.enabled",
 	protocolDefault: ["rpc"],

@@ -55,7 +55,6 @@ export interface AddArmRequest {
 	/** Arm label; becomes the `<id>-<arm>` job name. */
 	arm: string;
 	model: string;
-	prewalk?: LaunchRequest["prewalk"];
 	/** Explicit task sample; skips sibling inheritance when provided. */
 	include?: string[];
 	role?: RunRole;
@@ -113,7 +112,7 @@ function pidAlive(pid: number | null): boolean {
  * Inherits the experiment's benchmark, dataset, and — crucially — the exact
  * task sample from a sibling arm (its recorded `include`, else its observed
  * trial tasks) so the arm is directly comparable. Only per-arm knobs (model,
- * prewalk, role, note, extra args) come from `req`. Throws if the experiment has
+ * role, note, extra args) come from `req`. Throws if the experiment has
  * no runs to inherit from or the arm name is taken.
  */
 export function resolveArmLaunch(store: RunStore, experimentId: string, req: AddArmRequest): LaunchRequest {
@@ -177,7 +176,6 @@ export function resolveArmLaunch(store: RunStore, experimentId: string, req: Add
 		prebuiltBinaries: cfg.prebuiltBinaries === true || undefined,
 		conditions: conditions.length > 0 ? conditions : undefined,
 		jobName,
-		prewalk: req.prewalk,
 		role: req.role,
 		note: req.note,
 		environment: cfg.environment === "docker" || cfg.environment === "apple-container" ? cfg.environment : undefined,
@@ -420,7 +418,6 @@ export class ManagerServer {
 			dataset,
 			agent: request.agent ?? "omp",
 			models: [request.model],
-			prewalk: request.prewalk,
 			config: { ...request },
 			role: request.role,
 			note: request.note,
@@ -455,19 +452,12 @@ export class ManagerServer {
 		}
 		const argv = ["bun", "src/runner.ts", "--resume", jobName, "--jobs-dir", this.jobsDir];
 		for (const t of opts.filterErrorTypes ?? erroredExceptionTypes(jobDir)) argv.push("--filter-error-type", t);
-		let prewalk: LaunchRequest["prewalk"];
-		try {
-			prewalk = run.prewalk ? (JSON.parse(run.prewalk) as { into?: string }) : undefined;
-		} catch {
-			prewalk = undefined;
-		}
 		const pid = this.#spawnRunner(argv, PKG_DIR, {
 			benchmark: "harbor",
 			jobName,
 			dataset: run.dataset,
 			agent: run.agent,
 			models: run.models ? run.models.split(",") : [],
-			prewalk,
 			config: run.config,
 			role: run.role,
 			note: run.note,

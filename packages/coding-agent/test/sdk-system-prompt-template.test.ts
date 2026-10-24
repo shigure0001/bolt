@@ -41,7 +41,6 @@ async function withSession<T>(
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			systemPrompt,
 			...explicitSystemPromptOptions,
 		});
@@ -59,7 +58,7 @@ async function withSession<T>(
 describe("SDK systemPrompt replacements", () => {
 	it("uses a fixed string without loading a malformed native template", async () => {
 		const fixedPrompt = "sdk fixed prompt";
-		await withSession("{{#if eagerTasks}}", fixedPrompt, async session => {
+		await withSession("{{#if model}}", fixedPrompt, async session => {
 			expect(session.systemPrompt).toEqual([fixedPrompt]);
 		});
 	});
@@ -73,7 +72,7 @@ describe("SDK systemPrompt replacements", () => {
 
 	it("rejects conflicting explicit template and literal with a fixed string", async () => {
 		await expect(
-			withSession("{{#if eagerTasks}}", "sdk fixed prompt", async () => undefined, {
+			withSession("{{#if model}}", "sdk fixed prompt", async () => undefined, {
 				systemPromptTemplate: "explicit {{model}}",
 				customSystemPrompt: "explicit literal",
 			}),
@@ -82,7 +81,7 @@ describe("SDK systemPrompt replacements", () => {
 
 	it("rejects conflicting empty explicit inputs with empty fixed prompt blocks", async () => {
 		await expect(
-			withSession("{{#if eagerTasks}}", [], async () => undefined, {
+			withSession("{{#if model}}", [], async () => undefined, {
 				systemPromptTemplate: "",
 				customSystemPrompt: "",
 			}),
@@ -91,7 +90,7 @@ describe("SDK systemPrompt replacements", () => {
 
 	it("falls back to the bundled prompt for callbacks when the native template is malformed", async () => {
 		await withSession(
-			"{{#if eagerTasks}}",
+			"{{#if model}}",
 			defaultPrompt => {
 				expect(defaultPrompt.join("\n\n")).toContain("## Choosing a tool");
 				return "callback replacement";

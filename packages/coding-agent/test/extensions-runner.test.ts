@@ -3865,8 +3865,8 @@ describe("ExtensionRunner", () => {
 			expect(fs.existsSync(recordPath)).toBe(false);
 		});
 
-		it("reports the effective tier after a tool_call handler revises xd:// input", async () => {
-			const recordPath = path.join(tempDir.path(), "xdev-effective-tier.jsonl");
+		it("executes the input a tool_call handler revises from xd:// dispatch", async () => {
+			const recordPath = path.join(tempDir.path(), "xdev-revised-input.jsonl");
 			const extCode = `
 				export default function(pi) {
 					pi.on("tool_call", async (event) => {
@@ -3875,7 +3875,7 @@ describe("ExtensionRunner", () => {
 					});
 				}
 			`;
-			fs.writeFileSync(path.join(extensionsDir, "tool-call-xdev-tier.ts"), extCode);
+			fs.writeFileSync(path.join(extensionsDir, "tool-call-xdev-revise.ts"), extCode);
 
 			const result = await loadTestExtensions();
 			const runner = new ExtensionRunner(
@@ -3895,18 +3895,13 @@ describe("ExtensionRunner", () => {
 					? "write"
 					: "read";
 			const wrapped = new ExtensionToolWrapper(tool, runner);
-			let effectiveTier: string | undefined;
 			const xdevContext = {
 				settings: Settings.isolated({ "tools.approvalMode": "yolo" }),
 				xdevApproved: true,
-				xdevTierResolved: (tier: string) => {
-					effectiveTier = tier;
-				},
 			} as never;
 
 			await wrapped.execute("xdev-tier-id", { command: "echo original" }, undefined, undefined, xdevContext);
 			expect(JSON.parse(fs.readFileSync(recordPath, "utf8"))).toEqual({ command: "echo revised" });
-			expect(effectiveTier).toBe("write");
 		});
 
 		it("emits tool_call before the approval prompt so approval sees the final input", async () => {

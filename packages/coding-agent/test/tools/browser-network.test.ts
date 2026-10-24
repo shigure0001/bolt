@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools/index";
@@ -65,7 +64,6 @@ client.send = (method, ...args) => (method === "Fetch.disable" ? Promise.withRes
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	server.stop(true);
 	await fs.rm(harPath, { force: true });
 });

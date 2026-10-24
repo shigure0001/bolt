@@ -511,21 +511,9 @@ const modeSegment: StatusLineSegment = {
 			};
 		}
 
-		const prewalk = ctx.prewalk;
-		if (prewalk?.enabled) {
-			const content = withIcon(theme.icon.prewalk, "Prewalk");
-			return { content: accentFg(ctx, "accent", content), visible: true };
-		}
-
 		const goal = ctx.goalMode;
 		if (goal && (goal.enabled || goal.paused)) {
 			return renderGoalMode(ctx, goal);
-		}
-
-		const vibe = ctx.vibeMode;
-		if (vibe?.enabled) {
-			const content = withIcon(theme.icon.agents, "Vibe");
-			return { content: accentFg(ctx, "accent", content), visible: true };
 		}
 
 		const loop = ctx.loopMode;
@@ -552,10 +540,8 @@ const modeSegment: StatusLineSegment = {
 				? segView([span("Plan (paused)", "warning")], "plan", "warning")
 				: segView([span("Plan", accentToken(ctx, "accent"))], "plan");
 		}
-		if (ctx.prewalk?.enabled) return segView([span("Prewalk", accentToken(ctx, "accent"))], "prewalk");
 		const goal = ctx.goalMode;
 		if (goal && (goal.enabled || goal.paused)) return describeGoalMode(ctx, goal);
-		if (ctx.vibeMode?.enabled) return segView([span("Vibe", accentToken(ctx, "accent"))], "agents");
 		const loop = ctx.loopMode;
 		if (loop) {
 			const paused = loop.state === "paused";

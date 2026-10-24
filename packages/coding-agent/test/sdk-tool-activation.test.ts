@@ -27,11 +27,9 @@ import {
 } from "@oh-my-pi/pi-coding-agent/sdk";
 import type { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { VIBE_TOOL_NAMES } from "@oh-my-pi/pi-coding-agent/tools/vibe";
 import { resetYieldTurnState } from "@oh-my-pi/pi-coding-agent/tools/yield";
 import { logger, removeSyncWithRetries, Snowflake, untilAborted } from "@oh-my-pi/pi-utils";
 
-import { cfgExternalThinking } from "@oh-my-pi/pi-coding-agent/session/settings";
 import { cfgPlanEnabled } from "@oh-my-pi/pi-coding-agent/plan-mode/settings";
 import { cfgToolsXdev } from "@oh-my-pi/pi-coding-agent/tools/settings";
 
@@ -121,12 +119,6 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		rules: [],
 		workspaceTree: { rootPath: tempDir, rendered: "", truncated: false, totalLines: 0, agentsMdFiles: [] },
 	});
-
-	const requireBundledModel = (provider: "anthropic" | "google" | "openai" | "xai", id: string): Model => {
-		const bundled = getBundledModel(provider, id);
-		if (!bundled) throw new Error(`Expected ${provider}/${id} model to exist`);
-		return bundled;
-	};
 
 	afterEach(() => {
 		for (const tempDir of tempDirs.splice(0)) {
@@ -222,218 +214,6 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			).rejects.toThrow("Filesystem writes are not available");
 		} finally {
 			await session.dispose();
-		}
-	});
-
-	it("preserves a deferrable-only write transport across enabled-set reapplication", async () => {
-		const tempDir = makeTempDir();
-		const { session } = await createAgentSession({
-			...baseOptions(tempDir),
-			toolNames: ["read", "ast_edit"],
-		});
-
-		try {
-			expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["read", "ast_edit", "write"]));
-			expect(session.getMountedXdevToolNames()).toEqual([]);
-			const write = session.getToolByName("write");
-			expect(write).toBeDefined();
-			await expect(
-				write!.execute("deferrable-transport-before", {
-					path: path.join(tempDir, "before.txt"),
-					content: "x",
-				}),
-			).rejects.toThrow("Filesystem writes are not available");
-
-			await session.setActiveToolsByName(session.getEnabledToolNames());
-
-			await expect(
-				write!.execute("deferrable-transport-after", {
-					path: path.join(tempDir, "after.txt"),
-					content: "x",
-				}),
-			).rejects.toThrow("Filesystem writes are not available");
-		} finally {
-			await session.dispose();
-		}
-	});
-
-	it("activates the private think tool when external thinking is enabled at runtime", async () => {
-		const tempDir = makeTempDir();
-		const settings = xdevSettings();
-		const { session } = await createAgentSession({
-			...baseOptions(tempDir),
-			model: requireBundledModel("openai", "gpt-5"),
-			settings,
-		});
-
-		try {
-			expect(session.getToolByName("think")).toBeUndefined();
-			expect(session.getActiveToolNames()).not.toContain("think");
-
-			// The setting watch fires on the next microtask and queues the tool-registry
-			// mutation; a prompt refresh serializes behind it.
-			cfgExternalThinking.set(settings, true);
-			await Promise.resolve();
-			await session.refreshBaseSystemPrompt();
-
-			expect(session.getToolByName("think")).toBeDefined();
-			expect(session.getActiveToolNames()).toContain("think");
-			expect(session.getXdevToolEntries().map(entry => entry.name)).not.toContain("think");
-
-			cfgExternalThinking.set(settings, false);
-			await Promise.resolve();
-			await session.refreshBaseSystemPrompt();
-			expect(session.getActiveToolNames()).not.toContain("think");
-		} finally {
-			await session.dispose();
-		}
-	});
-
-	it("exposes the private think tool only on transports that can disable native reasoning", async () => {
-		const tempDir = makeTempDir();
-		const settings = xdevSettings({ externalThinking: true });
-		const unsupported = requireBundledModel("xai", "grok-4");
-		const fable = requireBundledModel("anthropic", "claude-fable-5");
-		const responses = requireBundledModel("openai", "gpt-5");
-		const gemini = requireBundledModel("google", "gemini-2.5-flash");
-		const mandatoryGemini = requireBundledModel("google", "gemini-2.5-pro");
-		const { session } = await createAgentSession({
-			...baseOptions(tempDir),
-			settings,
-			model: unsupported,
-		});
-		const authStorage = session.modelRegistry.authStorage;
-		authStorage.keys.setRuntime("anthropic", "test-key");
-		authStorage.keys.setRuntime("openai", "test-key");
-		authStorage.keys.setRuntime("google", "test-key");
-		authStorage.keys.setRuntime("xai", "test-key");
-
-		try {
-			expect(session.getActiveToolNames()).not.toContain("think");
-
-			await session.setModel(fable);
-			expect(session.getToolByName("think")).toBeDefined();
-			expect(session.getActiveToolNames()).toContain("think");
-			expect(session.systemPrompt.join("\n")).toContain("other tools become available when it completes");
-
-			await session.setModel(responses);
-			expect(session.getActiveToolNames()).toContain("think");
-			await session.setModel(gemini);
-			expect(session.getActiveToolNames()).toContain("think");
-			await session.setModel(mandatoryGemini);
-			expect(session.getActiveToolNames()).not.toContain("think");
-
-			await session.setModel(unsupported);
-			expect(session.getActiveToolNames()).not.toContain("think");
-			expect(session.systemPrompt.join("\n")).not.toContain("other tools become available when it completes");
-		} finally {
-			await session.dispose();
-		}
-	});
-
-	it("forces think and sends reasoning effort off for a Responses turn", async () => {
-		const tempDir = makeTempDir();
-		const settings = xdevSettings({ externalThinking: true });
-		const requestTexts: string[] = [];
-		const sse = (events: unknown[]): Response =>
-			new Response(events.map(event => `data: ${JSON.stringify(event)}\n\n`).join(""), {
-				headers: { "content-type": "text/event-stream" },
-			});
-		const completed = (id: string) => ({
-			type: "response.completed",
-			response: {
-				id,
-				status: "completed",
-				usage: {
-					input_tokens: 1,
-					output_tokens: 1,
-					total_tokens: 2,
-					input_tokens_details: { cached_tokens: 0 },
-				},
-			},
-		});
-		const server = Bun.serve({
-			port: 0,
-			fetch: async request => {
-				requestTexts.push(await request.text());
-				if (requestTexts.length === 1) {
-					const argumentsJson = JSON.stringify({ thoughts: "Checked the request before answering." });
-					return sse([
-						{
-							type: "response.output_item.added",
-							output_index: 0,
-							item: {
-								type: "function_call",
-								id: "fc_think",
-								call_id: "call_think",
-								name: "think",
-								arguments: "",
-							},
-						},
-						{
-							type: "response.function_call_arguments.done",
-							output_index: 0,
-							item_id: "fc_think",
-							arguments: argumentsJson,
-						},
-						{
-							type: "response.output_item.done",
-							output_index: 0,
-							item: {
-								type: "function_call",
-								id: "fc_think",
-								call_id: "call_think",
-								name: "think",
-								arguments: argumentsJson,
-							},
-						},
-						completed("resp_think"),
-					]);
-				}
-				return sse([
-					{ type: "response.output_text.delta", output_index: 0, delta: "Done." },
-					{
-						type: "response.output_item.done",
-						output_index: 0,
-						item: {
-							type: "message",
-							id: "msg_done",
-							role: "assistant",
-							status: "completed",
-							content: [{ type: "output_text", text: "Done." }],
-						},
-					},
-					completed("resp_done"),
-				]);
-			},
-		});
-		const model = requireBundledModel("openai", "gpt-5");
-		// The prompt preflight validates the key through the registry (not the
-		// per-request `getApiKey` override), so seed it for keyless CI runners.
-		modelRegistry.authStorage.keys.setRuntime("openai", "test-key");
-		const { session } = await createAgentSession({
-			...baseOptions(tempDir),
-			settings,
-			model: { ...model, baseUrl: `${server.url}v1` },
-			getApiKey: () => "test-key",
-		});
-		expect(session.getActiveToolNames()).toContain("think");
-
-		try {
-			await session.prompt("Use the scratchpad before answering.");
-			const firstRequest = requestTexts.at(0);
-			if (!firstRequest) throw new Error("Expected the initial provider request.");
-			expect(requestTexts).toHaveLength(2);
-			expect(JSON.parse(firstRequest)).toEqual(
-				expect.objectContaining({
-					// "none" is the only disable level the Responses wire accepts ("off" 400s).
-					reasoning: { effort: "none" },
-					tool_choice: expect.objectContaining({ name: "think" }),
-				}),
-			);
-		} finally {
-			await session.dispose();
-			server.stop(true);
 		}
 	});
 
@@ -1650,12 +1430,12 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		try {
 			await session.refreshMCPTools([externalMcpTool]);
 			const deviceNames = session.getXdevToolEntries().map(entry => entry.name);
-			expect(deviceNames).toEqual(expect.arrayContaining(["ast_edit", "mcp__fixture_report"]));
+			expect(deviceNames).toContain("mcp__fixture_report");
 			expect(session.getActiveToolNames()).not.toContain("mcp__fixture_report");
 
 			const context = await session.agent.buildSideRequestContext([]);
 			const providerToolNames = context.tools?.map(tool => tool.name);
-			expect(providerToolNames).toEqual(expect.arrayContaining(["ast_edit", "mcp__fixture_report"]));
+			expect(providerToolNames).toContain("mcp__fixture_report");
 		} finally {
 			await session.dispose();
 		}
@@ -1911,47 +1691,6 @@ describe("createAgentSession defaultInactive tool activation", () => {
 			await session.dispose();
 		}
 	});
-	it("registers vibe tools only during explicit vibe activation and exposes parent Todo bookkeeping", async () => {
-		const tempDir = makeTempDir();
-		const { session } = await createAgentSession(baseOptions(tempDir));
-		const previousActiveToolNames = session.getActiveToolNames();
-
-		try {
-			for (const name of VIBE_TOOL_NAMES) {
-				expect(session.getToolByName(name)).toBeUndefined();
-			}
-
-			await session.activateVibeTools(["read", "todo"]);
-			const todo = session.getToolByName("todo");
-			if (!todo) throw new Error("Expected real Todo tool");
-			expect(session.getActiveToolNames()).toContain("todo");
-			for (const name of VIBE_TOOL_NAMES) {
-				expect(session.getToolByName(name)).toBeDefined();
-				expect(session.getActiveToolNames()).toContain(name);
-			}
-
-			await todo.execute("vibe-todo-init", {
-				op: "init",
-				list: [{ phase: "Work", items: ["Worker change"] }],
-			});
-			await todo.execute("vibe-todo-done", { op: "done", task: "Worker change" });
-			expect(session.getTodoPhases()).toMatchObject([
-				{
-					name: "Work",
-					tasks: [{ content: "Worker change", status: "completed" }],
-				},
-			]);
-
-			await session.deactivateVibeTools(previousActiveToolNames);
-			for (const name of VIBE_TOOL_NAMES) {
-				expect(session.getToolByName(name)).toBeUndefined();
-			}
-			expect(session.getActiveToolNames()).toEqual(previousActiveToolNames);
-		} finally {
-			await session.dispose();
-		}
-	});
-
 	it("rehydrates completed parent Todo work from persisted session history", async () => {
 		const tempDir = makeTempDir();
 		const sessionManager = SessionManager.create(tempDir, tempDir);
@@ -1961,17 +1700,16 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		});
 
 		try {
-			await session.activateVibeTools(["read", "todo"]);
 			const todo = session.getToolByName("todo");
 			if (!todo) throw new Error("Expected real Todo tool");
-			const init = await todo.execute("vibe-todo-init", {
+			const init = await todo.execute("rehydrate-todo-init", {
 				op: "init",
 				list: [{ phase: "Worker flow", items: ["Reconcile worker result"] }],
 			});
-			const done = await todo.execute("vibe-todo-done", { op: "done", task: "Reconcile worker result" });
+			const done = await todo.execute("todo-rehydrate-done", { op: "done", task: "Reconcile worker result" });
 			for (const [toolCallId, result] of [
-				["vibe-todo-init", init],
-				["vibe-todo-done", done],
+				["rehydrate-todo-init", init],
+				["todo-rehydrate-done", done],
 			] as const) {
 				sessionManager.appendMessage({
 					role: "toolResult",

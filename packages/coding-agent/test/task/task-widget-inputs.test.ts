@@ -1,9 +1,6 @@
 /**
- * A background `task` job offers its live widget the subagent's finished tool
- * calls (`tools`), every source of the jobs the subagent started
- * (`<jobId>:<sourceId>`), and a brief read live from progress. Without them the
- * widget author sees nothing to chart while a subagent benchmarks in a
- * background bash job, and the brief misses the agent's own stage and watch hint.
+ * A background task exposes its finished tool calls, child jobs' sources,
+ * and a live brief to its job widget.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import { AsyncJobManager } from "@oh-my-pi/pi-coding-agent/async/job-manager";
@@ -54,9 +51,6 @@ describe("task job widget inputs", () => {
 				tokens: 0,
 				cost: 0,
 				durationMs: 0,
-				completionPercent: 40,
-				stage: "benchmarking the decoder",
-				watch: "BENCH lines in bench_1 out, tok_s higher is better",
 			};
 			options.onToolResult?.({ tool: "read", intent: "read the bench script", text: "#!/bin/sh", isError: false });
 			options.onToolResult?.({
@@ -133,8 +127,6 @@ describe("task job widget inputs", () => {
 			kind: "task",
 			task: "Benchmark the streaming decoder.",
 			intent: "benchmark the decoder",
-			watch: "BENCH lines in bench_1 out, tok_s higher is better",
-			stage: "benchmarking the decoder",
 		});
 
 		finish.resolve();

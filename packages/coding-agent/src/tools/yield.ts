@@ -22,7 +22,6 @@ import { prompt } from "@oh-my-pi/pi-utils";
 import yieldDescription from "../prompts/tools/yield.md" with { type: "text" };
 import yieldDataErrorConflictMessage from "../prompts/tools/yield-data-error-conflict.md" with { type: "text" };
 import { subprocessToolRegistry } from "../task/subprocess-tool-registry";
-import type { WorkPoolYieldItem } from "../task/workpool-yield";
 import type { ToolSession } from ".";
 import { buildOutputValidator, formatAllValidationIssues } from "./output-schema-validator";
 
@@ -72,8 +71,6 @@ export interface YieldDetails {
 	type?: string | string[];
 	/** True when the caller intentionally omitted success data so the executor uses the last assistant turn. */
 	useLastTurn?: boolean;
-	/** True when this incremental workpool yield completed every item in the active batch. */
-	complete?: boolean;
 	/**
 	 * Set when the yield tool exhausted its in-tool schema-retry budget
 	 * (MAX_SCHEMA_RETRIES) and accepted the data anyway. Surfaced so the
@@ -219,19 +216,11 @@ function isPlaceholderYieldError(value: string): boolean {
 	return PLACEHOLDER_YIELD_ERRORS.has(value.toLowerCase());
 }
 
-function renderDataErrorConflictMessage(
-	errorMessage: string,
-	yieldType: string | string[] | undefined,
-	workPoolKey?: number,
-): string {
+function renderDataErrorConflictMessage(errorMessage: string, yieldType: string | string[] | undefined): string {
 	return prompt.render(yieldDataErrorConflictMessage, {
 		errorJson: JSON.stringify(errorMessage),
-		failureJson: JSON.stringify(
-			workPoolKey === undefined ? { error: errorMessage } : { key: workPoolKey, error: errorMessage },
-		),
+		failureJson: JSON.stringify({ error: errorMessage }),
 		typeJson: yieldType === undefined ? undefined : JSON.stringify(yieldType),
-		isWorkPool: workPoolKey !== undefined,
-		workPoolKey,
 	});
 }
 
@@ -273,32 +262,6 @@ function withSectionVariants(dataSchema: Record<string, unknown>): Record<string
 	}
 	if (branches.length <= 1) return dataSchema;
 	return description !== undefined ? { description, anyOf: branches } : { anyOf: branches };
-}
-
-function wrapWorkPoolYieldParameters(items: readonly WorkPoolYieldItem[]): Record<string, unknown> {
-	return {
-		type: "object",
-		additionalProperties: false,
-		description: "submit one workpool item outcome",
-		properties: {
-			key: {
-				enum: items.map(item => item.index),
-				description: "1-based workpool item number",
-			},
-			data: { description: "Self-contained outcome and evidence for this item" },
-			error: { type: "string", description: "Failure reason for this item" },
-		},
-		required: ["key"],
-	};
-}
-
-function resolveWorkPoolYieldItem(items: readonly WorkPoolYieldItem[], value: unknown): WorkPoolYieldItem {
-	const item =
-		typeof value === "number" && Number.isInteger(value)
-			? items.find(candidate => candidate.index === value)
-			: undefined;
-	if (item) return item;
-	throw new Error(`key must be one of: ${items.map(candidate => candidate.index).join(", ")}`);
 }
 
 /**
@@ -377,23 +340,16 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 	#hasIncrementalSections = false;
 	readonly #session: ToolSession;
 	readonly #parameters: TSchema;
-	#workPoolBatchKey = "";
-	readonly #submittedWorkPoolItems = new Set<string>();
-
 	get strict(): boolean {
-		return this.#workPoolItems().length === 0 && this.#schemaStrict;
+		return this.#schemaStrict;
 	}
 
 	get description(): string {
-		return prompt.render(yieldDescription, {
-			hasOutputSchema: this.#validate !== undefined,
-			workPoolItems: this.#workPoolItems().length > 0,
-		});
+		return prompt.render(yieldDescription, { hasOutputSchema: this.#validate !== undefined });
 	}
 
 	get parameters(): TSchema {
-		const items = this.#workPoolItems();
-		return items.length > 0 ? wrapWorkPoolYieldParameters(items) : this.#parameters;
+		return this.#parameters;
 	}
 
 	constructor(session: ToolSession) {
@@ -491,23 +447,12 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 	 * prior run's incremental-section flag and retry counters would otherwise leak
 	 * forward: a later thinking-only `{type:"result"}` would skip the empty-last-
 	 * turn and schema guards (which require `!#hasIncrementalSections`) and fail
-	 * the run post-mortem. Workpool submission state resets separately via the
-	 * batch key in {@link #workPoolItems}.
+	 * the run post-mortem.
 	 */
 	resetTurnState(): void {
 		this.#hasIncrementalSections = false;
 		this.#schemaValidationFailures = 0;
 		this.#emptyResultFailures = 0;
-	}
-
-	#workPoolItems(): readonly WorkPoolYieldItem[] {
-		const items = this.#session.getWorkPoolYieldItems?.() ?? [];
-		const key = items.map(item => `${item.index}:${item.id}`).join("\0");
-		if (key !== this.#workPoolBatchKey) {
-			this.#workPoolBatchKey = key;
-			this.#submittedWorkPoolItems.clear();
-		}
-		return items;
 	}
 
 	async execute(
@@ -519,32 +464,11 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 	): Promise<AgentToolResult<YieldDetails>> {
 		if (!isPlainRecord(params)) throw new Error("yield arguments must be an object");
 		const raw = params;
-		const workPoolItems = this.#workPoolItems();
-		assertSupportedRootFields(
-			workPoolItems.length > 0 ? wrapWorkPoolYieldParameters(workPoolItems) : this.#parameters,
-			raw,
-		);
-		let workPoolItemId: string | undefined;
-		let yieldType: string | string[] | undefined;
+		assertSupportedRootFields(this.#parameters, raw);
 		// Strict-mode providers send omitted optionals as `null`; treat it as absent.
 		let data: unknown = raw.data === null ? undefined : raw.data;
 		const errorMessage = parseYieldError(raw.error, { hasData: data !== undefined });
-		if (workPoolItems.length > 0) {
-			const item = resolveWorkPoolYieldItem(workPoolItems, raw.key);
-			workPoolItemId = item.id;
-			if (this.#submittedWorkPoolItems.has(item.id)) {
-				throw new Error(`workpool item ${item.index} was already submitted`);
-			}
-			if (data !== undefined && errorMessage !== undefined) {
-				throw new Error(renderDataErrorConflictMessage(errorMessage, undefined, item.index));
-			}
-			if ((data === undefined) === (errorMessage === undefined)) {
-				throw new Error("workpool yield requires exactly one of data or error");
-			}
-			yieldType = [item.id];
-		} else {
-			yieldType = parseYieldType(raw.type);
-		}
+		const yieldType = parseYieldType(raw.type);
 		let useLastTurn = errorMessage === undefined && data === undefined && yieldType !== undefined;
 		// Incremental array-typed sections carry partial data (one finding, one
 		// field) that cannot satisfy the full output schema; the assembled result
@@ -576,8 +500,7 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 			);
 		}
 
-		const status = errorMessage !== undefined && workPoolItemId === undefined ? "aborted" : "success";
-		if (workPoolItemId !== undefined && errorMessage !== undefined) data = { error: errorMessage };
+		const status = errorMessage !== undefined ? "aborted" : "success";
 		let schemaValidationOverridden = false;
 		let schemaValidationFailureCount = 0;
 		// Unknown incremental labels are a hard contract mismatch with the closed caller
@@ -585,7 +508,7 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 		// would otherwise be accepted as a typed last-turn incremental yield, then a sibling
 		// section's MAX_SCHEMA_RETRIES override flips schemaOverridden in finalization and the
 		// stale section rides along untouched.
-		if (status === "success" && isIncremental && workPoolItemId === undefined) {
+		if (status === "success" && isIncremental) {
 			const unknownLabels = this.#unknownIncrementalLabels(yieldType as string[]);
 			if (unknownLabels.length > 0) {
 				const validLabels =
@@ -650,23 +573,19 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 			}
 		}
 		const normalizeData = (value: unknown): unknown =>
-			workPoolItemId !== undefined
-				? value
-				: Array.isArray(yieldType) && yieldType.length === 1
-					? (this.#normalizeSection?.(yieldType[0], value) ?? value)
-					: !isIncremental
-						? (this.#normalizeData?.(value) ?? value)
-						: value;
+			Array.isArray(yieldType) && yieldType.length === 1
+				? (this.#normalizeSection?.(yieldType[0], value) ?? value)
+				: !isIncremental
+					? (this.#normalizeData?.(value) ?? value)
+					: value;
 		if (status === "success" && data !== undefined) data = normalizeData(data);
 		if (status === "success" && !useLastTurn) {
 			const validateData = (value: unknown): JsonSchemaValidationResult | undefined =>
-				workPoolItemId !== undefined
-					? undefined
-					: isIncremental
-						? this.#validateIncrementalSection(yieldType as string[], value)
-						: this.#validate
-							? this.#validate(value)
-							: undefined;
+				isIncremental
+					? this.#validateIncrementalSection(yieldType as string[], value)
+					: this.#validate
+						? this.#validate(value)
+						: undefined;
 			let sectionFailure = validateData(data);
 			if (sectionFailure && !sectionFailure.success && typeof data === "string") {
 				// Lossless recovery: a JSON-encoded payload string parses to exactly
@@ -714,25 +633,12 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 
 		this.#emptyResultFailures = 0;
 		if (status === "success" && isIncremental) this.#hasIncrementalSections = true;
-		let workPoolComplete = false;
-		let submittedWorkPoolItem: WorkPoolYieldItem | undefined;
-		let remainingWorkPoolItems: readonly WorkPoolYieldItem[] = [];
-		if (workPoolItemId !== undefined) {
-			submittedWorkPoolItem = workPoolItems.find(item => item.id === workPoolItemId);
-			this.#submittedWorkPoolItems.add(workPoolItemId);
-			remainingWorkPoolItems = workPoolItems.filter(item => !this.#submittedWorkPoolItems.has(item.id));
-			workPoolComplete = remainingWorkPoolItems.length === 0;
-		}
 		const responseText =
 			status === "aborted"
 				? `Task aborted: ${errorMessage}`
-				: submittedWorkPoolItem !== undefined
-					? workPoolComplete
-						? `Item ${submittedWorkPoolItem.index} submitted. All workpool items are complete; ending this turn.`
-						: `Item ${submittedWorkPoolItem.index} submitted. Remaining item(s): ${remainingWorkPoolItems.map(item => item.index).join(", ")}.`
-					: schemaValidationOverridden
-						? `Result submitted (schema validation overridden after ${schemaValidationFailureCount} failed attempt(s)).`
-						: "Result submitted.";
+				: schemaValidationOverridden
+					? `Result submitted (schema validation overridden after ${schemaValidationFailureCount} failed attempt(s)).`
+					: "Result submitted.";
 		return {
 			content: [{ type: "text", text: responseText }],
 			details: {
@@ -741,7 +647,6 @@ export class YieldTool implements AgentTool<TSchema, YieldDetails> {
 				error: errorMessage,
 				type: yieldType,
 				useLastTurn: useLastTurn || undefined,
-				complete: workPoolComplete || undefined,
 				schemaOverridden: schemaValidationOverridden || undefined,
 			},
 		};
@@ -810,7 +715,6 @@ subprocessToolRegistry.register<YieldDetails>("yield", {
 			error: typeof record.error === "string" ? record.error : undefined,
 			type: isYieldType(record.type) ? record.type : undefined,
 			useLastTurn: record.useLastTurn === true ? true : undefined,
-			complete: record.complete === true ? true : undefined,
 			schemaOverridden: record.schemaOverridden === true ? true : undefined,
 		};
 	},
@@ -819,7 +723,6 @@ subprocessToolRegistry.register<YieldDetails>("yield", {
 		const details = event.result?.details;
 		if (!details || typeof details !== "object") return true;
 		const record = details as Record<string, unknown>;
-		if (record.complete === true) return true;
 		return !(
 			record.status === "success" &&
 			Array.isArray(record.type) &&

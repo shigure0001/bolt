@@ -14,17 +14,14 @@ import {
 	type ProtocolHandler,
 } from "@oh-my-pi/pi-coding-agent/internal-urls";
 import { AgentRegistry } from "@oh-my-pi/pi-coding-agent/registry/agent-registry";
-import type { SessionEntry } from "@oh-my-pi/pi-coding-agent/session/session-entries";
 import * as sshFileTransfer from "@oh-my-pi/pi-coding-agent/ssh/file-transfer";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { ReadTool } from "@oh-my-pi/pi-coding-agent/tools/read";
 import { removeWithRetries } from "@oh-my-pi/pi-utils";
-import { AstGrepTool } from "../../src/tools/ast-grep";
 import { GlobTool } from "../../src/tools/glob";
 import { GrepTool } from "../../src/tools/grep";
 
-import { cfgCompactionExperimentalContextManagement } from "@oh-my-pi/pi-coding-agent/session/context-settings";
 import { cfgReadSummarizeEnabled } from "@oh-my-pi/pi-coding-agent/tools/settings";
 
 function getResultText(result: { content: Array<{ type: string; text?: string }> }): string {
@@ -168,17 +165,17 @@ describe("GrepTool internal URL resolution", () => {
 		expect(getResultText(result)).toContain("# Demo");
 		expect(result.details?.resolvedPath).toBe(path.join(skillDir, "SKILL.md"));
 	});
-	it("walks skill:// directory subpaths for search and find", async () => {
+	it("walks skill:// directory subpaths for grep and glob", async () => {
 		await registerSkillDirectory();
 		const session = createSession({ hasEditTool: true });
 		const searchTool = new GrepTool(session);
-		const findTool = new GlobTool(session);
+		const globTool = new GlobTool(session);
 
 		const searchResult = await searchTool.execute("test-search", {
 			pattern: "deep needle",
 			path: "skill://demo/references",
 		});
-		const findResult = await findTool.execute("test-find", {
+		const findResult = await globTool.execute("test-find", {
 			pattern: "skill://demo/references",
 		});
 
@@ -188,54 +185,22 @@ describe("GrepTool internal URL resolution", () => {
 		expect(getResultText(findResult)).toContain("guide.md");
 	});
 
-	it("walks bare skill:// roots for search and find", async () => {
+	it("walks bare skill:// roots for grep and glob", async () => {
 		await registerSkillDirectory();
 		const session = createSession({ hasEditTool: true });
 		const searchTool = new GrepTool(session);
-		const findTool = new GlobTool(session);
+		const globTool = new GlobTool(session);
 
 		const searchResult = await searchTool.execute("test-search", {
 			pattern: "deep needle",
 			path: "skill://demo",
 		});
-		const findResult = await findTool.execute("test-find", {
+		const findResult = await globTool.execute("test-find", {
 			pattern: "skill://demo",
 		});
 
 		expect(getResultText(searchResult)).toContain("deep needle");
 		expect(getResultText(findResult)).toContain("guide.md");
-	});
-
-	it("greps the caller-bound full current branch without materializing a session file", async () => {
-		const settings = Settings.isolated({ "edit.mode": "hashline", "grep.contextBefore": 0, "grep.contextAfter": 0 });
-		cfgCompactionExperimentalContextManagement.set(settings, true);
-		const branch = [
-			{
-				type: "message",
-				id: "compacted-source",
-				parentId: null,
-				timestamp: new Date().toISOString(),
-				message: { role: "user", content: "searchable pre-compaction needle", timestamp: 1 },
-			},
-		] as unknown as SessionEntry[];
-		const manager = {
-			getBranch: () => branch,
-			getSessionId: () => "grep-current-session",
-		} as unknown as NonNullable<ToolSession["sessionManager"]>;
-		const tool = new GrepTool(
-			createSession({
-				settings,
-				getSessionId: () => "grep-current-session",
-				sessionManager: manager,
-			}),
-		);
-
-		const result = await tool.execute("current-history-search", {
-			pattern: "pre-compaction needle",
-			path: "history://current/full",
-		});
-
-		expect(getResultText(result)).toContain("searchable pre-compaction needle");
 	});
 
 	it("greps artifact:// with regex pattern", async () => {
@@ -595,21 +560,6 @@ describe("GrepTool internal URL resolution", () => {
 		expect(result.details?.files).toEqual(["local://notes/a%20b.md"]);
 		expect(text).toMatch(/local:\/\/notes\/a%20b\.md#[0-9A-F]{4}/);
 		expect(text).toMatch(/^\*\d+:.*beta needle/m);
-	});
-
-	it("runs ast_grep over a local:// file", async () => {
-		const localRoot = path.join(artifactsDir, "local");
-		await fs.mkdir(localRoot, { recursive: true });
-		await Bun.write(path.join(localRoot, "util.ts"), "export function greet() {\n\treturn 1;\n}\n");
-		LocalProtocolHandler.setOverride({ getArtifactsDir: () => artifactsDir, getSessionId: () => "session" });
-
-		const result = await new AstGrepTool(createSession()).execute("ast-local", {
-			pat: "function $NAME() { $$$BODY }",
-			path: "local://util.ts",
-		});
-
-		expect(result.details?.files).toEqual(["local://util.ts"]);
-		expect(getResultText(result)).toContain("function greet()");
 	});
 
 	it("expands a glob in the first local:// segment for find and search", async () => {

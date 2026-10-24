@@ -1,7 +1,6 @@
 import type { Agent } from "@oh-my-pi/pi-agent-core";
 import { logger } from "@oh-my-pi/pi-utils";
 import type { Settings } from "../config/settings";
-import { disposeVmContextsByOwner } from "../eval/js/context-manager";
 import { namespaceSessionId as namespacePythonSessionId } from "../eval/py";
 import {
 	disposeKernelSessionsByOwner,
@@ -172,10 +171,7 @@ export class EvalRunner {
 		if (!settled) {
 			logger.warn("Detaching retained eval-kernel ownership during dispose while eval execution is still active");
 		}
-		const results = await Promise.allSettled([
-			disposeKernelSessionsByOwner(this.#kernelOwnerId),
-			disposeVmContextsByOwner(this.#kernelOwnerId),
-		]);
+		const results = await Promise.allSettled([disposeKernelSessionsByOwner(this.#kernelOwnerId)]);
 		const errors: unknown[] = [];
 		for (const result of results) if (result.status === "rejected") errors.push(result.reason);
 		if (errors.length > 0) throw new AggregateError(errors, "Failed to dispose one or more eval kernels");

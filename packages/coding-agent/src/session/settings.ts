@@ -69,59 +69,6 @@ export const cfgPowerSleepPrevention = register({
 	},
 });
 
-export const cfgPrewalkEnabled = register({
-	id: "prewalk.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "model",
-		group: "Prewalk",
-		label: "Enable Prewalk",
-		description:
-			"Start on the active model, then switch to a fast/cheap model (default the 'smol' role) at the first edit/write after the plan nudge's todo list exists — the strong model plans, commits the todos, and starts the implementation before handing off. Overridable per session with --prewalk / --no-prewalk.",
-	},
-});
-
-export const cfgPrewalkAuto = register({
-	id: "prewalk.auto",
-	type: "enum",
-	values: ["off", "suggest", "on"] as const,
-	default: "off",
-	ui: {
-		tab: "model",
-		group: "Prewalk",
-		label: "Auto Prewalk",
-		description:
-			"Ask the native judge resolved through the 'judge' role whether each new top-level user task front-loads its hard reasoning. Needs a native judge; without one nothing is classified. Independent of Enable Prewalk.",
-		options: [
-			{ value: "off", label: "Off", description: "Never classify prompts for prewalk" },
-			{
-				value: "suggest",
-				label: "Suggest",
-				description: "Classify each task and report the decision without arming prewalk",
-			},
-			{
-				value: "on",
-				label: "On",
-				description:
-					"For confidently front-loaded tasks, arm a handoff from the active model to the auto target; the next task starts back on the planning model",
-			},
-		],
-	},
-});
-
-export const cfgPrewalkAutoTarget = register({
-	id: "prewalk.autoTarget",
-	type: "string",
-	default: "@smol",
-	ui: {
-		tab: "model",
-		group: "Prewalk",
-		label: "Auto-prewalk target",
-		description: "Model or role (default '@smol') auto-prewalk hands off to at the first edit/write.",
-	},
-});
-
 function isLimitRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -253,19 +200,6 @@ export const cfgOmitThinking = register({
 		group: "Thinking",
 		label: "Omit Thinking summaries",
 		description: "Instruct upstream providers to completely omit thinking summaries from responses (where supported)",
-	},
-});
-
-export const cfgExternalThinking = register({
-	id: "externalThinking",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "model",
-		group: "Thinking",
-		label: "External Thinking",
-		description: "Private scratchpad; not shown to user. Disables supported GPT, Claude, and Gemini reasoning",
-		warning: "At your own risk: providers have flagged this request shape as abuse, up to account-level enforcement",
 	},
 });
 
@@ -1040,7 +974,7 @@ export const cfgProvidersAutoThinkingMaxEffort = register({
 		group: "Thinking",
 		label: "Auto Thinking Ceiling",
 		description:
-			"Highest effort the `auto` classifier may resolve. `xhigh` keeps the classifier one tier below the top, so only an explicit `ultrathink` reaches `max`; `max` lets a turn the classifier judges exceptional bill the top tier on models that expose it.",
+			"Highest effort the `auto` classifier may resolve. `xhigh` keeps automatic thinking below `max`; set this to `max` to let exceptional turns use the top tier on models that expose it.",
 		condition: "autoThinkingActive",
 		options: [
 			{ value: "xhigh", label: "xhigh", description: "Classifier stops at xhigh (default)" },

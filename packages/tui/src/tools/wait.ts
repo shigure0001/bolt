@@ -62,10 +62,6 @@ export interface JobSnapshot {
 	resolvedThinkingLevel?: ConfiguredThinkingLevel;
 	/** True when the task progress reports an attached live advisor. */
 	advisor?: boolean;
-	/** The task agent's latest self-estimated completion (0–100); see `AgentProgress.completionPercent`. */
-	completionPercent?: number;
-	/** The task agent's latest stage in its own words; see `AgentProgress.stage`. */
-	stage?: string;
 	/** The job's live widget, while one is being drawn; frozen at its last state once the job settles. */
 	widget?: JobWidgetView;
 	resultText?: string;
@@ -199,11 +195,6 @@ function flattenStructuredPreview(text: string): string {
 	return text.slice(0, PREVIEW_LINES_EXPANDED * PREVIEW_LINE_WIDTH * 2).replace(/\s+/g, " ");
 }
 
-/** The row label: a running task's own stage line when it reports one, else the job's label. */
-function jobRowLabel(job: JobSnapshot): string {
-	return job.type === "task" && job.status === "running" && job.stage?.trim() ? job.stage : job.label;
-}
-
 /** A job as its tile; `live` while the card's clocks run. */
 function jobTile(job: JobSnapshot, live: boolean): JobTile {
 	return {
@@ -214,10 +205,6 @@ function jobTile(job: JobSnapshot, live: boolean): JobTile {
 		durationMs: job.durationMs,
 		live: live && job.status === "running",
 		...(job.widget ? { widget: job.widget } : {}),
-		...(job.status === "running" && job.completionPercent !== undefined
-			? { completionPercent: job.completionPercent }
-			: {}),
-		...(job.stage ? { stage: job.stage } : {}),
 		...(job.exitCode === undefined ? {} : { exitCode: job.exitCode }),
 	};
 }
@@ -379,7 +366,7 @@ function jobsRenderResult(
 				Ellipsis.Unicode,
 			);
 			let line = `${icon} ${uiTheme.fg("accent", id)}${outcome}`;
-			const label = replaceTabs(jobRowLabel(job).split(/\r?\n/)[0] ?? "").trim();
+			const label = replaceTabs(job.label.split(/\r?\n/)[0] ?? "").trim();
 			const labelBudget = width - visibleWidth(line) - 2;
 			if (label && label !== job.id && labelBudget >= 8) {
 				line += `  ${uiTheme.fg("muted", truncateToWidth(label, labelBudget, Ellipsis.Unicode))}`;
@@ -412,10 +399,7 @@ function jobsRenderResult(
 		for (const job of shownWidgetJobs) {
 			const typeBadge = formatBadge(job.type, statusToColor(job.status), uiTheme);
 			const icon = formatStatusIcon("running", uiTheme, live ? options.spinnerFrame : undefined);
-			const meta = compact([
-				job.completionPercent !== undefined ? uiTheme.fg("accent", `${job.completionPercent}%`) : undefined,
-				uiTheme.fg("dim", formatDuration(job.durationMs)),
-			]).join(" ");
+			const meta = uiTheme.fg("dim", formatDuration(job.durationMs));
 			lines.push(
 				...renderJobTileLines(jobTile(job, live), width, uiTheme, {
 					lead: `${icon} ${typeBadge} `,
@@ -472,17 +456,13 @@ function jobsRenderResult(
 									job.status === "running" ? options.spinnerFrame : undefined,
 								)}${job.exitCode === undefined ? "" : `${uiTheme.sep.dot}${uiTheme.fg(job.exitCode === 0 ? "muted" : "error", `exit ${job.exitCode}`)}`}`;
 								const typeBadge = formatBadge(job.type, statusToColor(job.status), uiTheme);
-								const completion =
-									job.status === "running" && job.completionPercent !== undefined
-										? `${uiTheme.sep.dot}${uiTheme.fg("accent", `${job.completionPercent}%`)}`
-										: "";
-								const durationSuffix = `${completion}${uiTheme.sep.dot}${uiTheme.fg("dim", formatDuration(job.durationMs))}`;
+								const durationSuffix = `${uiTheme.sep.dot}${uiTheme.fg("dim", formatDuration(job.durationMs))}`;
 								const displayId = truncateToWidth(
 									replaceTabs(job.id).replace(/\s+/g, " "),
 									Math.max(0, rowWidth - visibleWidth(`${icon} ${typeBadge} ${durationSuffix}`)),
 									Ellipsis.Unicode,
 								);
-								const rowLabel = jobRowLabel(job);
+								const rowLabel = job.label;
 								const rawLabelLines = (rowLabel || "(no label)").split(/\r?\n/);
 								const maxLabelLines = expanded ? LABEL_LINES_EXPANDED : LABEL_LINES_COLLAPSED;
 								const visibleLabelLines = rawLabelLines
@@ -496,12 +476,7 @@ function jobsRenderResult(
 								const live = job.status === "running" && options.spinnerFrame !== undefined;
 								const continuationWidth = Math.max(0, rowWidth - visibleWidth("  "));
 								if (job.widget?.state === "live") {
-									const meta = compact([
-										job.status === "running" && job.completionPercent !== undefined
-											? uiTheme.fg("accent", `${job.completionPercent}%`)
-											: undefined,
-										uiTheme.fg("dim", formatDuration(job.durationMs)),
-									]).join(" ");
+									const meta = uiTheme.fg("dim", formatDuration(job.durationMs));
 									lines.push(
 										...renderJobTileLines(jobTile(job, live), rowWidth, uiTheme, {
 											lead: rowPrefix,
@@ -685,7 +660,7 @@ function bodyLines(
  */
 export function createIrcMessageCard(
 	card: {
-		kind: "incoming" | "autoreply" | "relay" | "workpool";
+		kind: "incoming" | "autoreply" | "relay";
 		from?: string;
 		to?: string;
 		body?: string;
@@ -703,13 +678,10 @@ export function createIrcMessageCard(
 			? `IRC ${uiTheme.nav.back} ${from}`
 			: card.kind === "autoreply"
 				? `IRC ${uiTheme.nav.selected} ${card.to?.trim() || "?"}`
-				: card.kind === "workpool"
-					? `Pool ${card.pool?.trim() || "?"} ${uiTheme.nav.selected} ${card.to?.trim() || "?"}`
-					: `IRC ${from} ${uiTheme.nav.selected} ${card.to?.trim() || "?"}`;
+				: `IRC ${from} ${uiTheme.nav.selected} ${card.to?.trim() || "?"}`;
 	const body = card.body ?? "";
 	const meta: string[] = [];
 	if (card.kind === "autoreply") meta.push("auto");
-	if (card.kind === "workpool" && card.mode) meta.push(card.mode);
 	if (card.replyTo) meta.push("reply");
 	const age = messageAge(card.timestamp);
 	if (age) meta.push(age);

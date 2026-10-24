@@ -8,8 +8,6 @@ import { type SelectItem, SelectList } from "@oh-my-pi/pi-tui/components/select-
 import { type SettingItem, SettingsList } from "@oh-my-pi/pi-tui/components/settings-list";
 import type { DescribeContext, NativeNode } from "@oh-my-pi/pi-tui/native/node";
 import { setNativeRendering } from "@oh-my-pi/pi-tui/native/state";
-import { CustomEditor } from "@oh-my-pi/pi-tui/prompt/custom-editor";
-import { setMagicKeywords } from "@oh-my-pi/pi-tui/prompt/magic-keywords";
 import { getEditorTheme, getSelectListTheme, getSettingsListTheme, initTheme } from "@oh-my-pi/pi-tui/theme";
 import type { TUI } from "@oh-my-pi/pi-tui";
 
@@ -117,26 +115,6 @@ describe("native interactive primitives", () => {
 
 		vi.advanceTimersByTime(2000);
 		expect(onExpire).toHaveBeenCalledTimes(1);
-	});
-
-	it("schedules no magic-keyword shimmer frame under TSP and declares the shimmer as a decoration", () => {
-		setMagicKeywords([{ word: "ultrathink", hue: [0, 360] }]);
-		try {
-			setNativeRendering(true);
-			const editor = new CustomEditor(getEditorTheme());
-			const repaint = vi.fn();
-			editor.setShimmerRepaintHandler(repaint);
-			editor.focused = true;
-			editor.setText("please ultrathink");
-			const timeout = vi.spyOn(globalThis, "setTimeout");
-			editor.render(60);
-			expect(timeout).not.toHaveBeenCalled();
-
-			const decor = editorNode(editor).p?.decor ?? [];
-			expect(decor).toContainEqual({ from: 7, to: 17, s: "accent", fx: "shimmer" });
-		} finally {
-			setMagicKeywords([]);
-		}
 	});
 
 	it("keeps plain editors and inputs unsendable even with keyboard submit handlers", () => {

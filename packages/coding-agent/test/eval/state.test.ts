@@ -46,37 +46,37 @@ describe("eval state registry", () => {
 		const parent = toolSession("state-contract-owner-fork", cwd, "parent");
 		const child = toolSession("state-contract-owner-fork", cwd, "child");
 		updateEvalState(parent, {
-			language: "js",
-			kernelId: "shared-js",
+			language: "python",
+			kernelId: "python-shared",
 			alive: true,
-			loadedPath: path.join(cwd, "parent.ts"),
+			loadedPath: path.join(cwd, "parent.py"),
 		});
-		expect(getEvalState(child)?.runtimes[0]?.kernelId).toBe("shared-js");
+		expect(getEvalState(child)?.runtimes[0]?.kernelId).toBe("python-shared");
 
 		updateEvalState(child, {
-			language: "js",
-			kernelId: "shared-js",
+			language: "python",
+			kernelId: "python-shared",
 			alive: true,
-			loadedPath: path.join(cwd, "shared-child.ts"),
+			loadedPath: path.join(cwd, "shared-child.py"),
 		});
 		updateEvalState(child, {
-			language: "js",
-			kernelId: "child-fork-js",
+			language: "python",
+			kernelId: "python-child-fork",
 			alive: true,
-			loadedPath: path.join(cwd, "child.ts"),
+			loadedPath: path.join(cwd, "child.py"),
 		});
 
 		expect(getEvalState(parent)?.runtimes[0]).toMatchObject({
-			kernelId: "shared-js",
-			loadedPaths: [path.join(cwd, "parent.ts"), path.join(cwd, "shared-child.ts")],
+			kernelId: "python-shared",
+			loadedPaths: [path.join(cwd, "parent.py"), path.join(cwd, "shared-child.py")],
 		});
 		expect(getEvalState(child)?.runtimes[0]).toMatchObject({
-			kernelId: "child-fork-js",
+			kernelId: "python-child-fork",
 			generation: 2,
-			loadedPaths: [path.join(cwd, "child.ts")],
+			loadedPaths: [path.join(cwd, "child.py")],
 		});
 
-		updateEvalState(parent, { language: "js", kernelId: "shared-js", alive: false });
+		updateEvalState(parent, { language: "python", kernelId: "python-shared", alive: false });
 		expect(getEvalState(parent)?.runtimes[0]?.alive).toBe(false);
 		expect(getEvalState(child)?.runtimes[0]?.alive).toBe(true);
 	});
@@ -147,18 +147,18 @@ describe("eval state registry", () => {
 		const cwd = path.resolve("state-contract", "format");
 		const session = toolSession("state-contract-format", cwd);
 		updateEvalState(session, {
-			language: "js",
-			kernelId: "js-kernel",
+			language: "python",
+			kernelId: "python-kernel-dead",
 			alive: true,
 			environment: "managed",
-			interpreter: "Bun",
-			loadedPath: path.join(cwd, "loaded.ts"),
+			interpreter: "/managed/python",
+			loadedPath: path.join(cwd, "loaded.py"),
 		});
-		updateEvalState(session, { language: "js", kernelId: "js-kernel", alive: false });
+		updateEvalState(session, { language: "python", kernelId: "python-kernel-dead", alive: false });
 
 		const deadContext = formatEvalStateContext(session);
-		expect(deadContext).toContain("JavaScript: dead; state is unavailable");
-		expect(deadContext).toContain("loaded.ts");
+		expect(deadContext).toContain("Python: dead; state is unavailable");
+		expect(deadContext).toContain("loaded.py");
 
 		const resumed = toolSession("state-contract-fresh-host", cwd);
 		const resumeContext = formatEvalStateContext(resumed, { historyHasEval: true });

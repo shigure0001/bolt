@@ -1,7 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs/promises";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
 import type { ScreenshotResult } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-protocol";
@@ -38,7 +37,6 @@ function valueFrom<T>(result: { details?: unknown }): T {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 });
 
 describe.skipIf(!CHROMIUM_AVAILABLE)("browser screenshot parity", () => {

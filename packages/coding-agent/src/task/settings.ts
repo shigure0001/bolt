@@ -215,29 +215,6 @@ effect(cfgWorktreeBase, value => {
 	}
 });
 
-export const cfgTaskEager = register({
-	id: "task.eager",
-	protocolDefault: ["rpc", "acp"],
-	type: "enum",
-	values: ["default", "preferred", "always"] as const,
-	default: "default",
-	ui: {
-		tab: "tasks",
-		group: "Subagents",
-		label: "Prefer Task Delegation",
-		description: "How strongly to push delegating work to subagents",
-		options: [
-			{
-				value: "default",
-				label: "Default",
-				description: "Uses the selected model's policy; some models require an explicit delegation request",
-			},
-			{ value: "preferred", label: "Preferred", description: "Adds delegation guidance to the system prompt" },
-			{ value: "always", label: "Always", description: "Prompt guidance plus a first-turn delegation reminder" },
-		],
-	},
-});
-
 export const cfgTaskBatch = register({
 	id: "task.batch",
 	protocolDefault: ["rpc", "acp"],
@@ -261,7 +238,7 @@ export const cfgTaskStructured = register({
 		group: "Subagents",
 		label: "Structured Task Results",
 		description:
-			"Expose outputSchema/schemaMode on the task tool and return subagent results through the yield tool, validated against caller or agent output schemas. Off: task subagents have no yield tool and return their final message as plain text, except agents whose definition sets structured: true. Eval agent()/workpool spawns always keep structured results.",
+			"Expose outputSchema/schemaMode on the task tool and return subagent results through the yield tool, validated against caller or agent output schemas. Off: task subagents have no yield tool and return their final message as plain text, except agents whose definition sets structured: true.",
 	},
 });
 
@@ -364,19 +341,6 @@ export const cfgTaskMaxRuntimeMs = register({
 			{ value: "1800000", label: "30 minutes" },
 			{ value: "3600000", label: "1 hour" },
 		],
-	},
-});
-
-export const cfgTaskCompletionProbe = register({
-	id: "task.completionProbe",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "tasks",
-		group: "Subagents",
-		label: "Subagent Completion Probe",
-		description:
-			"Ask a working subagent, through a cached side request like /btw, to estimate how complete its task is: after 2, 5, 10 and 30 more minutes, then hourly. The estimate shows next to the subagent in wait and task views. Only subagents spawned by the main agent of an interactive session are asked; print, RPC, ACP and SDK runs never probe.",
 	},
 });
 
@@ -506,31 +470,11 @@ export const cfgTaskAgentAccountPools = register({
 	validate: validateAgentAccountPools,
 });
 
-export const cfgTaskAgentPrewalk = register({
-	id: "task.agentPrewalk",
-	protocolDefault: ["rpc", "acp"],
-	type: "record",
-	default: {} as Record<string, string>,
-});
-
 export const cfgTaskAgentAdvisor = register({
 	id: "task.agentAdvisor",
 	protocolDefault: ["rpc", "acp"],
 	type: "record",
 	default: {} as Record<string, string>,
-});
-
-export const cfgTaskPrewalk = register({
-	id: "task.prewalk",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tasks",
-		group: "Subagents",
-		label: "Generic Task Prewalk",
-		description:
-			"Arm prewalk for the bundled generic `task` subagent: it starts on its resolved model, plans and begins the implementation, then hands off to the 'smol' role at its first edit/write. Per-agent overrides (task.agentPrewalk, configured from the /agents hub) and user agent `prewalk` frontmatter apply regardless of this toggle.",
-	},
 });
 
 export const cfgTaskShowResolvedModelBadge = register({

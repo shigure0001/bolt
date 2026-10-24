@@ -128,9 +128,9 @@ export interface ClassifyDifficultyDeps {
 
 /**
  * Highest effort this turn's classification may resolve to: the configured
- * ceiling, further limited by what the target model actually exposes. The
- * default keeps `auto` one tier below the top, so only an explicit
- * `ultrathink` reaches {@link Effort.Max}.
+ * ceiling, further limited by what the target model actually exposes. With
+ * `providers.autoThinkingMaxEffort: xhigh`, auto never selects Max; only
+ * `providers.autoThinkingMaxEffort: max` allows that tier.
  */
 function autoEffortCeiling(deps: ClassifyDifficultyDeps): Effort {
 	if (cfgProvidersAutoThinkingMaxEffort.get(deps.settings) !== Effort.Max) return Effort.XHigh;

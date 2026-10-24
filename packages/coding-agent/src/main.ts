@@ -48,12 +48,10 @@ import { findConfigFile } from "./config";
 import { ModelRegistry } from "./config/model-registry";
 import { formatModelSelectorValue } from "@oh-my-pi/pi-tui/overlays/model-selector";
 import {
-	DEFAULT_PREWALK_TARGET,
 	disabledProviderIds,
 	expandRoleAlias,
 	getModelMatchPreferences,
 	resolveCliModel,
-	resolveConfiguredModelPatterns,
 	resolveModelRoleValue,
 	resolveModelScope,
 	type ScopedModel,
@@ -104,7 +102,6 @@ import {
 	createAgentSession,
 	discoverAuthStorage,
 	loadSessionExtensions,
-	resolvePrewalkTarget,
 } from "./sdk";
 import type { AgentSession } from "./session/agent-session";
 import { createAuthStorageSettingsSync, describeAuthBrokerStartupError } from "./session/auth-broker-config";
@@ -176,13 +173,7 @@ import {
 	cfgTuiResizeScrollback,
 	cfgUpdateChannel,
 } from "./modes/settings";
-import {
-	cfgDefaultThinkingLevel,
-	cfgExternalThinking,
-	cfgHideThinkingBlock,
-	cfgOmitThinking,
-	cfgPrewalkEnabled,
-} from "./session/settings";
+import { cfgDefaultThinkingLevel, cfgHideThinkingBlock, cfgOmitThinking } from "./session/settings";
 import { cfgDisabledProviders, cfgEnabledModels } from "./config/model-settings";
 import { cfgTaskAgentIdleTtlMs } from "./task/settings";
 import { cfgSkillsIncludeSkills } from "./extensibility/settings";
@@ -1469,10 +1460,6 @@ export async function buildSessionOptions(
 	// - supports --model <provider>/<pattern>
 	const modelMatchPreferences = getModelMatchPreferences(activeSettings);
 	const disabledProviders = disabledProviderIds(activeSettings);
-	// `--model` rewrites the session's `default` role below. Preserve the
-	// configured assignment so explicit prewalk role targets still resolve
-	// against the value that existed when the CLI was invoked.
-	const preModelOverrideDefaultRole = activeSettings.getModelRole("default");
 	// True when a configured `default` role was deliberately left unresolved for
 	// createAgentSession's post-extension re-resolution (issue #6694); the
 	// scoped thinking-level seed below must be deferred along with the model.
@@ -1582,60 +1569,6 @@ export async function buildSessionOptions(
 		// then activates the scoped list for extension providers (issue #6694), and
 		// the fire-and-forget one once discovery settles (issue #9220).
 		options.modelPattern = parsed.models;
-	}
-
-	if (parsed.noPrewalk && (parsed.prewalk || parsed.prewalkInto !== undefined)) {
-		throw new Error("--no-prewalk cannot be combined with --prewalk or --prewalk-into");
-	}
-	options.suppressAutoPrewalk = parsed.noPrewalk;
-	const explicitPrewalk = parsed.prewalk === true || parsed.prewalkInto !== undefined;
-	const prewalkEnabled = parsed.noPrewalk
-		? false
-		: explicitPrewalk
-			? true
-			: !restoringSession && cfgPrewalkEnabled.get(activeSettings);
-	if (prewalkEnabled) {
-		const target = parsed.prewalkInto ?? DEFAULT_PREWALK_TARGET;
-		let targetPatterns: string[];
-
-		if (parsed.prewalkInto === undefined) {
-			// Preserve the existing default-prewalk behavior; this PR only needs
-			// pre-override role semantics for an explicit target.
-			targetPatterns = [expandRoleAlias(DEFAULT_PREWALK_TARGET, activeSettings)];
-		} else {
-			// `--model` mutates only the session default role. Resolve explicit
-			// prewalk aliases against the pre-mutation default while leaving all
-			// other role lookups live.
-			const preModelOverrideRoleLookup = {
-				getModelRole: (role: string) =>
-					role === "default" ? preModelOverrideDefaultRole : activeSettings.getModelRole(role),
-			};
-
-			// Bare `default` is a backwards-compatible special selector handled
-			// by expandRoleAlias rather than the prefixed role-alias grammar.
-			const targetSelector =
-				target.trim() === "default" ? expandRoleAlias(target, preModelOverrideRoleLookup) : target;
-			const configuredPatterns = resolveConfiguredModelPatterns(targetSelector, preModelOverrideRoleLookup);
-			targetPatterns = configuredPatterns.length > 0 ? configuredPatterns : [targetSelector];
-		}
-
-		const selection = await resolvePrewalkTarget(
-			targetPatterns,
-			target,
-			modelRegistry,
-			modelMatchPreferences,
-			disabledProviders,
-			{ deferUnregistered: true },
-		);
-		if (selection.deferred) {
-			// Preserve role fallback order until extensions have registered their providers.
-			options.deferredPrewalk = { target, patterns: targetPatterns };
-		} else {
-			options.prewalk = selection.prewalk;
-			for (const warning of selection.warnings) {
-				process.stderr.write(`${chalk.yellow(`Warning: ${warning}`)}\n`);
-			}
-		}
 	}
 
 	if (parsed.planYoloInto !== undefined && !parsed.planYolo) {
@@ -2003,10 +1936,6 @@ export async function runRootCommand(
 		if (parsedArgs.advisor) {
 			cfgAdvisorEnabled.override(settingsInstance, true);
 		}
-		// Apply --external-thinking CLI flag (ephemeral, not persisted)
-		if (parsedArgs.externalThinking) {
-			cfgExternalThinking.override(settingsInstance, true);
-		}
 
 		await logger.time(
 			"initTheme:final",
@@ -2283,11 +2212,6 @@ export async function runRootCommand(
 		sessionOptions.tuiTranscript = isInteractive;
 		sessionOptions.autoTitle = isInteractive;
 		sessionOptions.settings = settingsInstance;
-		sessionOptions.onPrewalkWarning = warning => {
-			if (isInteractive) notifs.push({ kind: "warn", message: warning });
-			else process.stderr.write(`${chalk.yellow(`Warning: ${warning}`)}\n`);
-		};
-
 		// OTEL: unless `telemetry.otlpExportEnabled` is off, register global OTLP
 		// exporters when an endpoint is configured via env, then switch on the agent
 		// loop's telemetry hooks so traces, run-level metrics, and structured logs

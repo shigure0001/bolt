@@ -197,7 +197,7 @@ An intervening paragraph closes the list.
 
 ### Added
 
-- Added \`/prewalk restart\`.
+- Added \`/modelpreset save\`.
 
 ### Changed
 

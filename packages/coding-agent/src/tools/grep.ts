@@ -37,7 +37,6 @@ import {
 	type GroupedFilesOutput,
 } from "@oh-my-pi/pi-tui/tools/grouped-file-output";
 import { formatMatchLine } from "@oh-my-pi/pi-tui/tools/match-line-format";
-import { isFindEnabled } from "./jfind";
 import {
 	expandDelimitedPathEntries,
 	formatPathRelativeToCwd,
@@ -532,7 +531,6 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 		const displayMode = resolveFileDisplayMode(this.session);
 		const isHlMode = displayMode.hashLines;
 		const isLineNumberMode = !displayMode.hashLines && displayMode.lineNumbers;
-		const hasFind = this.session.isToolActive?.("find") ?? isFindEnabled(this.session);
 		const eagerDelegation = sessionDelegationBias(this.session) === "eager";
 		const scoutAvailable = isScoutSpawnable(
 			cfgTaskDisabledAgents.get(this.session.settings),
@@ -540,20 +538,11 @@ export class GrepTool implements AgentTool<typeof searchSchema, GrepToolDetails>
 		);
 		const contextBefore = this.#contextBeforeOverride ?? cfgGrepContextBefore.get(this.session.settings);
 		const contextAfter = this.#contextAfterOverride ?? cfgGrepContextAfter.get(this.session.settings);
-		const key = [
-			isHlMode,
-			isLineNumberMode,
-			hasFind,
-			eagerDelegation,
-			scoutAvailable,
-			contextBefore,
-			contextAfter,
-		].join();
+		const key = [isHlMode, isLineNumberMode, eagerDelegation, scoutAvailable, contextBefore, contextAfter].join();
 		if (key !== this.#descriptionKey) {
 			this.#description = prompt.render(grepDescription, {
 				IS_HL_MODE: isHlMode,
 				IS_LINE_NUMBER_MODE: isLineNumberMode,
-				hasFind,
 				eagerDelegation,
 				scoutAvailable,
 				contextBefore,

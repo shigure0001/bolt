@@ -341,8 +341,7 @@ export class UiHelpers {
 					if (
 						message.customType === "irc:incoming" ||
 						message.customType === "irc:autoreply" ||
-						message.customType === "irc:relay" ||
-						message.customType === "irc:workpool"
+						message.customType === "irc:relay"
 					) {
 						const card = buildIrcMessageCard(message, () => this.ctx.toolOutputExpanded);
 						this.ctx.chatContainer.addChild(card);

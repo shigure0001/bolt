@@ -342,8 +342,7 @@ function judgeRoleChain(settings: Settings, registry: ModelRegistry): RoleChainC
 /**
  * Whether the `judge` role resolves first to a native judgment backend
  * (TypeSafe jev, OpenRouter or OpenAI Decisions, Workers AI Clef) rather than a
- * prompted on-device or chat model. Judge-heavy features gate on it, e.g. the `find`
- * tool under `find.enabled: auto`.
+ * prompted on-device or chat model. Some judge-heavy features gate on it.
  */
 export function hasNativeJudge(settings: Settings, registry: ModelRegistry): boolean {
 	const [primary] = judgeRoleChain(settings, registry);

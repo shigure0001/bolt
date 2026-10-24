@@ -302,7 +302,7 @@ export interface JobWidgetSourceSample {
 /** Job facts a view needs besides the derived state. */
 export interface JobWidgetViewContext {
 	label: string;
-	/** A task's stage in its own words, from its progress; the stage line unless a spec rule reads one. */
+	/** Caller-provided stage text; shown unless a spec rule extracts a more specific stage. */
 	stage?: string;
 	/**
 	 * Whether the newest output line may stand for the stage when nothing

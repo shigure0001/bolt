@@ -9,7 +9,6 @@ import {
 	type BuildSystemPromptOptions,
 	type BuildSystemPromptResult,
 } from "@oh-my-pi/pi-coding-agent/system-prompt";
-import eagerTasksTemplate from "./fixtures/system-prompt-template/eager-tasks.md" with { type: "text" };
 import literalDataTemplate from "./fixtures/system-prompt-template/literal-data.md" with { type: "text" };
 import liveDataTemplate from "./fixtures/system-prompt-template/live-data.md" with { type: "text" };
 import { restoreEnvValue } from "./helpers/settings-test-state";
@@ -82,7 +81,7 @@ describe("system prompt Handlebars templates", () => {
 		await withDiscoveryHome(async ({ cwd, projectConfig }) => {
 			const templatePath = path.join(projectConfig, "SYSTEM_TEMPLATE.md");
 			const textPath = path.join(projectConfig, "SYSTEM.md");
-			await Bun.write(templatePath, eagerTasksTemplate);
+			await Bun.write(templatePath, liveDataTemplate);
 			await Bun.write(textPath, "project literal prompt");
 
 			expect(await discoverSystemPromptOverride(cwd)).toEqual({
@@ -90,10 +89,10 @@ describe("system prompt Handlebars templates", () => {
 				path: textPath,
 				content: "project literal prompt",
 			});
-			const result = await buildSystemPrompt(options(cwd, { eagerTasks: true }));
+			const result = await buildSystemPrompt(options(cwd));
 			const text = result.systemPrompt.join("\n\n");
 			expect(text).toContain("project literal prompt");
-			expect(text).not.toContain("TASK_BRANCH=eager");
+			expect(text).not.toContain("TOOLS=");
 		});
 	});
 
@@ -102,7 +101,7 @@ describe("system prompt Handlebars templates", () => {
 			const projectPath = path.join(projectConfig, "SYSTEM.md");
 			const userTemplatePath = path.join(userConfig, "SYSTEM_TEMPLATE.md");
 			await Bun.write(projectPath, "project literal prompt");
-			await Bun.write(userTemplatePath, eagerTasksTemplate);
+			await Bun.write(userTemplatePath, liveDataTemplate);
 
 			expect(await discoverSystemPromptOverride(cwd)).toEqual({
 				kind: "text",
@@ -120,10 +119,10 @@ describe("system prompt Handlebars templates", () => {
 				await Bun.write(path.join(cwd, directory, "SYSTEM.md"), literalDataTemplate);
 				expect(await loadSystemPromptFiles({ cwd: nestedCwd })).toBe(literalDataTemplate);
 
-				await Bun.write(path.join(userConfig, "SYSTEM_TEMPLATE.md"), eagerTasksTemplate);
+				await Bun.write(path.join(userConfig, "SYSTEM_TEMPLATE.md"), liveDataTemplate);
 				const result = await buildSystemPrompt(options(nestedCwd));
 				expect(result.systemPrompt.join("\n")).toContain(literalDataTemplate.trim());
-				expect(result.systemPrompt.join("\n")).not.toContain("TASK_BRANCH=");
+				expect(result.systemPrompt.join("\n")).not.toContain("TOOLS=");
 			});
 		});
 	}
@@ -132,14 +131,14 @@ describe("system prompt Handlebars templates", () => {
 			await withDiscoveryHome(async ({ cwd, userConfig }) => {
 				const nestedCwd = path.join(cwd, "nested");
 				await Bun.write(path.join(nestedCwd, "file.txt"), "");
-				await Bun.write(path.join(cwd, directory, "SYSTEM_TEMPLATE.md"), eagerTasksTemplate);
+				await Bun.write(path.join(cwd, directory, "SYSTEM_TEMPLATE.md"), liveDataTemplate);
 				await Bun.write(path.join(userConfig, "SYSTEM.md"), "user literal prompt");
 
 				const override = await discoverSystemPromptOverride(nestedCwd);
 				expect(override?.kind).toBe("template");
 				expect(override?.path).toBe(path.join(cwd, directory, "SYSTEM_TEMPLATE.md"));
-				const result = await buildSystemPrompt(options(nestedCwd, { eagerTasks: true }));
-				expect(result.systemPrompt.join("\n\n")).toContain("TASK_BRANCH=eager");
+				const result = await buildSystemPrompt(options(nestedCwd));
+				expect(result.systemPrompt.join("\n\n")).toContain("TOOLS=");
 			});
 		});
 	}
@@ -148,7 +147,7 @@ describe("system prompt Handlebars templates", () => {
 		await withDiscoveryHome(async ({ cwd, userConfig }) => {
 			const templatePath = path.join(userConfig, "SYSTEM_TEMPLATE.md");
 			const textPath = path.join(userConfig, "SYSTEM.md");
-			await Bun.write(templatePath, eagerTasksTemplate);
+			await Bun.write(templatePath, liveDataTemplate);
 			await Bun.write(textPath, "user literal prompt");
 
 			expect(await discoverSystemPromptOverride(cwd)).toEqual({
@@ -163,8 +162,8 @@ describe("system prompt Handlebars templates", () => {
 		await withDiscoveryHome(async ({ cwd, projectConfig }) => {
 			await Bun.write(path.join(projectConfig, "SYSTEM_TEMPLATE.md"), liveDataTemplate);
 
-			const explicitTemplate = await render(cwd, eagerTasksTemplate, { eagerTasks: true });
-			expect(explicitTemplate.text).toContain("TASK_BRANCH=eager");
+			const explicitTemplate = await render(cwd, literalDataTemplate);
+			expect(explicitTemplate.text).toContain("INSERTED=");
 			expect(explicitTemplate.text).not.toContain("TOOLS=");
 
 			const explicitCustom = await buildSystemPrompt(options(cwd, { customPrompt: "explicit custom prompt" }));
@@ -194,7 +193,7 @@ describe("system prompt Handlebars templates", () => {
 
 	it("prefers the discovered literal without rendering a same-scope malformed template", async () => {
 		await withDiscoveryHome(async ({ cwd, projectConfig }) => {
-			await Bun.write(path.join(projectConfig, "SYSTEM_TEMPLATE.md"), "{{#if eagerTasks}}");
+			await Bun.write(path.join(projectConfig, "SYSTEM_TEMPLATE.md"), "{{#if computerEnabled}}");
 			await Bun.write(path.join(projectConfig, "SYSTEM.md"), "fallback literal prompt");
 
 			const result = await buildSystemPrompt(options(cwd));
@@ -206,11 +205,11 @@ describe("system prompt Handlebars templates", () => {
 
 	it("warns on a malformed discovered template and falls back to the bundled prompt", async () => {
 		await withDiscoveryHome(async ({ cwd, projectConfig }) => {
-			await Bun.write(path.join(projectConfig, "SYSTEM_TEMPLATE.md"), "{{#if eagerTasks}}");
+			await Bun.write(path.join(projectConfig, "SYSTEM_TEMPLATE.md"), "{{#if computerEnabled}}");
 
 			const result = await buildSystemPrompt(options(cwd));
 			const text = result.systemPrompt.join("\n\n");
-			expect(text).not.toContain("TASK_BRANCH=");
+			expect(text).not.toContain("TOOLS=");
 			expect(text).toContain("## Choosing a tool");
 		});
 	});
@@ -225,23 +224,6 @@ describe("system prompt Handlebars templates", () => {
 			expect(text).toContain("fallback literal prompt");
 			expect(text).not.toContain("## Choosing a tool");
 		});
-	});
-
-	it("uses the current eager-task flags to select the rendered branch", async () => {
-		using tempDir = TempDir.createSync("@omp-system-prompt-template-branches-");
-		const cwd = tempDir.path();
-
-		const defaultBranch = await render(cwd, eagerTasksTemplate);
-		const eagerBranch = await render(cwd, eagerTasksTemplate, { eagerTasks: true });
-		const alwaysBranch = await render(cwd, eagerTasksTemplate, { eagerTasksAlways: true });
-
-		expect(defaultBranch.text).toContain("TASK_BRANCH=default");
-		expect(defaultBranch.text).not.toContain("TASK_BRANCH=eager");
-		expect(defaultBranch.text).not.toContain("TASK_BRANCH=always");
-		expect(eagerBranch.text).toContain("TASK_BRANCH=eager");
-		expect(eagerBranch.text).not.toContain("TASK_BRANCH=default");
-		expect(alwaysBranch.text).toContain("TASK_BRANCH=always");
-		expect(alwaysBranch.text).not.toContain("TASK_BRANCH=eager");
 	});
 
 	it("refreshes live tools and device docs while retaining the footer and prelude guidance", async () => {
@@ -292,14 +274,13 @@ describe("system prompt Handlebars templates", () => {
 
 	it("does not recursively render Handlebars syntax contained in inserted data", async () => {
 		using tempDir = TempDir.createSync("@omp-system-prompt-template-literal-");
-		const inserted = "literal data {{eagerTasks}}";
+		const inserted = "literal data {{xdevDocs}}";
 		const result = await render(tempDir.path(), literalDataTemplate, {
-			eagerTasks: true,
 			xdevDocs: inserted,
 		});
 
 		expect(result.text).toContain(`INSERTED=${inserted}`);
-		expect(result.text).not.toContain("INSERTED=literal data true");
+		expect(result.text).not.toContain("INSERTED=literal data literal data");
 	});
 
 	it("rejects a template when customPrompt is also provided", async () => {
@@ -307,7 +288,7 @@ describe("system prompt Handlebars templates", () => {
 		await expect(
 			buildSystemPrompt(
 				options(tempDir.path(), {
-					systemPromptTemplate: eagerTasksTemplate,
+					systemPromptTemplate: liveDataTemplate,
 					customPrompt: "literal custom prompt",
 				}),
 			),
@@ -319,7 +300,7 @@ describe("system prompt Handlebars templates", () => {
 		await expect(
 			buildSystemPrompt(
 				options(tempDir.path(), {
-					systemPromptTemplate: eagerTasksTemplate,
+					systemPromptTemplate: liveDataTemplate,
 					resolvedCustomPrompt: "already loaded custom prompt",
 				}),
 			),
@@ -329,7 +310,7 @@ describe("system prompt Handlebars templates", () => {
 	it("surfaces malformed and empty explicit templates", async () => {
 		using tempDir = TempDir.createSync("@omp-system-prompt-template-invalid-");
 		await expect(
-			buildSystemPrompt(options(tempDir.path(), { systemPromptTemplate: "{{#if eagerTasks}}" })),
+			buildSystemPrompt(options(tempDir.path(), { systemPromptTemplate: "{{#if computerEnabled}}" })),
 		).rejects.toThrow("Invalid system prompt template");
 		await expect(buildSystemPrompt(options(tempDir.path(), { systemPromptTemplate: "" }))).rejects.toThrow(
 			"System prompt template must not be empty",
@@ -341,16 +322,15 @@ describe("system prompt Handlebars templates", () => {
 
 	it("keeps an existing literal custom prompt unexpanded", async () => {
 		using tempDir = TempDir.createSync("@omp-system-prompt-template-literal-custom-");
-		const literal = "legacy custom {{eagerTasks}}";
+		const literal = "legacy custom {{xdevDocs}}";
 		const result = await buildSystemPrompt(
 			options(tempDir.path(), {
 				customPrompt: literal,
-				eagerTasks: true,
 			}),
 		);
 		const text = result.systemPrompt.join("\n\n");
 
 		expect(text).toContain(literal);
-		expect(text).not.toContain("legacy custom true");
+		expect(text).not.toContain("legacy custom undefined");
 	});
 });

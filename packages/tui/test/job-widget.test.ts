@@ -141,22 +141,6 @@ describe("describeJobTile", () => {
 		expect(texts(role(described, "omp.job.tile.stage")!)).toBe("nvfp4 b1 run 32/48");
 	});
 
-	it("names a subagent's tile by the subagent, its estimate a labelled ring beside the widget's figure", () => {
-		const described = describeJobTile(
-			tile({
-				id: "ConsumersMigration",
-				type: "task",
-				label: "ConsumersMigration",
-				widget: decodeBench,
-				completionPercent: 68.4,
-			}),
-		);
-		expect(texts(role(described, "omp.job.tile.title")!)).toBe("ConsumersMigration");
-		expect(role(described, "omp.job.tile.id")).toBeUndefined();
-		expect(texts(role(described, "omp.job.tile.figure")!)).toBe("decode 186 tok/s ▲ 15%");
-		expect(role(described, "omp.job.tile.ring")?.p).toMatchObject({ style: "ring", value: 0.68, label: "68%" });
-	});
-
 	it("splits a ratio figure, lists the first keys of a bars block and counts the rest", () => {
 		const described = describeJobTile(tile({ widget: modelEval }));
 		expect(texts(role(described, "omp.job.tile.figure")!)).toBe("passed 71 / 90");
@@ -164,22 +148,12 @@ describe("describeJobTile", () => {
 		expect(bars.map(meter => prop(meter, "value"))).toEqual([26 / 30, 24 / 30, 21 / 30]);
 	});
 
-	it("gives a tile with nothing to chart its stage as the body, never a clock for a figure", () => {
+	it("reports a failed tile without a chart and keeps its clock", () => {
 		const plain = describeJobTile(tile({ status: "failed", live: false, exitCode: 101 }));
 		expect(role(plain, "omp.job.tile.figure")).toBeUndefined();
 		expect(ofKind(role(plain, "omp.job.tile.head")!, "elapsed")).toHaveLength(1);
 		expect(prop(role(plain, "omp.job.tile.dot"), "spans")).toEqual([{ t: "✕", s: "error" }]);
 		expect(texts(role(plain, "omp.job.tile.lead")!)).toBe("exit 101");
-
-		const task = describeJobTile(
-			tile({ id: "Tuner", type: "task", label: "Tuner", completionPercent: 68, stage: "driver edits done" }),
-		);
-		expect(role(task, "omp.job.tile.lead")?.p).toMatchObject({ wrap: "word" });
-		expect(texts(role(task, "omp.job.tile.lead")!)).toBe("driver edits done");
-		// A command's long last line is cut to a few lines of the tile.
-		const long = describeJobTile(tile({ stage: "x".repeat(200) }));
-		expect(texts(role(long, "omp.job.tile.lead")!)).toHaveLength(120);
-		expect(prop(role(task, "omp.job.tile.ring"), "value")).toBeCloseTo(0.68);
 	});
 
 	it("draws nothing of a widget no spec drives, and no text line the stage repeats", () => {

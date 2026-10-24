@@ -1,7 +1,6 @@
 import { beforeAll, describe, expect, it } from "bun:test";
 import { getThemeByName, initTheme, type Theme } from "../src/theme";
 import { loadTheme } from "../src/theme/loader";
-import { debugToolRenderer } from "../src/tools/debug";
 import { renderDefaultToolExecution } from "../src/tools/default-renderer";
 import { renderResult as renderLspResult } from "../src/tools/lsp";
 import { renderMCPResult } from "../src/tools/mcp";
@@ -39,16 +38,6 @@ describe("expanded tool results reveal clipped rows", () => {
 			expanded =>
 				renderLspResult(
 					{ content: [{ type: "text", text: `1 error(s)\nsrc/a.ts:3:5 [error] [ts] ${long} (2345)` }] },
-					{ expanded, isPartial: false },
-					theme,
-				),
-		],
-		[
-			"debug output",
-			1,
-			expanded =>
-				debugToolRenderer.renderResult(
-					{ content: [{ type: "text", text: long }] },
 					{ expanded, isPartial: false },
 					theme,
 				),

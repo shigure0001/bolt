@@ -24,7 +24,7 @@ The agent/root locations respect profiles, `PI_CONFIG_DIR`, and—only for the d
 
 Additional rule inside each `.env` file: every `OMP_*` key is mirrored to its `PI_*` alias, and that mirrored value replaces a same-file `PI_*` value. This mirroring applies to parsed dotenv files, not arbitrary variables inherited from the parent process.
 
-Variables declared on a setting definition (see [settings precedence](./settings.md#precedence)) are parsed by the setting's type unless noted otherwise. Boolean ones (`PI_PY`, `PI_JS`, `PI_INTENT_TRACING`, `PI_AUTO_QA`, `HINDSIGHT_AUTO_RECALL`, …) follow `parseFlag`: an empty value is ignored, so the setting applies; `1`, `y`, `true`, `yes`, and `on` (all-lowercase or all-uppercase) mean true; any other non-empty value means false.
+Variables declared on a setting definition (see [settings precedence](./settings.md#precedence)) are parsed by the setting's type unless noted otherwise. Boolean ones (`PI_PY`, `PI_INTENT_TRACING`, `PI_AUTO_QA`, `HINDSIGHT_AUTO_RECALL`, …) follow `parseFlag`: an empty value is ignored, so the setting applies; `1`, `y`, `true`, `yes`, and `on` (all-lowercase or all-uppercase) mean true; any other non-empty value means false.
 
 ---
 
@@ -454,7 +454,6 @@ Small typed decisions the app makes about its own state (the `auto` thinking-lev
 | Variable               | Default / behavior                                                                                  |
 | ---------------------- | --------------------------------------------------------------------------------------------------- |
 | `PI_PY`                | Boolean flag override for Python; unset or empty defers to `eval.py` (default enabled)              |
-| `PI_JS`                | Boolean flag override for JavaScript; unset or empty defers to `eval.js` (default enabled)          |
 | `PI_PYTHON_SKIP_CHECK` | Truthy flag skips Python interpreter availability checks (subprocess runner still starts on demand) |
 | `PI_PYTHON_IPC_TRACE`  | Truthy flag logs NDJSON frames exchanged with the Python runner subprocess                          |
 | `VIRTUAL_ENV`          | Highest-priority venv path for Python runtime resolution                                            |

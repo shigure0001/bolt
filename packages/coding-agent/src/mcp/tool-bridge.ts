@@ -723,7 +723,7 @@ export class MCPTool implements CustomTool<TSchema, MCPToolDetails> {
 	readonly mcpToolName: string;
 	/** Server name */
 	readonly mcpServerName: string;
-	/** Server-declared read-only behavior for prewalk; approval stays conservative. */
+	/** Server-declared read-only behavior; approval stays conservative. */
 	readonly mcpReadOnlyHint: boolean | undefined;
 	readonly approval = "write" as const;
 	/** Render completed MCP calls with the result header replacing the pending call header. */

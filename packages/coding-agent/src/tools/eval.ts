@@ -1,17 +1,11 @@
 import { type } from "@oh-my-pi/omptype";
-import type {
-	AgentTool,
-	AgentToolContext,
-	AgentToolResult,
-	AgentToolUpdateCallback,
-	ToolSpeculationPolicy,
-} from "@oh-my-pi/pi-agent-core";
+import type { AgentTool, AgentToolContext, AgentToolResult, AgentToolUpdateCallback } from "@oh-my-pi/pi-agent-core";
 import type { ImageContent, ToolExample } from "@oh-my-pi/pi-ai";
 import { formatBackgroundNotice } from "@oh-my-pi/pi-tui/tools/bash";
 import { parseConfiguredThinkingLevel } from "@oh-my-pi/pi-tui/thinking";
 import { isRecord, prompt, sanitizeText } from "@oh-my-pi/pi-utils";
 import { raceJobSettlement, resolveAutoBackgroundWaitMs } from "../async";
-import { jsBackend, pythonBackend } from "../eval";
+import { pythonBackend } from "../eval";
 import type { ExecutorBackend, ExecutorBackendResult } from "../eval/backend";
 import { EVAL_TIMEOUT_PAUSE_OP, EVAL_TIMEOUT_RESUME_OP } from "../eval/bridge-timeout";
 import { IdleTimeout } from "../eval/idle-timeout";
@@ -19,8 +13,6 @@ import { type EvalPreludeDefinition, evalPreludeSummary, getEnabledEvalPreludes 
 import { prepareEvalSource } from "../eval/input";
 import type { BackendProbeOptions } from "../eval/probe";
 import { defaultEvalSessionId } from "../eval/session-id";
-import { EvalShadowCellSession } from "../eval/speculation/cell-session";
-import { runWithEvalShadowCell } from "../eval/speculation/runtime-context";
 import type {
 	EvalCellResult,
 	EvalLanguage,
@@ -29,74 +21,26 @@ import type {
 	EvalViewEntry,
 } from "@oh-my-pi/pi-tui/tools/eval";
 import evalDescription from "../prompts/tools/eval.md" with { type: "text" };
-import evalAgentsTopic from "../prompts/tools/eval-agents.md" with { type: "text" };
-import evalJudgeTopic from "../prompts/tools/eval-judge.md" with { type: "text" };
 import evalHelpersTopic from "../prompts/tools/eval-helpers.md" with { type: "text" };
 import { DEFAULT_MAX_BYTES, OutputSink, type OutputSummary, TailBuffer } from "@oh-my-pi/pi-tui/tools/streaming-output";
-import { sessionDelegationBias } from "../task/prompt-policy";
-import { resolveSpawnPolicy } from "../task/spawn-policy";
-import { canSpawnAtDepth } from "../task/types";
 import { webpExclusionForModel } from "@oh-my-pi/pi-tui/chat/image-loading";
 import { formatDimensionNote, resizeImage } from "../utils/image-resize";
 import type { ToolSession } from ".";
 import { truncateForPrompt } from "./approval";
-import { type EvalBackendsAllowance, resolveEvalBackends } from "./eval-backends";
+import { resolveEvalBackends } from "./eval-backends";
 import { recordStatusEvent, type StatusEventLog } from "@oh-my-pi/pi-tui/tools/eval";
 import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { resolveOutputMaxColumns, resolveOutputSinkArtifactMaxBytes, resolveOutputSinkHeadBytes } from "./output-meta";
 import { ToolAbortError, throwIfAborted } from "./tool-errors";
-import { hasWaitTool } from "./wait";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { toolResult } from "./tool-result";
 import { clampTimeout } from "./tool-timeouts";
 
-import {
-	cfgEvalAutoBackgroundEnabled,
-	cfgEvalAutoBackgroundThresholdMs,
-	cfgEvalAutoProvision,
-	cfgEvalToolsEnabled,
-} from "../eval/settings";
-import { cfgTaskMaxRecursionDepth } from "../task/settings";
-import { cfgToolsMaxTimeout, cfgToolsSpeculativeExecutionEnabled } from "./settings";
+import { cfgEvalAutoBackgroundEnabled, cfgEvalAutoBackgroundThresholdMs } from "../eval/settings";
+import { cfgToolsMaxTimeout } from "./settings";
 
-/** Language tokens the eval tool accepts, in stable display order. */
-export type EvalLanguageToken = "py" | "js";
-const EVAL_LANGUAGE_ORDER: readonly EvalLanguageToken[] = ["py", "js"];
-const EVAL_LANGUAGE_RUNTIME: Record<EvalLanguageToken, string> = {
-	py: '"py": Python with IPython-style magics (not IPython)',
-	js: '"js": Bun',
-};
-const EVAL_LANGUAGE_NAME: Record<EvalLanguageToken, string> = {
-	py: "Python",
-	js: "JavaScript",
-};
-
-/** Join names as an English "or" list: ["A"]→"A", ["A","B"]→"A or B", 3+→"A, B, or C". */
-function joinWithOr(items: readonly string[]): string {
-	if (items.length <= 1) return items[0] ?? "";
-	if (items.length === 2) return `${items[0]} or ${items[1]}`;
-	return `${items.slice(0, -1).join(", ")}, or ${items[items.length - 1]}`;
-}
-
-function describeLanguageField(langs: readonly EvalLanguageToken[]): string {
-	return langs.map(lang => EVAL_LANGUAGE_RUNTIME[lang]).join("; ");
-}
-
-/** One-line discovery summary listing the runtimes available this session. */
-function summarizeEvalLanguages(langs: readonly EvalLanguageToken[]): string {
-	const names = langs.map(lang => EVAL_LANGUAGE_NAME[lang]);
-	const list = names.length > 0 ? joinWithOr(names) : "Python or JavaScript";
-	return `Execute ${list} in persistent kernels; load scripts or install packages`;
-}
-
-/** Resolved-allowance → enabled language tokens, preserving display order. */
-function enabledEvalLanguages(backends: EvalBackendsAllowance): EvalLanguageToken[] {
-	const allowed: Record<EvalLanguageToken, boolean> = {
-		py: backends.python,
-		js: backends.js,
-	};
-	return EVAL_LANGUAGE_ORDER.filter(lang => allowed[lang]);
-}
+/** Only Python is an eval language. */
+const EVAL_SUMMARY = "Execute Python in a persistent kernel; load scripts or install packages";
 
 const evalCellCommonFields = {
 	code: type("string").describe("Code or standalone % command; top-level await works."),
@@ -106,33 +50,15 @@ const evalCellCommonFields = {
 };
 
 /**
- * Per-call input: a single cell. State persists within a language across
- * separate eval calls and across tool calls, so each call is one logical step
- * and later calls reuse what earlier ones defined. This static schema carries
- * the full language union for typing; {@link buildEvalSchema} narrows the wire
- * copy per session so disabled backends are never advertised to the model.
+ * Per-call input: a single Python cell. State persists across separate eval
+ * calls and across tool calls, so each call is one logical step and later
+ * calls reuse what earlier ones defined.
  */
 export const evalSchema = type({
-	language: type("'py' | 'js'").describe(describeLanguageField(EVAL_LANGUAGE_ORDER)),
 	...evalCellCommonFields,
 });
 export type EvalToolParams = typeof evalSchema.infer;
 export type EvalCellInput = EvalToolParams;
-
-/**
- * Build a session-scoped copy of the eval schema whose `language` enum and field
- * descriptions advertise only the runtimes enabled for this session. Disabled
- * backends never reach the model: the wire schema, BM25 discovery corpus, and
- * tool description stay in lockstep with {@link resolveEvalBackends}. The static
- * {@link evalSchema} (full union) remains the type-level source of truth.
- */
-function buildEvalSchema(langs: readonly EvalLanguageToken[]): typeof evalSchema {
-	const schema = type({
-		language: type.enumerated(...langs).describe(describeLanguageField(langs)),
-		...evalCellCommonFields,
-	});
-	return schema;
-}
 
 export type EvalToolResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -149,21 +75,8 @@ const MAX_VIEWS_PER_CELL = 16;
 const LIVE_UPDATE_INTERVAL_MS = 50;
 
 export interface EvalToolDescriptionOptions {
-	py?: boolean;
-	js?: boolean;
-	/**
-	 * Parent spawn policy (`getSessionSpawns`). `true`/omitted means unrestricted,
-	 * `false`/`""` hides `agent()`, and a comma list drives the advertised default.
-	 */
-	spawns?: boolean | string | null;
 	/** Advertise auto-backgrounding of long-running cells in the tool prompt. */
 	autoBackgroundEnabled?: boolean;
-	/** Advertise `@tool` / `tool(fn)` and the `tools` spawn option (`eval.tools.enabled`). */
-	evalTools?: boolean;
-	/** Push `workpool()` as the default for independent items (model delegation bias `eager`). Default: true. */
-	eagerDelegation?: boolean;
-	/** Point blocked callers at the `wait` tool; false when the session lacks it (subagents). Default: true. */
-	waitTool?: boolean;
 	/** Enabled preludes; each becomes an `xd://eval/<name>` doc topic. */
 	preludes?: readonly Pick<EvalPreludeDefinition, "name" | "documentation">[];
 	/**
@@ -171,38 +84,16 @@ export interface EvalToolDescriptionOptions {
 	 * when the session cannot `read` (the only transport for topic docs).
 	 */
 	inlineTopics?: boolean;
-	/** Whether missing runtimes and environments may be provisioned automatically. */
-	autoProvision?: boolean;
-}
-
-function evalTemplateContext(options: EvalToolDescriptionOptions) {
-	const spawnPolicy = resolveSpawnPolicy(options.spawns ?? true);
-	return {
-		py: options.py ?? true,
-		js: options.js ?? true,
-		evalTools: options.evalTools ?? true,
-		eagerDelegation: options.eagerDelegation ?? true,
-		waitTool: options.waitTool ?? true,
-		autoBackgroundEnabled: options.autoBackgroundEnabled ?? false,
-		spawns: spawnPolicy.enabled,
-		spawnDefaultAgent: spawnPolicy.defaultAgent,
-		spawnAllowedAgentsText: spawnPolicy.allowedPromptText,
-		autoProvision: options.autoProvision ?? true,
-	};
 }
 
 /**
  * On-demand eval docs (`topic → markdown`) served at `xd://eval/<topic>`:
- * `judge` (including completion), `helpers`, `agents` (when spawning is allowed),
- * and one per enabled prelude.
+ * `helpers`, plus one per enabled prelude.
  */
 export function getEvalDocTopics(options: EvalToolDescriptionOptions = {}): Record<string, string> {
-	const context = evalTemplateContext(options);
 	const topics: Record<string, string> = {
-		judge: prompt.render(evalJudgeTopic, context),
-		helpers: prompt.render(evalHelpersTopic, context),
+		helpers: prompt.render(evalHelpersTopic),
 	};
-	if (context.spawns) topics.agents = prompt.render(evalAgentsTopic, context);
 	for (const prelude of options.preludes ?? []) {
 		const doc = prelude.documentation.trim();
 		if (doc) topics[prelude.name] = doc;
@@ -218,7 +109,7 @@ export function getEvalToolDescription(options: EvalToolDescriptionOptions = {})
 		if (summary) preludes.push({ name: prelude.name, summary });
 	}
 	return prompt.render(evalDescription, {
-		...evalTemplateContext(options),
+		autoBackgroundEnabled: options.autoBackgroundEnabled ?? false,
 		preludes,
 		inlineTopics: options.inlineTopics ? Object.values(getEvalDocTopics(options)).join("\n\n") : undefined,
 	});
@@ -238,10 +129,7 @@ interface ResolvedEvalCell {
 	title?: string;
 	code: string;
 	displayCode: string;
-	environmentChange?: boolean;
 	filename?: string;
-	packages?: string[];
-	environment?: "managed" | "project";
 	timeoutMs: number;
 	reset: boolean;
 	resolved: ResolvedBackend;
@@ -263,36 +151,16 @@ function detailsNotice(cells: ResolvedEvalCell[]): string | undefined {
 	return notices.length > 0 ? notices.join(" ") : undefined;
 }
 
-async function resolveBackend(
-	session: ToolSession,
-	language: EvalLanguage,
-	probeOpts?: BackendProbeOptions,
-): Promise<ResolvedBackend> {
-	const backends = resolveEvalBackends(session);
-	const allowPy = backends.python;
-	const allowJs = backends.js;
-
-	if (language === "python") {
-		if (!allowPy) throw new ToolError("Python backend is disabled (PI_PY=0 or eval.py = false).");
-		const available = await pythonBackend.isAvailable(session, probeOpts);
-		throwIfAborted(probeOpts?.signal);
-		if (!available) {
-			throw new ToolError(
-				allowJs
-					? 'Python backend is unavailable in this session. Pass language: "js" or install the python kernel.'
-					: 'Python backend is unavailable in this session. Install the python kernel to use language: "py".',
-			);
-		}
-		return { backend: pythonBackend };
+async function resolveBackend(session: ToolSession, probeOpts?: BackendProbeOptions): Promise<ResolvedBackend> {
+	if (!resolveEvalBackends(session).python) {
+		throw new ToolError("Python backend is disabled (PI_PY=0 or eval.py = false).");
 	}
-	if (language !== "js") throw new ToolError(`Unsupported eval language: ${String(language)}`);
-	if (!allowJs) throw new ToolError("JavaScript backend is disabled (PI_JS=0 or eval.js = false).");
-	return { backend: jsBackend };
-}
-function formatEvalInputLanguage(value: string): string {
-	if (value === "py" || value === "python") return "python";
-	if (value === "js" || value === "javascript") return "javascript";
-	return value;
+	const available = await pythonBackend.isAvailable(session, probeOpts);
+	throwIfAborted(probeOpts?.signal);
+	if (!available) {
+		throw new ToolError("Python backend is unavailable in this session. Install the python kernel to use eval.");
+	}
+	return { backend: pythonBackend };
 }
 
 export class EvalTool implements AgentTool<typeof evalSchema> {
@@ -300,13 +168,11 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 	readonly approval = "exec" as const;
 	readonly formatApprovalDetails = (args: unknown): string[] => {
 		const params = isRecord(args) ? args : {};
-		const language =
-			typeof params.language === "string" ? formatEvalInputLanguage(params.language) : "javascript (default)";
 		const code = typeof params.code === "string" ? params.code : "";
-		return [`Language: ${language}`, `Code:\n${truncateForPrompt(code)}`];
+		return ["Language: python", `Code:\n${truncateForPrompt(code)}`];
 	};
 	get summary(): string {
-		return summarizeEvalLanguages(this.#enabledLanguages());
+		return EVAL_SUMMARY;
 	}
 
 	readonly loadMode = "essential";
@@ -333,22 +199,10 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 	#descriptionOptions(): EvalToolDescriptionOptions {
 		const session = this.session;
 		if (!session) return {};
-		const backends = resolveEvalBackends(session);
-		const depthAllowsSpawning = canSpawnAtDepth(
-			cfgTaskMaxRecursionDepth.get(session.settings),
-			session.taskDepth ?? 0,
-		);
 		return {
-			py: backends.python,
-			js: backends.js,
-			spawns: depthAllowsSpawning ? (session.getSessionSpawns?.() ?? "*") : false,
 			autoBackgroundEnabled: cfgEvalAutoBackgroundEnabled.get(session.settings),
-			evalTools: cfgEvalToolsEnabled.get(session.settings),
-			eagerDelegation: sessionDelegationBias(session) === "eager",
-			waitTool: hasWaitTool(session),
 			preludes: this.#advertisedPreludes(session),
 			inlineTopics: session.isToolActive?.("read") === false,
-			autoProvision: cfgEvalAutoProvision.get(session.settings),
 		};
 	}
 
@@ -357,74 +211,27 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 		return session.getAdvertisedEvalPreludes?.() ?? getEnabledEvalPreludes(session.getEvalPreludes?.() ?? []);
 	}
 
-	/** Only syntax not obvious from the field schema; filtered by enabled language. */
+	/** Only syntax not obvious from the field schema. */
 	static readonly #examples: readonly ToolExample<typeof evalSchema.infer>[] = [
 		{
 			caption: "Load a script with spaces without echoing its source",
-			call: { language: "py", code: '%load "scripts/my setup.py"' },
+			call: { code: '%load "scripts/my setup.py"' },
 		},
 	];
 	get examples(): readonly ToolExample<typeof evalSchema.infer>[] {
-		const langs = new Set(this.#enabledLanguages());
-		return EvalTool.#examples.filter(ex => "call" in ex && langs.has(ex.call.language));
+		return EvalTool.#examples;
 	}
 	get parameters(): typeof evalSchema {
-		const langs = this.#enabledLanguages();
-		if (langs.length === 0 || langs.length === EVAL_LANGUAGE_ORDER.length) return evalSchema;
-		const key = langs.join(",");
-		if (this.#paramsKey !== key) {
-			this.#cachedParams = buildEvalSchema(langs);
-			this.#paramsKey = key;
-		}
-		return this.#cachedParams ?? evalSchema;
+		return evalSchema;
 	}
 	readonly concurrency = "exclusive";
 	readonly strict = true;
 	readonly intent = (args: Partial<typeof evalSchema.infer>): string | undefined => {
 		const title = typeof args.title === "string" ? args.title : undefined;
-		const language = typeof args.language === "string" ? formatEvalInputLanguage(args.language) : "javascript";
-		return title || `running ${language}`;
+		return title || "running python";
 	};
 
-	readonly speculation: ToolSpeculationPolicy = {
-		stream: {
-			open: async context => {
-				if (!this.session) return undefined;
-				// The coordinator also exists for `task.speculativeLaunch`; eval shadows
-				// belong to the read/eval speculation slice only.
-				if (!cfgToolsSpeculativeExecutionEnabled.get(this.session.settings)) return undefined;
-				if (cfgEvalAutoBackgroundEnabled.get(this.session.settings)) return undefined;
-				const parentToolCallId = context.parentToolCallId;
-				const cell = new EvalShadowCellSession({
-					coordinator: context.coordinator,
-					parentToolCallId,
-					session: this.session,
-					cwd: this.session.cwd,
-					sessionId: this.session.getEvalSessionId?.() ?? defaultEvalSessionId(this.session),
-					kernelOwnerId: this.session.getEvalKernelOwnerId?.() ?? undefined,
-					onDiscard: () => {
-						if (this.#shadowCells.get(parentToolCallId) === cell) this.#shadowCells.delete(parentToolCallId);
-					},
-				});
-				this.#shadowCells.set(parentToolCallId, cell);
-				return cell;
-			},
-		},
-	};
 	readonly #proxyExecutor?: EvalProxyExecutor;
-
-	#paramsKey?: string;
-	#cachedParams?: typeof evalSchema;
-	readonly #shadowCells = new Map<string, EvalShadowCellSession>();
-	readonly #environmentModes: Partial<Record<EvalLanguage, "managed" | "project">> = {};
-
-	/**
-	 * Languages enabled for this session, in display order. Detached tools (no
-	 * session) fall back to the shipped defaults (py/js; rb/jl are opt-in).
-	 */
-	#enabledLanguages(): EvalLanguageToken[] {
-		return this.session ? enabledEvalLanguages(resolveEvalBackends(this.session)) : ["py", "js"];
-	}
 
 	constructor(
 		private readonly session: ToolSession | null,
@@ -446,8 +253,6 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 		}
 		params = validated;
 
-		const shadowCell = this.#shadowCells.get(_toolCallId);
-		this.#shadowCells.delete(_toolCallId);
 		if (this.#proxyExecutor) {
 			return this.#proxyExecutor(params, signal);
 		}
@@ -458,7 +263,6 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 		const session = this.session;
 		const excludeWebP = webpExclusionForModel(session.getActiveModel?.());
 
-		const cellLanguage: EvalLanguage = params.language === "py" ? "python" : params.language;
 		// Bound backend discovery by the eval cell's own timeout and abort signal:
 		// the cell IdleTimeout is armed only later in #runCells, so a hung runtime
 		// probe would otherwise wedge the whole turn (issue #9466).
@@ -466,20 +270,15 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 			params.timeout === 0
 				? 0
 				: clampTimeout("eval", params.timeout, cfgToolsMaxTimeout.get(session.settings)) * 1000;
-		const resolved = await resolveBackend(session, cellLanguage, { signal, timeoutMs: cellTimeoutMs });
-		const source = await prepareEvalSource(params, session, signal);
-		if (shadowCell && (source.filename || source.packages?.length || source.environment)) {
-			await shadowCell.discard("file-backed or environment-changing eval requires authoritative execution");
-		}
+		const resolved = await resolveBackend(session, { signal, timeoutMs: cellTimeoutMs });
+		const source = await prepareEvalSource(params.code, session, signal);
 		const cells: ResolvedEvalCell[] = [
 			{
 				index: 0,
 				title: params.title,
-				...source,
+				code: source.code,
 				displayCode: params.code,
-				environmentChange: source.environment !== undefined,
-				environment:
-					source.environment ?? (this.#environmentModes[cellLanguage] === "project" ? "project" : undefined),
+				filename: source.filename,
 				timeoutMs: cellTimeoutMs,
 				reset: params.reset ?? false,
 				resolved,
@@ -497,36 +296,16 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 			runSignal: AbortSignal | undefined,
 			emitUpdate: ((text: string, details: EvalToolDetails) => void) | undefined,
 		): Promise<AgentToolResult<EvalToolDetails | undefined>> => {
-			// Re-check the retained namespace against the streamed planning snapshot:
-			// timers, background work, or concurrent session users may have changed
-			// it after the speculative children started. On mismatch the children
-			// were projected from stale state, so discard the session and run the
-			// cell without it (claims then miss and execution is ordinary).
-			let activeShadowCell = shadowCell;
-			const snapshotToken = shadowCell?.snapshotToken;
-			if (shadowCell && snapshotToken) {
-				const tokenIsPython = snapshotToken.language === "py";
-				let current = tokenIsPython === (cellLanguage === "python");
-				if (current) {
-					current = await shadowCell.verifySnapshotCurrent().catch(() => false);
-				}
-				if (!current) {
-					await shadowCell.discard("retained eval state changed after shadow planning").catch(() => undefined);
-					activeShadowCell = undefined;
-				}
-			}
-			const execution = runWithEvalShadowCell(activeShadowCell, () =>
-				this.#runCells({
-					session,
-					cells,
-					languages,
-					notice,
-					excludeWebP,
-					signal: runSignal,
-					sessionAbortController,
-					emitUpdate,
-				}),
-			);
+			const execution = this.#runCells({
+				session,
+				cells,
+				languages,
+				notice,
+				excludeWebP,
+				signal: runSignal,
+				sessionAbortController,
+				emitUpdate,
+			});
 			return session.trackEvalExecution?.(execution, sessionAbortController) ?? execution;
 		};
 
@@ -870,8 +649,6 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 						idleTimeoutMs,
 						reset: cell.reset,
 						filename: cell.filename,
-						packages: cell.packages,
-						environment: cell.environment,
 						onChunk: chunk => {
 							outputSink!.push(chunk);
 						},
@@ -951,11 +728,7 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 					}
 				}
 
-				const runtimeOutput = result.output.trim();
-				const stdoutTrimmed =
-					cell.environmentChange && result.exitCode === 0
-						? `${runtimeOutput ? `${runtimeOutput}\n` : ""}Eval environment: ${cell.environment}.`
-						: runtimeOutput;
+				const stdoutTrimmed = result.output.trim();
 				const imageText = cellImageNotes.join("\n");
 				const cellOutput = [stdoutTrimmed, imageText].filter(Boolean).join("\n\n");
 				cellResult.output = cellOutput;
@@ -999,9 +772,6 @@ export class EvalTool implements AgentTool<typeof evalSchema> {
 						.done();
 				}
 
-				if (cell.environmentChange && cell.environment) {
-					this.#environmentModes[backend.id] = cell.environment;
-				}
 				cellResult.status = "complete";
 				pushUpdate();
 			}

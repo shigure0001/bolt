@@ -19,7 +19,6 @@ import type { Rule } from "../capability/rule";
 import type { Skill } from "../extensibility/skills";
 import type { AgentRegistry } from "../registry/agent-registry";
 import type { LocalProtocolOptions } from "./local-protocol";
-import type { SessionEntry } from "../session/session-entries";
 import type { ToolSession } from "../tools";
 import type { CoordinationDetails } from "@oh-my-pi/pi-tui/tools/wait";
 import type { ProcReadDetails, ProcWriteDetails } from "@oh-my-pi/pi-tui/tools/proc-render";
@@ -78,7 +77,7 @@ export type SchemeWriteScope = "workspace" | "sandbox" | "coordination" | "devic
 export interface SchemeWritePolicy {
 	/**
 	 * Who performs the write.
-	 * - `file`: tools (`write`, `edit`, `ast_edit`) write the file {@link ProtocolHandler.locate}
+	 * - `file`: tools (`write`, `edit`) write the file {@link ProtocolHandler.locate}
 	 *   returns with `{ create: true }`; the handler has no `write` hook.
 	 * - `handler`: {@link ProtocolHandler.write} performs it (messages, stdin, settings, remote
 	 *   hosts, devices); file-editing tools refuse the URL even when it locates a backing file.
@@ -91,7 +90,7 @@ export interface SchemeWritePolicy {
 	 */
 	payload: "text" | "verbatim";
 	scope: SchemeWriteScope;
-	/** Approval tier for `write`/`edit`/`ast_edit` targeting this URL. `session` is absent when approval is evaluated outside a tool session. */
+	/** Approval tier for `write`/`edit` targeting this URL. `session` is absent when approval is evaluated outside a tool session. */
 	tier(url: InternalUrl, content: string | undefined, session: ToolSession | undefined): ToolApprovalDecision;
 	/** True when `write` may omit `content` for this URL (`proc://<id>/kill`). */
 	contentOptional?(url: InternalUrl): boolean;
@@ -155,7 +154,6 @@ export interface SchemeHost {
 	ruleCount: number;
 	/** Active `memory.backend` id; undefined when memory is off or empty. */
 	memoryBackend?: string;
-	securityEnabled: boolean;
 	/** The user approves `cfg://` writes for this session (top-level TUI session). */
 	settingsApproval: boolean;
 	/** The `task` tool is active, so subagent output and transcripts exist to address. */
@@ -286,18 +284,6 @@ export interface ResolveContext {
 	settings?: Settings;
 	/** Caller's abort signal. */
 	signal?: AbortSignal;
-	/**
-	 * Whether experimental context-management resources are enabled for this
-	 * caller. This is passed explicitly so resource resolution cannot infer a
-	 * feature gate from process-global settings.
-	 */
-	experimentalContextManagement?: boolean;
-	/**
-	 * Current live branch owned by the caller's session. `history://current/full`
-	 * uses only this callback; it never falls back to a registry entry, session
-	 * file, or on-disk transcript.
-	 */
-	getSessionBranch?: () => readonly SessionEntry[];
 	/**
 	 * Calling session's `local://` root mapping. When present, the local-protocol
 	 * handler resolves the URL against THIS session's artifacts dir instead of

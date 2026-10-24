@@ -3,7 +3,6 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { findFreeCdpPort, waitForCdp } from "@oh-my-pi/pi-coding-agent/tools/browser/attach";
 import { prepareElementUpload } from "@oh-my-pi/pi-coding-agent/tools/browser/interactions";
@@ -279,7 +278,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	site?.stop(true);
 	if (tempDir) await fs.rm(tempDir, { recursive: true, force: true });
 	// Connected tabs leave their staging folders for the sweep; this process made them.

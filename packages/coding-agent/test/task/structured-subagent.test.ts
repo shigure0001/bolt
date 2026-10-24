@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import path from "node:path";
+import { type } from "@oh-my-pi/omptype";
 import { unregisterCustomApis } from "@oh-my-pi/pi-ai/api-registry";
 import { createMockModel, registerMockApi } from "@oh-my-pi/pi-ai/providers/mock";
 import { closeModelCache } from "@oh-my-pi/pi-catalog/model-cache";
@@ -29,7 +30,6 @@ import { AgentStorage } from "@oh-my-pi/pi-coding-agent/session/agent-storage";
 
 import { TaskTool } from "@oh-my-pi/pi-coding-agent/task";
 import * as discoveryModule from "@oh-my-pi/pi-coding-agent/task/discovery";
-import { createEvalCustomTools } from "@oh-my-pi/pi-coding-agent/task/eval-tools";
 import * as executorModule from "@oh-my-pi/pi-coding-agent/task/executor";
 import * as isolationRunner from "@oh-my-pi/pi-coding-agent/task/isolation-runner";
 import {
@@ -53,7 +53,7 @@ const AGENT: AgentDefinition = {
 	description: "Test worker",
 	systemPrompt: "Do the assigned work.",
 	source: "bundled",
-	tools: ["read", "write", "ast_grep"],
+	tools: ["read", "write"],
 	output: { type: "object", properties: { agent: { type: "boolean" } } },
 };
 
@@ -345,7 +345,7 @@ describe("structured subagent primitive", () => {
 		const policy = await resolveEffectiveSubagentPolicy(
 			request({ session: session({ planMode: true }), enableLsp: true, enableIrc: true }),
 		);
-		expect(policy.effectiveAgent.tools).toEqual(["read", "grep", "glob", "web_search", "ast_grep"]);
+		expect(policy.effectiveAgent.tools).toEqual(["read", "grep", "glob", "web_search"]);
 		expect(policy.effectiveAgent.spawns).toBeUndefined();
 		expect(policy.enableLsp).toBe(false);
 		expect(policy.enableIrc).toBe(false);
@@ -359,14 +359,15 @@ describe("structured subagent primitive", () => {
 		).rejects.toThrow("isolation, apply, and merge controls are unavailable in plan mode");
 
 		const planSession = session({ planMode: true });
-		const customTools = createEvalCustomTools(planSession, [
+		const customTools = [
 			{
 				name: "word_count",
+				label: "Word Count",
 				description: "Count words",
-				parameters: { type: "object", properties: {} },
-				language: "python",
+				parameters: type({}),
+				execute: async () => ({ content: [] }),
 			},
-		]);
+		];
 		await expect(resolveEffectiveSubagentPolicy(request({ session: planSession, customTools }))).rejects.toThrow(
 			"Eval-defined tools are unavailable in plan mode.",
 		);
@@ -856,7 +857,6 @@ describe("structured subagent primitive", () => {
 				"task.batch": false,
 				"task.structured": false,
 				"task.enableLsp": false,
-				"task.completionProbe": false,
 				"compaction.enabled": false,
 				"retry.enabled": false,
 				"advisor.enabled": false,

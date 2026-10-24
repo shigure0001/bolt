@@ -566,10 +566,10 @@ describe("queued user delivery policy", () => {
 		agent.setSteeringMode("all");
 		const companion: AgentMessage = {
 			role: "custom",
-			customType: "workflow-notice",
+			customType: "session-agent-notice",
 			content: "hidden notice",
 			display: false,
-			attribution: "user",
+			attribution: "agent",
 			timestamp: 1,
 		};
 		const image: ImageContent = {
@@ -601,7 +601,7 @@ describe("queued user delivery policy", () => {
 			skill,
 		]);
 		expect(
-			delivered.filter(message => message.role === "custom" && message.customType === "workflow-notice"),
+			delivered.filter(message => message.role === "custom" && message.customType === "session-agent-notice"),
 		).toEqual([companion]);
 	});
 

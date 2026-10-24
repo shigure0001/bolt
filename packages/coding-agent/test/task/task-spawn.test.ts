@@ -661,7 +661,7 @@ describe("task spawn routing", () => {
 	it("attaches retained-artifacts cleanup to the collision-suffixed job, not the pre-existing row", async () => {
 		// Regression: `AsyncJobManager.register()` suffixes the requested job
 		// id when it collides with another live job (e.g. a task id reusing a
-		// vibe turn's job id). The cleanup wiring looked the job back up by
+		// another job's id). The cleanup wiring looked the job back up by
 		// the *requested* id, which — after a collision — resolves to the
 		// unrelated pre-existing row instead of the newly registered task, so
 		// cleanup attached to (and could later delete artifacts alongside)

@@ -24,11 +24,6 @@ export const LSP_LATE_DIAGNOSTIC_MESSAGE_TYPE = "lsp-late-diagnostic";
 
 export const BACKGROUND_TAN_DISPATCH_MESSAGE_TYPE = "background-tan-dispatch";
 
-export const PREWALK_PLAN_MESSAGE_TYPE = "prewalk-plan";
-
-/** Custom message type for the transient Vibe mode directive. */
-export const VIBE_MODE_CONTEXT_MESSAGE_TYPE = "vibe-mode-context";
-
 /** Fallback type for extension-injected messages that omit a custom type. */
 export const DEFAULT_CUSTOM_MESSAGE_TYPE = "custom-message";
 

@@ -49,10 +49,6 @@ export interface JobWidgetBrief {
 	task?: string;
 	/** The model's intent line on the call that started the job. */
 	intent?: string;
-	/** task: what the subagent says is worth watching, from its completion probe. */
-	watch?: string;
-	/** task: the subagent's current stage, from its completion probe. */
-	stage?: string;
 }
 
 /** What a job offers its widget; set at registration by jobs that can be watched (bash, task). */

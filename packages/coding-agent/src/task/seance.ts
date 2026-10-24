@@ -180,8 +180,6 @@ function validateSeanceFields(
 	if (typeof item.sourceSession !== "string" || item.sourceSession.trim().length === 0) {
 		return `${label} selects the \`${SEANCE_AGENT_NAME}\` agent and requires a non-empty \`sourceSession\`.`;
 	}
-	if ("tools" in item && item.tools?.length)
-		return `${label} cannot pass custom tools to the read-only \`${SEANCE_AGENT_NAME}\` agent.`;
 	const model: unknown = item.model;
 	if (
 		model !== undefined &&

@@ -162,9 +162,7 @@ describe("AgentSession approved-plan reference re-injection after compaction (is
 			"compaction.asyncEnabled": false,
 			"compaction.autoContinue": true,
 			"compaction.methodOrder": method === "snapcompact" ? ["snapcompact", "soft"] : ["soft"],
-			"task.eager": "default",
 			"todo.enabled": false,
-			"todo.eager": "default",
 			"todo.reminders": false,
 		});
 		const sessionManager = SessionManager.inMemory(tempDir.path());

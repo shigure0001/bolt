@@ -12,9 +12,8 @@ const FIX_HINT = "Install Python 3.8+ or set python.interpreter, then verify wit
 const CWD = "/tmp/eval-startup-warning";
 
 let savedPiPy: string | undefined;
-let savedPiJs: string | undefined;
 
-function restoreEnv(name: "PI_PY" | "PI_JS", value: string | undefined): void {
+function restoreEnv(name: "PI_PY", value: string | undefined): void {
 	if (value === undefined) delete Bun.env[name];
 	else Bun.env[name] = value;
 }
@@ -25,29 +24,19 @@ function mockProbe(reason = "Python executable not found on PATH") {
 
 beforeEach(() => {
 	savedPiPy = Bun.env.PI_PY;
-	savedPiJs = Bun.env.PI_JS;
 	delete Bun.env.PI_PY;
-	delete Bun.env.PI_JS;
 });
 
 afterEach(() => {
 	vi.restoreAllMocks();
 	restoreEnv("PI_PY", savedPiPy);
-	restoreEnv("PI_JS", savedPiJs);
 });
 
 describe("resolvePythonEvalWarning", () => {
-	it("falls back to JavaScript when Python is missing and JS eval is on", async () => {
+	it("reports the eval tool unavailable when Python is missing", async () => {
 		mockProbe();
 		expect(await resolvePythonEvalWarning({ cwd: CWD, settings: Settings.isolated() })).toBe(
-			`Python eval unavailable (Python executable not found on PATH); eval will run JavaScript only. ${FIX_HINT}`,
-		);
-	});
-
-	it("reports no eval backend when Python is missing and JS eval is off", async () => {
-		mockProbe();
-		expect(await resolvePythonEvalWarning({ cwd: CWD, settings: Settings.isolated({ "eval.js": false }) })).toBe(
-			`Eval tool unavailable: Python executable not found on PATH, and JavaScript eval is disabled. ${FIX_HINT}`,
+			`Eval tool unavailable: Python executable not found on PATH. ${FIX_HINT}`,
 		);
 	});
 
@@ -56,7 +45,7 @@ describe("resolvePythonEvalWarning", () => {
 		expect(
 			await resolvePythonEvalWarning({
 				cwd: CWD,
-				settings: Settings.isolated({ "eval.py": false, "eval.js": false }),
+				settings: Settings.isolated({ "eval.py": false }),
 			}),
 		).toBeUndefined();
 		expect(probe).not.toHaveBeenCalled();
@@ -66,7 +55,7 @@ describe("resolvePythonEvalWarning", () => {
 		const interpreter = path.join(os.homedir(), "py\tenv", "python");
 		mockProbe(`Tried: ${interpreter} \x1b[31mspawn failed\x1b[0m ${"x".repeat(400)}`);
 		const warning = await resolvePythonEvalWarning({ cwd: CWD, settings: Settings.isolated() });
-		const reason = warning?.slice(warning.indexOf("(") + 1, warning.indexOf(")"));
+		const reason = warning?.slice(warning.indexOf(": ") + 2, warning.indexOf(". Install"));
 		expect(reason).toStartWith("Tried: ~/py");
 		expect(reason).not.toContain(os.homedir());
 		expect(reason).not.toMatch(/[\t\x1b]/);
@@ -82,7 +71,7 @@ describe("resolveFirstLaunchPythonEvalWarning", () => {
 		const probe = mockProbe();
 		expect(
 			await resolveFirstLaunchPythonEvalWarning({ ...base, args: {}, lastChangelogVersion: undefined }),
-		).toStartWith("Python eval unavailable");
+		).toStartWith("Eval tool unavailable");
 		expect(
 			await resolveFirstLaunchPythonEvalWarning({ ...base, args: {}, lastChangelogVersion: "18.3.5" }),
 		).toBeUndefined();
@@ -103,7 +92,7 @@ describe("resolveFirstLaunchPythonEvalWarning", () => {
 		mockProbe();
 		const warn = (args: { tools?: string[]; noTools?: boolean }) =>
 			resolveFirstLaunchPythonEvalWarning({ ...base, args, lastChangelogVersion: undefined });
-		expect(await warn({ noTools: true, tools: ["eval"] })).toStartWith("Python eval unavailable");
+		expect(await warn({ noTools: true, tools: ["eval"] })).toStartWith("Eval tool unavailable");
 		expect(await warn({ noTools: true })).toBeUndefined();
 		expect(await warn({ tools: ["read"] })).toBeUndefined();
 	});

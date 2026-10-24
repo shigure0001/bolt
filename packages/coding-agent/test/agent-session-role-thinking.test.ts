@@ -10,7 +10,7 @@ import { AgentSession } from "@oh-my-pi/pi-coding-agent/session/agent-session";
 import { AuthStorage } from "@oh-my-pi/pi-coding-agent/session/auth-storage";
 import { SKILL_PROMPT_MESSAGE_TYPE } from "@oh-my-pi/pi-coding-agent/session/messages";
 import { SessionManager } from "@oh-my-pi/pi-coding-agent/session/session-manager";
-import { AUTO_THINKING, clampAutoThinkingEffort, resolveProvisionalAutoLevel } from "@oh-my-pi/pi-tui/thinking";
+import { AUTO_THINKING, resolveProvisionalAutoLevel } from "@oh-my-pi/pi-tui/thinking";
 import { TempDir } from "@oh-my-pi/pi-utils";
 import { createAssistantMessage } from "./helpers/agent-session-setup";
 
@@ -703,28 +703,7 @@ describe("AgentSession role model thinking behavior", () => {
 		expect(session.autoResolvedThinkingLevel()).toBeUndefined();
 	});
 
-	it("maps ultrathink prompts to the model's highest supported level, clamped below max", async () => {
-		const model = getAnthropicModelOrThrow("claude-sonnet-4-5");
-		await createSession({
-			initialModelId: model.id,
-			initialThinkingLevel: Effort.High,
-			modelRoles: { default: `${model.provider}/${model.id}` },
-		});
-		vi.spyOn(session.agent, "prompt").mockResolvedValue(undefined);
-		const classifierSpy = vi.spyOn(autoThinkingClassifier, "classifyDifficulty").mockResolvedValue(Effort.Low);
-
-		session.setThinkingLevel(AUTO_THINKING);
-		// sonnet-4-5 has no max tier, so the ultrathink jump clamps to xhigh.
-		const expected = clampAutoThinkingEffort(model, Effort.Max);
-		expect(expected).toBe(Effort.XHigh);
-		await session.prompt("ultrathink through the unsafe refactor");
-
-		expect(classifierSpy).not.toHaveBeenCalled();
-		expect(session.thinkingLevel).toBe(expected);
-		expect(session.autoResolvedThinkingLevel()).toBe(expected);
-	});
-
-	it("resolves ultrathink to max on max-capable models", async () => {
+	it("classifies auto thinking even when the former magic word appears in a prompt", async () => {
 		const model = getAnthropicModelOrThrow("claude-opus-4-7");
 		await createSession({
 			initialModelId: model.id,
@@ -737,9 +716,10 @@ describe("AgentSession role model thinking behavior", () => {
 		session.setThinkingLevel(AUTO_THINKING);
 		await session.prompt("ultrathink through the unsafe refactor");
 
-		expect(classifierSpy).not.toHaveBeenCalled();
-		expect(session.thinkingLevel).toBe(Effort.Max);
-		expect(session.autoResolvedThinkingLevel()).toBe(Effort.Max);
+		expect(classifierSpy).toHaveBeenCalledTimes(1);
+		expect(classifierSpy.mock.calls[0]?.[0].request).toBe("ultrathink through the unsafe refactor");
+		expect(session.thinkingLevel).toBe(Effort.Low);
+		expect(session.autoResolvedThinkingLevel()).toBe(Effort.Low);
 	});
 
 	it("keeps auto effectively off for non-reasoning models", async () => {

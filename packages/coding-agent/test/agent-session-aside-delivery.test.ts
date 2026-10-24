@@ -210,15 +210,6 @@ describe("AgentSession aside delivery", () => {
 				agentId: "Main",
 				asyncJobManager: manager,
 			});
-			await session.setWorkPoolYieldItems([{ id: "pool#1", index: 1 }]);
-			await session.deliverIrcMessage({
-				id: "parked-peer",
-				from: "Peer",
-				to: "Main",
-				body: "deferred wake",
-				ts: Date.now(),
-			});
-			await setImmediate();
 			session.subscribe(event => {
 				if (event.type === "tool_execution_start" && event.toolName === "wait") waitStarted.resolve();
 			});
@@ -238,7 +229,6 @@ describe("AgentSession aside delivery", () => {
 				}
 				expect(JSON.stringify(contexts[1]?.messages)).toContain("ASIDE_DURING_WAIT");
 				expect(JSON.stringify(contexts[1]?.messages)).toContain("Wait interrupted by message.");
-				expect(JSON.stringify(contexts[1]?.messages)).not.toContain("deferred wake");
 				expect(manager.getRunningJobs({ ownerId: "Main" })).toHaveLength(1);
 			} finally {
 				job.resolve("JOB_RESULT_AFTER_ASIDE");
@@ -254,9 +244,7 @@ describe("AgentSession aside delivery", () => {
 			expect(
 				session.agent.state.messages.filter(message => JSON.stringify(message).includes("JOB_RESULT_AFTER_ASIDE")),
 			).toHaveLength(1);
-			await session.setWorkPoolYieldItems([]);
 			await session.waitForIdle();
-			expect(JSON.stringify(contexts.at(-1)?.messages)).toContain("deferred wake");
 		},
 	);
 
@@ -1062,80 +1050,6 @@ describe("AgentSession aside delivery", () => {
 		expect(drained[0]).toBe(original);
 		expect(drained[1]).toBe(duringRollback);
 	});
-	it("IrcBridge boundary snapshots carry deferred wakes with the other queues", () => {
-		// A parked wake must not survive a session switch while ordinary asides
-		// are discarded: the later contract clear would otherwise wake the new
-		// transcript with a peer message belonging to the previous session.
-		// Rollback restores the same ordering guarantee as the other queues.
-		const host: IrcBridgeHost = {
-			agent: {} as Agent,
-			sessionManager: {} as SessionManager,
-			isDisposed: () => false,
-			isStreaming: () => false,
-			planModeEnabled: () => false,
-			emitSessionEvent: async () => {},
-			wakeForIrc: () => {},
-		};
-		const irc = new IrcBridge(host);
-		const wake: AgentMessage = {
-			role: "custom",
-			customType: "irc:incoming",
-			content: "peer ping",
-			display: true,
-			details: { id: "w1", from: "peer", message: "peer ping" },
-			attribution: "agent",
-			timestamp: Date.now(),
-		};
-		irc.queueDeferredWake([wake]);
-		const snapshot = irc.clearPending();
-		expect(irc.hasPending()).toBe(false);
-		expect(irc.drainDeferredWakes()).toEqual([]);
-		irc.restorePending(snapshot);
-		expect(irc.drainDeferredWakes()).toEqual([wake]);
-		expect(irc.hasPending()).toBe(false);
-	});
-	it("IrcBridge parks deferred wakes where turn injection cannot flush them", () => {
-		// A wake deferred while pooled must survive the next pooled turn's
-		// pre-dispatch flush and loop aside poll: with no observer attached,
-		// flushing it as an ordinary aside would answer the sender never.
-		const emitted: AgentMessage[] = [];
-		const host: IrcBridgeHost = {
-			agent: {
-				emitExternalEvent: (event: { message: AgentMessage }) => emitted.push(event.message),
-			} as unknown as Agent,
-			sessionManager: {} as SessionManager,
-			isDisposed: () => false,
-			isStreaming: () => false,
-			planModeEnabled: () => false,
-			emitSessionEvent: async () => {},
-			wakeForIrc: () => {},
-		};
-		const irc = new IrcBridge(host);
-		const wake: AgentMessage = {
-			role: "custom",
-			customType: "irc:incoming",
-			content: "peer ping",
-			display: true,
-			details: { id: "w1", from: "peer", message: "peer ping" },
-			attribution: "agent",
-			timestamp: Date.now(),
-		};
-		const aside: AgentMessage = {
-			role: "user",
-			content: [{ type: "text", text: "NOTE" }],
-			attribution: "user",
-			timestamp: Date.now(),
-		};
-		irc.queueDeferredWake([wake]);
-		irc.queueAside([aside]);
-		expect(irc.hasPending()).toBe(true);
-		irc.flushPending();
-		expect(emitted).toEqual([aside, aside]);
-		expect(irc.drainPending()).toEqual([]);
-		expect(irc.drainDeferredWakes()).toEqual([wake]);
-		expect(irc.hasPending()).toBe(false);
-	});
-
 	it("drops a queued aside before a committed newSession() hook finishes", async () => {
 		const modelRegistry = new ModelRegistry(authStorage);
 		const started = Promise.withResolvers<void>();

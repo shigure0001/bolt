@@ -40,7 +40,6 @@ describe("/tan prompt-cache tool presentation", () => {
 				enableLsp: false,
 				enableMCP: false,
 				disableExtensionDiscovery: true,
-				skipPythonPreflight: true,
 				mcpTools: [mcpTool],
 			};
 			const { session: parent } = await createAgentSession({

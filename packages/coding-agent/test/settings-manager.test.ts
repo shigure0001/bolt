@@ -50,17 +50,13 @@ import {
 	cfgTodoRemindersMax,
 	cfgDevAutoqa,
 	cfgDevAutoqaConsent,
-	cfgGlobEnabled,
-	cfgFindEnabled,
 	cfgGrepEnabled,
 	cfgGrepContextAfter,
 	cfgGrepContextBefore,
-	cfgTodoEager,
 	cfgComputerEnabled,
 	cfgImagesQuestionTimeoutMs,
 } from "@oh-my-pi/pi-coding-agent/tools/settings";
 import {
-	cfgTaskEager,
 	cfgIsolationBackend,
 	cfgTaskIsolationEnabled,
 	cfgTaskMaxConcurrency,
@@ -2282,33 +2278,6 @@ describe("Settings", () => {
 			expect(cfgMnemopiDbPath.get(settings)).toBe("/tmp/new.db");
 		});
 
-		it("migrates boolean task.eager/todo.eager true to always", async () => {
-			await writeSettings({
-				task: { eager: true },
-				todo: { eager: true },
-			});
-
-			const settings = await Settings.init({ cwd: projectDir, agentDir });
-
-			// `true` reproduced the previous "on" behavior, now `always`.
-			expect(cfgTaskEager.get(settings)).toBe("always");
-			expect(cfgTodoEager.get(settings)).toBe("always");
-		});
-
-		it("migrates boolean task.eager/todo.eager false to default", async () => {
-			await writeSettings({
-				task: { eager: false },
-				todo: { eager: false },
-			});
-
-			const settings = await Settings.init({ cwd: projectDir, agentDir });
-
-			// Load-bearing direction: consumers treat any non-`default` value as enabled
-			// (`false !== "default"`), so an un-coerced boolean `false` would read as ON.
-			expect(cfgTaskEager.get(settings)).toBe("default");
-			expect(cfgTodoEager.get(settings)).toBe("default");
-		});
-
 		it("migrates legacy features.unexpectedStopDetection=true to smart", async () => {
 			await writeSettings({ features: { unexpectedStopDetection: true } });
 
@@ -2411,15 +2380,6 @@ describe("Settings", () => {
 			const settings = await Settings.init({ cwd: projectDir, agentDir });
 
 			expect(cfgGrepEnabled.get(settings)).toBe(true);
-		});
-
-		it("migrates a boolean find.enabled to its explicit on/off mode without touching glob", async () => {
-			await writeSettings({ find: { enabled: true }, glob: { enabled: false } });
-
-			const settings = await Settings.init({ cwd: projectDir, agentDir });
-
-			expect(cfgFindEnabled.get(settings)).toBe("on");
-			expect(cfgGlobEnabled.get(settings)).toBe(false);
 		});
 
 		it("migrates nested dev.autoqa.consent and todo.reminders.max without configuring parents", async () => {

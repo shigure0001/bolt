@@ -150,54 +150,6 @@ HTTP 413 / payload rejections are not automatically treated as token overflow. A
 
 When provider usage proves token overflow, maintenance can still shrink context. Snapcompact is excluded for byte/media-shaped rejections unless usage proves a token overflow without explicit media-limit evidence. With an unknown window, maintenance may attempt a runnable overflow method; an unavailable or no-progress recovery blocks automatic continuation rather than resubmitting unchanged history.
 
-### Experimental notes-backed context windows
-
-Enable **Notes-backed context windows (experimental)** in `/settings`; the running session gains the tools immediately. The equivalent configuration is:
-
-```yaml
-compaction:
-   experimentalContextManagement: true
-```
-
-This opt-in mode replaces automatic summary recompression with local context-window
-boundaries. It also applies to `/compact` without an explicit mode or focus text.
-Explicit compaction modes and focused instructions retain their existing behavior.
-
-- `context_notes` reads the current notebook when `text` is omitted, replaces it
-  when `text` is supplied, and clears it with `text: ""`.
-- Notebook revisions are journal entries on the active branch. Only the latest
-  visible revision is injected into model context, including after resume or fork.
-  A context reset clears the visible notebook. Each replacement is limited to
-  **16,384 UTF-8 bytes**; oversized writes fail without replacing the notes.
-- `new_context` requests rollover at the next safe tool-loop boundary. Rollover
-  retains complete recent tool-call/result units and the notebook without calling
-  a summarization model. Near the automatic threshold, the model receives a
-  once-per-window reminder to save its working state.
-- `read` and `grep` can recover original messages and tool outputs through
-  `history://current/full`. The text includes stable entry IDs and window
-  boundaries. Shared selectors work, for example
-  `history://current/full:1-200` and `history://current/full:raw:1-200`.
-  Queries, fragments, trailing slashes, and additional path components are rejected.
-- The full-history route is bound to the calling session's current branch. It
-  never falls back to another registered agent or an on-disk session search.
-  Existing `history://<id>` routes retain their concise transcript behavior.
-
-Experimental rollover requires the effective tool set to contain `context_notes`,
-`new_context`, `read`, and `grep`. Restricted sessions without all four retain
-legacy maintenance. Disabling the setting restores legacy compaction and disables
-the experimental tools and full-history route; existing notes remain in the journal
-and provider context.
-
-The default is `false`. This is an independent implementation of persistent notes
-and searchable history, with the existing session journal as its only transcript
-store.[^experimental-context-history]
-
-[^experimental-context-history]:
-    Earlier pruning or explicit destructive history
-    operations cannot be undone by enabling the setting. Text history represents
-    images as markers. Notebook quality and timely updates remain the model's
-    responsibility; the mode does not automatically generate missing notes.
-
 ### Shake method
 
 Including `shake` in `compaction.methodOrder` performs an inline, local reduction instead of calling a summarization model. It replaces eligible tool results and large fenced/XML blocks with recoverable `artifact://` references, using a protected recent-token window and minimum-savings threshold. Automatic shake emits the normal auto-compaction events with `action: "shake"`.
@@ -510,7 +462,6 @@ Post-navigation event exposing new/old leaf and optional summary entry.
 Defined in `packages/coding-agent/src/session/context-settings.ts`:
 
 - `compaction.enabled` = `true`
-- `compaction.experimentalContextManagement` = `false`. Opt-in persistent notes, branch-bound raw-history retrieval, and local context-window rollover; toggling it adds or removes `context_notes`/`new_context` in the running session.
 - `compaction.methodOrder` = `["remote", "snapcompact", "handoff", "shake", "soft"]`. `remote` uses provider-native server compaction (OpenAI Responses compact, Anthropic compaction beta, including Bedrock Converse's Runtime side request) when available; unavailable or failed methods advance to the next preference.
 - `compaction.asyncEnabled` = `true`. Async (speculative) compaction: when context enters the pre-threshold band `[threshold − lead, threshold)` (lead = `clamp(threshold × 0.125, 8192, 32000)`), maintenance starts a background summarization for the first configured LLM-backed method (`remote`, `handoff`, or `soft`) off a branch snapshot, isolated from the live turn by a side session id. The armed result is committed instantly when the threshold is actually crossed, hiding summarization latency; post-snapshot turns are appended after the summary unchanged. Armed results are discarded when the branch prefix changes (new compaction, reset boundary, `/tree` navigation), when a provider-native replay payload is no longer readable by the active model, or when context grows past `keepRecentTokens` since compute (a fresh speculation replaces it). Speculation is skipped while an extension registers `session_before_compact`. The status line pulses the auto-compact icon while a speculation runs and holds it in accent when a result is armed.
 - `compaction.reserveTokens` is unset by default. The effective reserve is `max(floor(contextWindow × 0.15), configuredReserve ?? 16384)`. Budget checks use the proportional reserve when the unset default is impractical on a small window, or when the effective reserve reaches/exceeds the whole window. Explicit reserves otherwise retain the 15% floor.

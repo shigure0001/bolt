@@ -4,7 +4,7 @@
  * Layout mirrors the model hub: a sidebar of scopes (All agents, per-source
  * groups, "+ New agent"), a body listing agents with type-to-filter search,
  * and a footer that turns into a chip strip while configuring. Enter on an
- * agent opens its property strip (enabled / model / prewalk / advisor); a
+ * agent opens its property strip (enabled / model / advisor); a
  * property opens a value strip whose "pick model…" chip dives into the real
  * ModelBrowser and whose "pattern…" chip opens an inline pattern input, so
  * every per-agent knob is picked instead of memorized.
@@ -63,13 +63,10 @@ export interface HubAgent {
 	source: AgentSource;
 	filePath?: string;
 	model?: string[];
-	prewalk?: boolean | string;
 	advisor?: boolean | string;
 	disabled: boolean;
 	/** `task.agentModelOverrides[name]` as a comma-joined pattern list. */
 	overrideModel?: string;
-	/** `task.agentPrewalk[name]`: "on", "off", or a model pattern. */
-	prewalkOverride?: string;
 	/** `task.agentAdvisor[name]`: "on", "off", or a model pattern. */
 	advisorOverride?: string;
 }
@@ -84,7 +81,6 @@ const SOURCES = ["project", "user", "bundled"] as const satisfies readonly Agent
 /** Per-agent override columns of the config picker; lower priorities hide first. */
 const AGENT_COLUMNS: readonly TspPickerColumn[] = [
 	{ id: "model", head: "Model", format: "text", priority: 4, min: 8 },
-	{ id: "prewalk", head: "Prewalk", format: "text", priority: 2 },
 	{ id: "advisor", head: "Advisor", format: "text", priority: 3 },
 ];
 const SOURCE_COLUMN: TspPickerColumn = { id: "source", head: "Source", format: "dim", priority: 1 };
@@ -97,7 +93,7 @@ interface SidebarEntry extends HubSidebarEntry<"all" | "source" | "new" | "separ
 type ListRow = { kind: "agent"; agent: HubAgent } | { kind: "new" };
 
 /** The per-agent knob a strip or the model browser is editing. */
-export type PropertyKind = "model" | "prewalk" | "advisor";
+export type PropertyKind = "model" | "advisor";
 
 type StripChip = HubStripChip<
 	| { kind: "toggle" }
@@ -124,7 +120,6 @@ export interface AgentsHubDeps {
 	getAvailableModels: () => Model[];
 	effectiveModelPatterns: (agent: HubAgent) => string[];
 	resolvePatterns: (patterns: string[]) => string | undefined;
-	effectivePrewalkPattern: (agent: HubAgent) => string | undefined;
 	effectiveAdvisorPattern: (agent: HubAgent) => string | undefined;
 	/** Persist one agent's enabled state; other agents are untouched. */
 	setAgentDisabled: (name: string, options: { disabled: boolean }) => void;
@@ -408,8 +403,6 @@ export class AgentsHubComponent implements Component {
 		switch (property) {
 			case "model":
 				return agent.overrideModel;
-			case "prewalk":
-				return agent.prewalkOverride;
 			case "advisor":
 				return agent.advisorOverride;
 		}
@@ -420,9 +413,6 @@ export class AgentsHubComponent implements Component {
 		switch (property) {
 			case "model":
 				agent.overrideModel = trimmed;
-				break;
-			case "prewalk":
-				agent.prewalkOverride = trimmed;
 				break;
 			case "advisor":
 				agent.advisorOverride = trimmed;
@@ -442,10 +432,6 @@ export class AgentsHubComponent implements Component {
 				const base = agent.overrideModel ?? (patterns.length > 0 ? patterns.join(",") : "session model");
 				return `${agent.name} model: ${base}${resolved ? ` → ${resolved}` : ""}`;
 			}
-			case "prewalk": {
-				const pattern = this.#deps.effectivePrewalkPattern(agent);
-				return `${agent.name} prewalk: ${pattern ? `on (${pattern})` : "off"}`;
-			}
 			case "advisor": {
 				const pattern = this.#deps.effectiveAdvisorPattern(agent);
 				return `${agent.name} advisor: ${pattern ? `on (${pattern})` : "off"}`;
@@ -461,10 +447,6 @@ export class AgentsHubComponent implements Component {
 		switch (property) {
 			case "model":
 				return agent.overrideModel ?? "auto";
-			case "prewalk": {
-				const pattern = this.#deps.effectivePrewalkPattern(agent);
-				return pattern ?? "off";
-			}
 			case "advisor": {
 				const pattern = this.#deps.effectiveAdvisorPattern(agent);
 				return pattern ?? "off";
@@ -492,7 +474,7 @@ export class AgentsHubComponent implements Component {
 		this.#strip = {
 			kind: "chips",
 			agent,
-			chips: [enabledChip, propertyChip("model"), propertyChip("prewalk"), propertyChip("advisor")],
+			chips: [enabledChip, propertyChip("model"), propertyChip("advisor")],
 			index: 1,
 		};
 	}
@@ -1094,8 +1076,6 @@ export class AgentsHubComponent implements Component {
 					: name;
 			const badges: string[] = [];
 			if (agent.overrideModel) badges.push(theme.fg("warning", agent.overrideModel));
-			const prewalk = this.#deps.effectivePrewalkPattern(agent);
-			if (prewalk) badges.push(theme.fg("dim", `pre:${prewalk}`));
 			const advisor = this.#deps.effectiveAdvisorPattern(agent);
 			if (advisor) badges.push(theme.fg("dim", `adv:${advisor}`));
 			const sourceTag = theme.fg("dim", SOURCE_LABEL[agent.source].toLowerCase());
@@ -1125,10 +1105,8 @@ export class AgentsHubComponent implements Component {
 			const resolved = this.#deps.resolvePatterns(patterns);
 			const modelLine = `${theme.fg("muted", "model:")} ${patterns.length > 0 ? replaceTabs(patterns.join(",")) : theme.fg("dim", "(session model)")}${resolved ? ` ${theme.fg("dim", "→")} ${theme.fg("success", resolved)}` : ""}`;
 			lines.push(truncateToWidth(` ${modelLine}`, width));
-			const prewalk = this.#deps.effectivePrewalkPattern(agent);
 			const advisor = this.#deps.effectiveAdvisorPattern(agent);
 			const flagLine = [
-				`${theme.fg("muted", "prewalk:")} ${prewalk ? theme.fg("success", prewalk) : theme.fg("dim", "off")}`,
 				`${theme.fg("muted", "advisor:")} ${advisor ? theme.fg("success", advisor) : theme.fg("dim", "off")}`,
 				agent.filePath ? theme.fg("dim", shortenPath(agent.filePath)) : "",
 			]
@@ -1491,7 +1469,6 @@ export class AgentsHubComponent implements Component {
 			return { id: listRowId(rowDef), label: "New agent…", icon: "plus", tone: "muted" };
 		}
 		const agent = rowDef.agent;
-		const prewalk = this.#deps.effectivePrewalkPattern(agent);
 		const advisor = this.#deps.effectiveAdvisorPattern(agent);
 		return {
 			id: listRowId(rowDef),
@@ -1502,7 +1479,6 @@ export class AgentsHubComponent implements Component {
 			disabled: agent.disabled ? "Disabled · space to enable" : undefined,
 			facts: {
 				model: agent.overrideModel ? agent.overrideModel : [span("auto", "dim")],
-				prewalk: prewalk ?? [span("off", "dim")],
 				advisor: advisor ?? [span("off", "dim")],
 				source: SOURCE_LABEL[agent.source],
 			},
@@ -1539,11 +1515,9 @@ export class AgentsHubComponent implements Component {
 		const resolved = this.#deps.resolvePatterns(patterns);
 		const model: TspSpan[] = [patterns.length > 0 ? span(patterns.join(","), "mono") : span("session model", "dim")];
 		if (resolved) model.push(span(" → ", "dim"), span(resolved, "mono success"));
-		const prewalk = this.#deps.effectivePrewalkPattern(agent);
 		const advisor = this.#deps.effectiveAdvisorPattern(agent);
 		const facts: { k: string; v: TspSpan[] | string }[] = [
 			{ k: "Model", v: model },
-			{ k: "Prewalk", v: [prewalk ? span(prewalk, "mono") : span("off", "dim")] },
 			{ k: "Advisor", v: [advisor ? span(advisor, "mono") : span("off", "dim")] },
 			{ k: "Status", v: [agent.disabled ? span("Disabled", "warning") : span("Enabled", "success")] },
 			{ k: "Source", v: SOURCE_LABEL[agent.source] },
@@ -1644,8 +1618,6 @@ export class AgentsHubComponent implements Component {
 			value.push(span(t, s));
 		};
 		if (agent.overrideModel) badge(agent.overrideModel, "warning");
-		const prewalk = this.#deps.effectivePrewalkPattern(agent);
-		if (prewalk) badge(`pre:${prewalk}`, "dim");
 		const advisor = this.#deps.effectiveAdvisorPattern(agent);
 		if (advisor) badge(`adv:${advisor}`, "dim");
 		return node(
@@ -1674,14 +1646,12 @@ export class AgentsHubComponent implements Component {
 		const resolved = this.#deps.resolvePatterns(patterns);
 		const model: TspSpan[] = [patterns.length > 0 ? span(patterns.join(",")) : span("(session model)", "dim")];
 		if (resolved) model.push(span(" → ", "dim"), span(resolved, "success"));
-		const prewalk = this.#deps.effectivePrewalkPattern(agent);
 		const advisor = this.#deps.effectiveAdvisorPattern(agent);
 		const children: NativeChild[] = [
 			text([span(agent.description, "dim")], { wrap: "word", lines: 2 }),
 			node("kv", {
 				items: [
 					{ k: [span("model", "muted")], v: model },
-					{ k: [span("prewalk", "muted")], v: [prewalk ? span(prewalk, "success") : span("off", "dim")] },
 					{ k: [span("advisor", "muted")], v: [advisor ? span(advisor, "success") : span("off", "dim")] },
 				],
 				layout: "inline",

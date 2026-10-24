@@ -44,7 +44,6 @@ import { canUseInteractiveBashPty } from "./bash-pty-selection";
 import { resolveEvalBackends } from "./eval-backends";
 import { invalidateGithubCacheForBashCommand } from "./gh-cache-invalidation";
 import { serviceLogs, startService, type ServiceReady } from "../launch/services";
-import { isFindEnabled } from "./jfind";
 import { formatArtifactErrorNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { formatOutputNotice } from "@oh-my-pi/pi-tui/tools/output-meta";
 import { resolveStreamingInlineBytes, resolveStreamingInlineCapBudget } from "./output-meta";
@@ -55,15 +54,7 @@ import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { toolResult } from "./tool-result";
 import { clampTimeout, TOOL_TIMEOUTS } from "./tool-timeouts";
 
-import {
-	cfgAstEditEnabled,
-	cfgAstGrepEnabled,
-	cfgAsyncEnabled,
-	cfgGlobEnabled,
-	cfgGrepEnabled,
-	cfgLaunchEnabled,
-	cfgToolsMaxTimeout,
-} from "./settings";
+import { cfgAsyncEnabled, cfgGlobEnabled, cfgGrepEnabled, cfgLaunchEnabled, cfgToolsMaxTimeout } from "./settings";
 import {
 	cfgBashAllowCompoundCommands,
 	cfgBashAutoBackgroundEnabled,
@@ -614,11 +605,8 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 			autoBackgroundEnabled: cfgBashAutoBackgroundEnabled.get(this.session.settings),
 			autoBackgroundSeconds: cfgBashAutoBackgroundThresholdMs.get(this.session.settings) / 1000,
 			spillKb: Math.round(resolveStreamingInlineBytes(this.session.settings) / 1024),
-			hasAstGrep: isToolActive("ast_grep", cfgAstGrepEnabled.get(this.session.settings)),
-			hasAstEdit: isToolActive("ast_edit", cfgAstEditEnabled.get(this.session.settings)),
 			hasGrep: isToolActive("grep", cfgGrepEnabled.get(this.session.settings)),
 			hasGlob: isToolActive("glob", cfgGlobEnabled.get(this.session.settings)),
-			hasFind: this.session.isToolActive?.("find") ?? isFindEnabled(this.session),
 			hasRead: isToolActive("read", true),
 			// `wait` sits in the `load_tools` catalog until loaded; say so where bash points at it.
 			waitDeferred: isToolActive("load_tools", false) && !isToolActive("wait", false),
@@ -629,7 +617,7 @@ export class BashTool implements AgentTool<BashToolSchema, BashToolDetails> {
 				(this.session.skillHintVisible ??
 					(cfgSkillful.get(this.session.settings) && (this.session.skills?.length ?? 0) > 0)) === true,
 			hasLaunch: this.#launchEnabled,
-			hasEval: isToolActive("eval", evalBackends.python || evalBackends.js),
+			hasEval: isToolActive("eval", evalBackends.python),
 			hasShellBuiltins: !shellBuiltinsDisabled(this.session.settings),
 			isWindows: process.platform === "win32",
 		});

@@ -316,7 +316,7 @@ describe("runSubprocess yield reminders", () => {
 			AgentRegistry.global().unregister("subagent-race");
 		}
 	});
-	it("waits out a running turn before installing the pooled contract", async () => {
+	it("waits out a running turn before driving the follow-up", async () => {
 		const calls: string[] = [];
 		let streaming = true;
 		const session = createMockSession(({ emit }) => {
@@ -333,13 +333,9 @@ describe("runSubprocess yield reminders", () => {
 		});
 		const mutable = session as unknown as {
 			isStreaming: boolean;
-			setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
 			waitForIdle: () => Promise<void>;
 		};
 		Object.defineProperty(mutable, "isStreaming", { get: () => streaming, configurable: true });
-		mutable.setWorkPoolYieldItems = async () => {
-			calls.push("setYield");
-		};
 		mutable.waitForIdle = async () => {
 			calls.push("waitForIdle");
 			streaming = false;
@@ -352,14 +348,14 @@ describe("runSubprocess yield reminders", () => {
 			session,
 		});
 		try {
-			// Installing pooled items under the running ordinary wake would reject
-			// its in-flight calls, so the follow-up must observe idle first.
+			// Driving the follow-up under the running ordinary wake would reject its
+			// in-flight calls, so the follow-up must observe idle first.
 			const result = await runSubagentFollowUpTurn({
 				...baseOptions,
 				id: "subagent-prewait",
 				message: "batch work",
 			});
-			expect(calls.slice(0, 2)).toEqual(["waitForIdle", "setYield"]);
+			expect(calls.slice(0, 1)).toEqual(["waitForIdle"]);
 			expect(result.exitCode).toBe(0);
 			expect(result.output).toContain('"batch": true');
 		} finally {
@@ -415,22 +411,8 @@ describe("runSubprocess yield reminders", () => {
 				isError: false,
 			});
 		});
-		// Mock sessions lack the real yield-contract method; attach a tracker.
-		const staleMutable = stale as unknown as {
-			setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
-		};
-		staleMutable.setWorkPoolYieldItems = async () => {
-			calls.push("setYield:stale");
-		};
-		const revivedMutable = revived as unknown as {
-			setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
-		};
-		revivedMutable.setWorkPoolYieldItems = async () => {
-			calls.push("setYield:revived");
-		};
-		// The idle TTL fires during the install rebuild: the follow-up must drive
-		// the revived replacement (reinstalling its empty contract) instead of
-		// the detached corpse.
+		// The idle TTL fires while the follow-up revalidates the worker: it must
+		// drive the revived replacement instead of the detached corpse.
 		const ensureLive = vi
 			.spyOn(AgentLifecycleManager.global(), "ensureLive")
 			.mockResolvedValueOnce(stale)
@@ -438,7 +420,7 @@ describe("runSubprocess yield reminders", () => {
 		try {
 			const result = await runSubagentFollowUpTurn({ ...baseOptions, id: "subagent-revive", message: "batch work" });
 			expect(ensureLive).toHaveBeenCalledTimes(3);
-			expect(calls).toEqual(["setYield:stale", "setYield:revived"]);
+			expect(calls).toEqual([]);
 			expect(result.exitCode).toBe(0);
 			expect(result.output).toContain('"revived": true');
 		} finally {
@@ -452,12 +434,6 @@ describe("runSubprocess yield reminders", () => {
 			createMockSession(() => {}),
 			createMockSession(() => {}),
 		];
-		for (const session of sessions) {
-			const mutable: { setWorkPoolYieldItems: (items: unknown[]) => Promise<void> } = session as unknown as {
-				setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
-			};
-			mutable.setWorkPoolYieldItems = async () => {};
-		}
 		// A park slipping into every rebuild window replaces the worker each
 		// round trip: fail after three instead of chasing replacements forever.
 		const ensureLive = vi
@@ -469,13 +445,13 @@ describe("runSubprocess yield reminders", () => {
 		try {
 			await expect(
 				runSubagentFollowUpTurn({ ...baseOptions, id: "subagent-churn", message: "batch work" }),
-			).rejects.toThrow("was replaced during every install attempt");
+			).rejects.toThrow("was replaced on every revalidation attempt");
 			expect(ensureLive).toHaveBeenCalledTimes(4);
 		} finally {
 			AgentRegistry.global().unregister("subagent-churn");
 		}
 	});
-	it("waits out a wake running on the replacement worker before reinstalling", async () => {
+	it("waits out a wake running on the replacement worker before driving the follow-up", async () => {
 		const calls: string[] = [];
 		let revivedStreaming = true;
 		const stale = createMockSession(() => {});
@@ -491,29 +467,19 @@ describe("runSubprocess yield reminders", () => {
 				isError: false,
 			});
 		});
-		// Mock sessions lack the real session surface; attach trackers.
-		const staleMutable = stale as unknown as {
-			setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
-		};
-		staleMutable.setWorkPoolYieldItems = async () => {
-			calls.push("setYield:stale");
-		};
+		// Mock sessions lack the real session surface; attach a tracker.
 		const revivedMutable = revived as unknown as {
 			isStreaming: boolean;
-			setWorkPoolYieldItems: (items: unknown[]) => Promise<void>;
 			waitForIdle: () => Promise<void>;
 		};
 		Object.defineProperty(revivedMutable, "isStreaming", { get: () => revivedStreaming, configurable: true });
-		revivedMutable.setWorkPoolYieldItems = async () => {
-			calls.push("setYield:revived");
-		};
 		revivedMutable.waitForIdle = async () => {
 			calls.push("waitForIdle:revived");
 			revivedStreaming = false;
 		};
-		// Parking swaps the worker mid-install while an IRC delivery revives the
-		// replacement straight into an ordinary wake: the follow-up must wait out
-		// that wake before installing the keyed contract, not reject its yield.
+		// Parking swaps the worker while an IRC delivery revives the replacement
+		// straight into an ordinary wake: the follow-up must wait out that wake
+		// before driving the new session, not reject its yield.
 		vi.spyOn(AgentLifecycleManager.global(), "ensureLive").mockResolvedValueOnce(stale).mockResolvedValue(revived);
 		try {
 			const result = await runSubagentFollowUpTurn({
@@ -521,7 +487,7 @@ describe("runSubprocess yield reminders", () => {
 				id: "subagent-revive-wake",
 				message: "batch work",
 			});
-			expect(calls).toEqual(["setYield:stale", "waitForIdle:revived", "setYield:revived"]);
+			expect(calls).toEqual(["waitForIdle:revived"]);
 			expect(result.exitCode).toBe(0);
 			expect(result.output).toContain('"revived": true');
 		} finally {

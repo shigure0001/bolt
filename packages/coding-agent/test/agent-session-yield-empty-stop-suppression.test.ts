@@ -98,7 +98,6 @@ async function createHarness(
 		"retry.maxRetries": 1,
 		"retry.modelFallback": false,
 		"todo.enabled": false,
-		"todo.eager": "default",
 		"todo.reminders": false,
 	});
 	settings.setModelRole("default", `${mock.provider}/${mock.id}`);

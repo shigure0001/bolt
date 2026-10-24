@@ -1,6 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
 import { TERN_KIT_SOURCE } from "@oh-my-pi/pi-coding-agent/tools/browser/tern/page-kit";
@@ -90,7 +89,6 @@ beforeAll(async () => {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 });
 
 describe.skipIf(!CHROMIUM_AVAILABLE)("browser semantic selectors and queries", () => {

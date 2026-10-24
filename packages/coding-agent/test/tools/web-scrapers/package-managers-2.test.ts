@@ -1,9 +1,7 @@
 import { describe, expect, it } from "bun:test";
-import { handleChocolatey } from "@oh-my-pi/pi-coding-agent/web/scrapers/chocolatey";
 import { handleDockerHub } from "@oh-my-pi/pi-coding-agent/web/scrapers/dockerhub";
 import { handleHackage } from "@oh-my-pi/pi-coding-agent/web/scrapers/hackage";
 import { handleMetaCPAN } from "@oh-my-pi/pi-coding-agent/web/scrapers/metacpan";
-import { handleRepology } from "@oh-my-pi/pi-coding-agent/web/scrapers/repology";
 import { handleTerraform } from "@oh-my-pi/pi-coding-agent/web/scrapers/terraform";
 
 const SKIP = !Bun.env.WEB_FETCH_INTEGRATION;
@@ -82,54 +80,6 @@ describe.skipIf(SKIP)("handleDockerHub", () => {
 		expect(result?.method).toBe("dockerhub");
 		expect(result?.content).toContain("grafana");
 		expect(result?.content).toContain("docker pull");
-	});
-});
-
-describe.skipIf(SKIP)("handleChocolatey", () => {
-	it("returns null for non-Chocolatey URLs", async () => {
-		const result = await handleChocolatey("https://example.com", 20);
-		expect(result).toBeNull();
-	});
-
-	it("returns null for non-package Chocolatey paths", async () => {
-		const result = await handleChocolatey("https://community.chocolatey.org/", 20);
-		expect(result).toBeNull();
-	});
-
-	it("fetches git package", async () => {
-		const result = await handleChocolatey("https://community.chocolatey.org/packages/git", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("chocolatey");
-		expect(result?.content).toContain("choco install");
-		expect(result?.contentType).toBe("text/markdown");
-	});
-});
-
-describe.skipIf(SKIP)("handleRepology", () => {
-	it("returns null for non-Repology URLs", async () => {
-		const result = await handleRepology("https://example.com", 20);
-		expect(result).toBeNull();
-	});
-
-	it("returns null for non-project Repology paths", async () => {
-		const result = await handleRepology("https://repology.org/", 20);
-		expect(result).toBeNull();
-	});
-
-	it("fetches firefox project", async () => {
-		const result = await handleRepology("https://repology.org/project/firefox", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("repology");
-		expect(result?.content).toContain("firefox");
-		expect(result?.content).toContain("Repositories");
-		expect(result?.contentType).toBe("text/markdown");
-	});
-
-	it("fetches vim project", async () => {
-		const result = await handleRepology("https://repology.org/project/vim/versions", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("repology");
-		expect(result?.content).toContain("vim");
 	});
 });
 

@@ -12,7 +12,6 @@ import { sessionDelegationBias } from "../task/prompt-policy";
 import { isScoutSpawnable } from "../task/spawn-policy";
 import type { ToolSession } from ".";
 import { resolveToolTier } from "./approval";
-import { isFindEnabled } from "./jfind";
 import { applyListLimit } from "@oh-my-pi/pi-tui/tools/list-limit";
 import {
 	expandDelimitedPathEntries,
@@ -152,16 +151,15 @@ export class GlobTool implements AgentTool<typeof findSchema, GlobToolDetails> {
 	readonly loadMode = "essential";
 	readonly label = "Glob";
 	get description(): string {
-		const hasFind = this.session.isToolActive?.("find") ?? isFindEnabled(this.session);
 		const eagerDelegation = sessionDelegationBias(this.session) === "eager";
 		const scoutAvailable = isScoutSpawnable(
 			cfgTaskDisabledAgents.get(this.session.settings),
 			this.session.getSessionSpawns?.() ?? "*",
 		);
 		// Every render input is a boolean; pack them so repeat reads skip the template render.
-		const key = (hasFind ? 1 : 0) | (eagerDelegation ? 2 : 0) | (scoutAvailable ? 4 : 0);
+		const key = (eagerDelegation ? 1 : 0) | (scoutAvailable ? 2 : 0);
 		if (key !== this.#descriptionKey) {
-			this.#description = prompt.render(globDescription, { hasFind, eagerDelegation, scoutAvailable });
+			this.#description = prompt.render(globDescription, { eagerDelegation, scoutAvailable });
 			this.#descriptionKey = key;
 		}
 		return this.#description;

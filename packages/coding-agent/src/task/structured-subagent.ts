@@ -58,7 +58,6 @@ import type {
 	StructuredSubagentSchemaMode,
 	StructuredSubagentSchemaSource,
 } from "@oh-my-pi/pi-tui/tools/task";
-import type { WorkPoolYieldItem } from "./workpool-yield";
 import { parseIsolationBackend } from "./worktree";
 
 import {
@@ -157,8 +156,6 @@ export interface StructuredSubagentRequest {
 	maxRuntimeMs?: number;
 	/** Kernel-defined tools explicitly exposed to this child. */
 	customTools?: CustomTool[];
-	/** Workpool items accepted by the child yield tool during this turn. */
-	workPoolYieldItems?: WorkPoolYieldItem[];
 	signal?: AbortSignal;
 	onProgress?: (progress: AgentProgress) => void;
 	/** See {@link ExecutorOptions.onToolResult}. */
@@ -257,13 +254,12 @@ function resolveSchema(
 }
 
 function createPlanModeAgent(agent: AgentDefinition): AgentDefinition {
-	const tools = [...PLAN_MODE_TOOLS, ...(agent.tools ?? []).filter(tool => tool === "ast_grep")];
+	const tools = [...PLAN_MODE_TOOLS];
 	return {
 		...agent,
 		systemPrompt: `${planModeSubagentPrompt}\n\n${agent.systemPrompt}`,
 		tools,
 		spawns: undefined,
-		prewalk: undefined,
 	};
 }
 
@@ -650,7 +646,6 @@ function buildExecutorOptions(
 		mcpManager: enableMCP ? (session.mcpManager ?? MCPManager.instance()) : undefined,
 		enableMCP,
 		customTools: request.customTools,
-		workPoolYieldItems: request.workPoolYieldItems,
 		contextFiles: session.contextFiles?.filter(file => path.basename(file.path).toLowerCase() !== "agents.md"),
 		skills,
 		// Autoload runs after session start, outside the seance isolation options.

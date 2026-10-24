@@ -13,29 +13,7 @@ import { parseMCPProgress } from "@oh-my-pi/pi-tui/tools/mcp";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { schemaDeclaresIntentField } from "../../utils/tool-schema";
 import { findEnabledEvalPrelude, invokeEvalPrelude } from "../preludes";
-import { EVAL_AGENT_BRIDGE_NAME, type EvalAgentHandleResult, runEvalAgent } from "../agent-bridge";
-import { EVAL_BUDGET_BRIDGE_NAME, type EvalBudgetResult, runEvalBudget } from "../budget-bridge";
 import { withBridgeTimeoutPause } from "../bridge-timeout";
-import { EVAL_COMPLETION_BRIDGE_NAME, type EvalCompletionHandleResult, runEvalCompletion } from "../completion-bridge";
-import {
-	EVAL_JUDGMENT_BATCH_BRIDGE_NAME,
-	type EvalJudgmentBatchResult,
-	runEvalJudgmentBatch,
-} from "../judgment-batch-bridge";
-import { EVAL_JUDGMENT_BRIDGE_NAME, type EvalJudgmentResult, runEvalJudgment } from "../judgment-bridge";
-import {
-	EVAL_CANCEL_BRIDGE_NAME,
-	type EvalHandleSnapshot,
-	EVAL_STATUS_BRIDGE_NAME,
-	EVAL_WAIT_BRIDGE_NAME,
-	runEvalCancel,
-	runEvalStatus,
-	runEvalWait,
-} from "../handle-bridge";
-import type { EvalShadowCellSession } from "../speculation/cell-session";
-import { getActiveEvalShadowCell } from "../speculation/runtime-context";
-import { EVAL_WORKPOOL_BRIDGE_NAME, type EvalWorkpoolResult, runEvalWorkpool } from "../workpool-bridge";
-import type { RuntimeCallIdentity } from "./shared/runtime";
 import type { JsStatusEvent } from "./shared/types";
 
 /** These tools await delegated subagents/jobs, not the cell runtime's own work. */
@@ -47,21 +25,10 @@ export interface ToolBridgeOptions {
 	session: ToolSession;
 	signal?: AbortSignal;
 	emitStatus?: (event: JsStatusEvent) => void;
-	identity?: RuntimeCallIdentity;
-	shadowCell?: EvalShadowCellSession;
 }
 
 type ToolValue =
 	| string
-	| EvalBudgetResult
-	| EvalAgentHandleResult
-	| EvalCompletionHandleResult
-	| EvalJudgmentResult
-	| EvalJudgmentBatchResult
-	| EvalHandleSnapshot
-	| EvalWorkpoolResult
-	| { items: EvalHandleSnapshot[] }
-	| { cancelled: boolean }
 	| {
 			text: string;
 			details?: unknown;
@@ -185,28 +152,6 @@ export function bridgeValueFromToolResult(
 	return value;
 }
 
-function waitForSpeculativeClaim<T>(claim: Promise<T>, signal?: AbortSignal): Promise<T> {
-	if (!signal) return claim;
-	signal.throwIfAborted();
-	const { promise, resolve, reject } = Promise.withResolvers<T>();
-	let settled = false;
-	let onAbort: () => void = () => {};
-	const finish = (settle: () => void): void => {
-		if (settled) return;
-		settled = true;
-		signal.removeEventListener("abort", onAbort);
-		settle();
-	};
-	onAbort = (): void =>
-		finish(() => reject(signal.reason ?? new DOMException("Speculative claim was interrupted", "AbortError")));
-	signal.addEventListener("abort", onAbort, { once: true });
-	void claim.then(
-		value => finish(() => resolve(value)),
-		error => finish(() => reject(error)),
-	);
-	return promise;
-}
-
 export async function callSessionTool(name: string, args: unknown, options: ToolBridgeOptions): Promise<ToolValue> {
 	if (name === "__prelude__") {
 		const request = parsePreludeRequest(args);
@@ -239,38 +184,6 @@ export async function callSessionTool(name: string, args: unknown, options: Tool
 			throw error;
 		}
 	}
-	if (name === EVAL_COMPLETION_BRIDGE_NAME) {
-		return await runEvalCompletion(args, options);
-	}
-	if (name === EVAL_JUDGMENT_BRIDGE_NAME) {
-		return await runEvalJudgment(args, options);
-	}
-	if (name === EVAL_JUDGMENT_BATCH_BRIDGE_NAME) {
-		return await runEvalJudgmentBatch(args, options);
-	}
-	if (name === EVAL_AGENT_BRIDGE_NAME) {
-		return await runEvalAgent(args, options);
-	}
-	if (name === EVAL_BUDGET_BRIDGE_NAME) {
-		return await runEvalBudget(args, options);
-	}
-	if (name === EVAL_WAIT_BRIDGE_NAME) {
-		return await runEvalWait(args, options);
-	}
-	if (name === EVAL_STATUS_BRIDGE_NAME) {
-		return runEvalStatus(args, options);
-	}
-	if (name === EVAL_CANCEL_BRIDGE_NAME) {
-		return runEvalCancel(args, options);
-	}
-	if (name === EVAL_WORKPOOL_BRIDGE_NAME) {
-		return await runEvalWorkpool(args, options);
-	}
-	if (name === "checkpoint" || name === "rewind") {
-		// The session recognizes checkpoint/rewind only as direct toolResult
-		// messages; a bridged call would report success without taking effect.
-		throw new ToolError(`\`${name}\` cannot run through the eval bridge; call the direct \`${name}\` tool.`);
-	}
 	const tool = getTool(options.session, name);
 	const toolCallId = `js-${name}-${crypto.randomUUID()}`;
 	// A schema-owned name stays tool data across alternatives. Deleting an
@@ -294,15 +207,6 @@ export async function callSessionTool(name: string, args: unknown, options: Tool
 			error: error instanceof Error ? error.message : String(error),
 		});
 		throw error;
-	}
-	const shadowCell = options.shadowCell ?? getActiveEvalShadowCell();
-	if (shadowCell && options.identity) {
-		const claimed = await waitForSpeculativeClaim(
-			shadowCell.claim(name, validatedArgs, options.identity, Number.MAX_SAFE_INTEGER, options.signal),
-			options.signal,
-		);
-		options.signal?.throwIfAborted();
-		if (claimed) return bridgeValueFromToolResult(name, validatedArgs, claimed, options.emitStatus);
 	}
 	let settled = false;
 	const onUpdate: AgentToolUpdateCallback | undefined =

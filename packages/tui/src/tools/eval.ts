@@ -55,7 +55,7 @@ import type { OutputMeta } from "./output-meta";
 import { type ConfiguredThinkingLevel, expandKeyHint } from "../render/render-utils";
 
 /** Runtime backend that an eval cell dispatches to. */
-export type EvalLanguage = "python" | "js";
+export type EvalLanguage = "python";
 
 /** Status event emitted by eval prelude helpers for TUI rendering. */
 export interface EvalStatusEvent {
@@ -139,11 +139,6 @@ export interface EvalToolDetails {
 /** Default collapsed eval output preview height; kept as a named alias (consumed by chat/tool-execution). */
 export const EVAL_DEFAULT_PREVIEW_LINES: number = DEFAULT_TERMINAL_PREVIEW_LINES;
 
-function languageForHighlighter(language: EvalLanguage | undefined): "python" | "javascript" {
-	if (language === "js") return "javascript";
-	return "python";
-}
-
 interface EvalRenderCellArg {
 	language?: string;
 	code?: string;
@@ -168,21 +163,15 @@ interface EvalRenderCell {
 	title?: string;
 }
 
-function normalizeRenderLanguage(value: string | undefined): EvalLanguage {
-	if (value === "js") return "js";
-	return "python";
-}
-
 function getRenderCells(args: EvalRenderArgs | undefined): EvalRenderCell[] {
 	if (!args) return [];
 	const raw = Array.isArray(args.cells) ? args.cells : typeof args.code === "string" ? [args] : [];
 	const out: EvalRenderCell[] = [];
 	for (const cell of raw) {
 		if (!cell || typeof cell !== "object") continue;
-		const language = normalizeRenderLanguage(typeof cell.language === "string" ? cell.language : undefined);
 		out.push({
-			language,
-			code: formatEvalCodeForDisplay(cell.code ?? "", language),
+			language: "python",
+			code: formatEvalCodeForDisplay(cell.code ?? ""),
 			title: typeof cell.title === "string" ? cell.title : undefined,
 		});
 	}
@@ -480,12 +469,6 @@ function formatStatusEvent(event: EvalStatusEvent, theme: Theme): string {
 			break;
 		case "tool_define":
 			parts.push(`${data.name}(${(Array.isArray(data.params) ? data.params : []).join(", ")})`);
-			break;
-		case "workpool":
-			parts.push(`${data.action} ${data.pool}`);
-			if (data.count !== undefined) {
-				parts.push(data.action === "create" ? `${data.count} agent(s)` : `${data.count} item(s)`);
-			}
 			break;
 		case "judge_batch":
 			parts.push(`${data.action} ${data.id}`);
@@ -910,7 +893,7 @@ function evalCellBox(cell: EvalCellRun, index: number, total: number): NativeNod
 			cell.code.trim().length > 0 &&
 				runInput(cell.code, {
 					role: "omp.tool.eval.input",
-					lang: languageForHighlighter(cell.language),
+					lang: "python",
 					wrap: false,
 				}),
 			...(cell.outputs ?? []),
@@ -955,7 +938,7 @@ export const evalToolRenderer = {
 						cells: cells.map((cell, i) => {
 							const cellOptions: CodeCellOptions = {
 								code: cell.code,
-								language: languageForHighlighter(cell.language),
+								language: "python",
 								showLanguage: true,
 								index: i,
 								total: cells.length,
@@ -1029,7 +1012,7 @@ export const evalToolRenderer = {
 				const agentEvents = allEvents.filter(e => e.op === "agent");
 				return {
 					cell,
-					code: formatEvalCodeForDisplay(cell.code, language),
+					code: formatEvalCodeForDisplay(cell.code),
 					language,
 					agentEvents,
 					otherEvents: agentEvents.length > 0 ? allEvents.filter(e => e.op !== "agent") : allEvents,
@@ -1065,7 +1048,7 @@ export const evalToolRenderer = {
 					if (bodies?.key !== bodyKey) {
 						bodies = {
 							key: bodyKey,
-							cells: displayCells.map(({ cell, code, language, agentEvents, otherEvents }, i) => {
+							cells: displayCells.map(({ cell, code, agentEvents, otherEvents }, i) => {
 								const statusLines = renderStatusEvents(otherEvents, uiTheme, expanded, cell.statusEventsElided);
 								const outputContent = formatCellOutputLines(cell, expanded, previewLines, uiTheme, width);
 								const outputLines = [...outputContent.lines];
@@ -1085,7 +1068,7 @@ export const evalToolRenderer = {
 								}
 								const cellOptions: CodeCellOptions = {
 									code,
-									language: languageForHighlighter(language),
+									language: "python",
 									showLanguage: true,
 									index: i,
 									total: cellResults.length,
@@ -1305,7 +1288,7 @@ export const evalToolRenderer = {
 				return evalCellBox(
 					{
 						language,
-						code: formatEvalCodeForDisplay(cell.code, language),
+						code: formatEvalCodeForDisplay(cell.code),
 						title: cell.title,
 						outputs: [...evalOutputNodes(cell.output, cell.views, previewLines)],
 						status: evalStatusSection(cell, expanded),

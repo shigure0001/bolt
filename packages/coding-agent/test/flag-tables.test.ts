@@ -63,14 +63,6 @@ describe("OPTIONAL_VALUE_FLAGS table is honored by args.ts parseArgs", () => {
 	}
 });
 
-describe("--external-thinking", () => {
-	it("enables external thinking without consuming the initial message", () => {
-		const result = parseArgs(["--external-thinking", "check this"]);
-
-		expect(result.externalThinking).toBe(true);
-		expect(result.messages).toEqual(["check this"]);
-	});
-});
 describe("--session-dir", () => {
 	it("uses PI_CODING_AGENT_SESSION_DIR unless the CLI flag overrides it", () => {
 		const previous = Bun.env.PI_CODING_AGENT_SESSION_DIR;
@@ -89,10 +81,10 @@ describe("--session-dir", () => {
 });
 
 describe("--tools validation", () => {
-	it("maps legacy search to grep and keeps find canonical", () => {
-		const result = parseArgs(["--tools", "search,find,grep"]);
+	it("maps legacy search to grep", () => {
+		const result = parseArgs(["--tools", "search,grep"]);
 
-		expect(result.tools).toEqual(["grep", "find"]);
+		expect(result.tools).toEqual(["grep"]);
 	});
 
 	it("defers unknown-name validation until all session tools are discovered", () => {

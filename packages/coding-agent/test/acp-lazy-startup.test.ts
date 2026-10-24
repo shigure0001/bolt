@@ -255,7 +255,6 @@ describe("ACP lazy startup", () => {
 			"task.isolation.apply": false,
 			"task.isolation.merge": "branch",
 			"task.isolation.commits": "ai",
-			"task.eager": "always",
 			"task.batch": false,
 			"task.maxConcurrency": 4,
 			"task.maxRecursionDepth": 5,
@@ -269,7 +268,6 @@ describe("ACP lazy startup", () => {
 			"advisor.immuneTurns": 7,
 			"todo.enabled": false,
 			"todo.reminders": false,
-			"todo.eager": "always",
 		} as const;
 		const rpcOnlyExplicit = {
 			"async.enabled": false,

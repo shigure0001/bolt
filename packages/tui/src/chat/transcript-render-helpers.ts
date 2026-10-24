@@ -132,9 +132,7 @@ export function buildIrcMessageCard(message: CustomOrHookMessage, getExpanded: (
 			? ("incoming" as const)
 			: message.customType === "irc:autoreply"
 				? ("autoreply" as const)
-				: message.customType === "irc:workpool"
-					? ("workpool" as const)
-					: ("relay" as const);
+				: ("relay" as const);
 	return createIrcMessageCard(
 		{
 			kind,

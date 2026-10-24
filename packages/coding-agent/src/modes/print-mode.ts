@@ -183,7 +183,7 @@ async function runPrintModeCore(
 	// `xd://propose` execute-dispatch, and when it does not the run strands until
 	// the deadline (issue #8272). So do not honor the startup default here; the
 	// supported headless plan flow is `--plan-yolo` (auto-approve → implement),
-	// which is wired independently through the prewalk coordinator.
+	// which is wired independently through plan-yolo.
 	const planStartupIgnored =
 		cfgPlanDefaultOnStartup.get(session.settings) &&
 		cfgPlanEnabled.get(session.settings) &&

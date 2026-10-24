@@ -118,21 +118,20 @@ describe("parseAgentFields", () => {
 			taskDepth: 1,
 			requireYieldTool: true,
 			enableLsp: false,
-			skipPythonPreflight: true,
 		};
 
 		const plan = await resolveBuiltinToolPlan(session, fields.tools);
 		expect(plan.names).toEqual(["yield"]);
 	});
 
-	test("maps legacy search alias to grep and keeps find canonical", () => {
+	test("maps legacy search alias to grep", () => {
 		const fields = parseAgentFields({
 			name: "reviewer",
 			description: "desc",
-			tools: ["Find", "Glob", "Search", "Grep"],
+			tools: ["Glob", "Search", "Grep"],
 		});
 
-		expect(fields?.tools).toEqual(["find", "glob", "grep"]);
+		expect(fields?.tools).toEqual(["glob", "grep"]);
 	});
 
 	test("parses autoloadSkills from array frontmatter", () => {
@@ -197,27 +196,6 @@ describe("parseAgentFields", () => {
 
 	test("returns undefined readSummarize when field absent", () => {
 		expect(parseAgentFields({ name: "scout", description: "desc" })?.readSummarize).toBeUndefined();
-	});
-	test("parses prewalk from boolean frontmatter", () => {
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: true })?.prewalk).toBe(true);
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: false })?.prewalk).toBe(false);
-	});
-
-	test("parses prewalk boolean strings as booleans", () => {
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: "true" })?.prewalk).toBe(true);
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: "false" })?.prewalk).toBe(false);
-	});
-
-	test("parses prewalk model pattern strings", () => {
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: " @smol " })?.prewalk).toBe("@smol");
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: "openai/gpt-5-mini" })?.prewalk).toBe(
-			"openai/gpt-5-mini",
-		);
-	});
-
-	test("ignores empty and absent prewalk values", () => {
-		expect(parseAgentFields({ name: "worker", description: "desc", prewalk: "  " })?.prewalk).toBeUndefined();
-		expect(parseAgentFields({ name: "worker", description: "desc" })?.prewalk).toBeUndefined();
 	});
 	test("parses advisor from boolean frontmatter and boolean strings", () => {
 		expect(parseAgentFields({ name: "worker", description: "desc", advisor: true })?.advisor).toBe(true);

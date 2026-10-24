@@ -1,8 +1,7 @@
-import { combine, effect, register, type Setting } from "../config/registry";
+import { combine, effect, register } from "../config/registry";
 import type { Settings } from "../config/settings";
 import { formatKeyHint, formatKeyHints } from "@oh-my-pi/pi-tui/app-keybindings";
 import { cfgReadToolResultPreview } from "../tools/settings";
-import { MAGIC_KEYWORDS, type MagicKeywordId } from "./magic-keywords";
 import { TREE_FILTER_MODES } from "@oh-my-pi/pi-tui/overlays/tree-selector";
 import {
 	CONTEXT_LINE_MODE_VALUES,
@@ -1183,31 +1182,6 @@ export const cfgStartupChangelogMode = register({
 		],
 	},
 });
-
-export const cfgMagicKeywordsEnabled = register({
-	id: "magicKeywords.enabled",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "interaction",
-		group: "Magic Keywords",
-		label: "Magic Keywords",
-		description: `Enable hidden notices for standalone ${MAGIC_KEYWORDS.map(keyword => keyword.word).join(", ")} keywords`,
-	},
-});
-
-/** One `magicKeywords.<id>` toggle per registered keyword, keyed by keyword id. */
-export const cfgMagicKeyword = Object.fromEntries(
-	MAGIC_KEYWORDS.map(keyword => [
-		keyword.id,
-		register({
-			id: `magicKeywords.${keyword.id}`,
-			type: "boolean",
-			default: true,
-			ui: { tab: "interaction", group: "Magic Keywords", label: keyword.label, description: keyword.description },
-		}),
-	]),
-) as Record<MagicKeywordId, Setting<boolean>>;
 
 // Notifications
 export const cfgCompletionNotify = register({

@@ -165,7 +165,9 @@ function testsReaching(seeds: Iterable<string>, reverse: Map<string, Set<string>
 
 function nativesEntry(): string | undefined {
 	try {
-		return toPosix(fs.realpathSync(Bun.resolveSync("@oh-my-pi/pi-natives", path.join(repoRoot, "packages", "coding-agent"))));
+		return toPosix(
+			fs.realpathSync(Bun.resolveSync("@oh-my-pi/pi-natives", path.join(repoRoot, "packages", "coding-agent"))),
+		);
 	} catch {
 		return undefined;
 	}
@@ -259,5 +261,7 @@ for (const entry of plan) {
 	console.log(`\n==> ${path.basename(entry.pkg.dir)} (${entry.files.length} files)`);
 	if (!(await runPackage(entry.pkg, entry.files))) failed = true;
 }
-console.log(`\naffected-tests: done in ${((performance.now() - started) / 1000).toFixed(1)}s${failed ? " with failures" : ""}`);
+console.log(
+	`\naffected-tests: done in ${((performance.now() - started) / 1000).toFixed(1)}s${failed ? " with failures" : ""}`,
+);
 process.exit(failed ? 1 : 0);

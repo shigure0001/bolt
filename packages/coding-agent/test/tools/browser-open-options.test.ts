@@ -5,7 +5,6 @@ import * as path from "node:path";
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { applyIgnoreHttpsErrors, resolveInitScriptSources } from "@oh-my-pi/pi-coding-agent/tools/browser/open-options";
 import { DownloadManager } from "@oh-my-pi/pi-coding-agent/tools/browser/downloads";
@@ -45,7 +44,6 @@ function returnedValue(result: { details?: unknown }): unknown {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	await Promise.all(tempDirs.map(dir => fs.rm(dir, { recursive: true, force: true })));
 });
 

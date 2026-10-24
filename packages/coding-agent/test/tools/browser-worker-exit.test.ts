@@ -1,7 +1,6 @@
 import { afterAll, describe, expect, it, spyOn } from "bun:test";
 import type { ImageContent, TextContent } from "@oh-my-pi/pi-ai";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import * as toolBridge from "@oh-my-pi/pi-coding-agent/eval/js/tool-bridge";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import {
@@ -112,7 +111,6 @@ async function crashWhileIdle(name: string): Promise<void> {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 });
 
 describe.skipIf(!CHROMIUM_AVAILABLE)("browser tab worker exit", () => {

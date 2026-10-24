@@ -750,7 +750,6 @@ function renderAgentProgress(
 					? ` ${theme.fg("muted", previewLine(sanitizeText(progress.assignment ?? progress.task), 40))}`
 					: undefined,
 			stats: progress.status === "running" || progress.status === "completed" ? progress : undefined,
-			completionPercent: progress.completionPercent,
 		},
 		theme,
 	);
@@ -764,15 +763,6 @@ function renderAgentProgress(
 
 	// Current tool (if running) or most recent completed tool
 	if (progress.status === "running") {
-		if (progress.stage) {
-			lines.push(
-				truncateTaskRow(
-					`${continuePrefix}${theme.fg("muted", replaceTabs(sanitizeText(progress.stage)))}`,
-					maxWidth,
-					"",
-				),
-			);
-		}
 		if (progress.currentTool) {
 			let toolLine = `${continuePrefix}${theme.tree.hook} ${theme.fg("muted", sanitizeText(progress.currentTool))}`;
 			const toolDetail = toolCallDetail(
@@ -1883,8 +1873,6 @@ function describeProgressAgent(progress: AgentProgress, state: AgentDescribeStat
 				}
 			: null;
 	const summary = taskSummary(progress.description || progress.assignment || progress.task);
-	// The agent's own stage line (from its completion probe) rides beside the task while it runs.
-	const stage = running && progress.stage ? plainText(progress.stage) : "";
 	const retry =
 		running && progress.retryState
 			? {
@@ -1899,7 +1887,7 @@ function describeProgressAgent(progress: AgentProgress, state: AgentDescribeStat
 		{
 			name: formatTaskId(progress.id),
 			agent: progress.agent || undefined,
-			task: stage ? (summary ? [span(summary), span(` · ${stage}`, "muted")] : stage) : summary || undefined,
+			task: summary || undefined,
 			status,
 			model: progress.resolvedModelIdentity ?? progress.resolvedModel,
 			thinking: thinkingToken(progress.resolvedThinkingLevel),
@@ -1909,7 +1897,6 @@ function describeProgressAgent(progress: AgentProgress, state: AgentDescribeStat
 				requests: progress.requests || undefined,
 				tokens: progress.tokens || undefined,
 				...contextStats(progress.contextTokens, progress.contextWindow),
-				done: running && progress.completionPercent !== undefined ? progress.completionPercent / 100 : undefined,
 				cost: progress.cost > 0 ? progress.cost : undefined,
 				...(running ? { age: progress.durationMs } : { took: progress.durationMs }),
 			},
@@ -2232,8 +2219,6 @@ export interface TaskItem {
 	outputSchema?: unknown;
 	/** Validation behavior for a caller-provided or inherited output schema. */
 	schemaMode?: "permissive" | "strict";
-	/** Eval-defined tool names exposed to this child. */
-	tools?: string[];
 	/** Run this spawn in an isolated worktree (batch form; flat form carries it top-level). */
 	isolated?: boolean;
 }
@@ -2263,8 +2248,6 @@ export interface TaskParams {
 	outputSchema?: unknown;
 	/** Validation behavior for a caller-provided or inherited output schema. */
 	schemaMode?: "permissive" | "strict";
-	/** Eval-defined tool names exposed to the flat-form child. */
-	tools?: string[];
 	/** Batch form (`task.batch`): one subagent per item. */
 	tasks?: TaskItem[];
 	/** Batch form: shared background prepended to every assignment; required by the batch schema. */
@@ -2324,8 +2307,6 @@ export interface YieldItem {
 	type?: string | string[];
 	/** Resolve this yield's payload from the latest durable assistant text instead of `data`. */
 	useLastTurn?: boolean;
-	/** True when an incremental workpool yield completed every item in its batch. */
-	complete?: boolean;
 	/**
 	 * Set by the in-tool yield validator when it exhausted its retry budget and
 	 * accepted schema-invalid data anyway. The executor preserves that override
@@ -2393,20 +2374,6 @@ export interface AgentProgress {
 	resolvedModelRoute?: string;
 	/** True when a live advisor was attached to this run's session, not merely enabled in settings. */
 	advisor?: boolean;
-	/** The agent's latest self-estimate of task completion (0–100), from the periodic `task.completionProbe` side request. */
-	completionPercent?: number;
-	/**
-	 * The agent's current step in its own words (one line, ≤ 80 chars), from the
-	 * same probe reply as {@link completionPercent}. Running rows prefer it over
-	 * `lastIntent`; the job widget uses it as its stage line.
-	 */
-	stage?: string;
-	/**
-	 * What the agent says shows its progress live (one line, ≤ 200 chars), e.g.
-	 * "BENCH lines in bg_2 pipe:1, tok_s higher is better, target 70% of roofline";
-	 * from the probe reply. Feeds the job widget author's brief; never rendered.
-	 */
-	watch?: string;
 	/** Data extracted by registered subprocess tool handlers (keyed by tool name) */
 	extractedToolData?: Record<string, unknown[]>;
 	/**

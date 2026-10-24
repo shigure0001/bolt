@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { isPuppeteerTimeout, loadPuppeteer } from "@oh-my-pi/pi-coding-agent/tools/browser/launch";
 import { navigateMainFrame } from "@oh-my-pi/pi-coding-agent/tools/browser/navigation";
@@ -27,7 +26,6 @@ const baseUrl = `http://127.0.0.1:${server.port}`;
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	server.stop(true);
 }, 30_000);
 

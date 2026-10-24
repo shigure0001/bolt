@@ -40,7 +40,6 @@ import {
 	sanitizeRehydratedOpenAIResponsesAssistantMessage,
 	stripInternalDetailsFields,
 } from "./messages";
-import type { WorkPoolYieldItem } from "../task/workpool-yield";
 import { createInterruptedToolResults, sessionExitFollowsLastMessage } from "./exit-diagnostics";
 import type { RetryFallbackRole } from "./retry-fallback-chains";
 import {
@@ -3548,7 +3547,6 @@ export class SessionManager {
 		advisor?: string;
 		compactionThreshold?: { thresholdPercent: number; thresholdTokens: number };
 		isolated?: boolean;
-		workPoolYieldItems?: WorkPoolYieldItem[];
 	}): string {
 		const entry: SessionInitEntry = { type: "session_init", ...this.#freshEntryFields(), ...init };
 		this.#recordEntry(entry);
@@ -3718,7 +3716,7 @@ export class SessionManager {
 	/**
 	 * The most recent model role on the current branch, or undefined when no
 	 * model change has been recorded. `skipEphemeral` passes over temporary
-	 * switches (retry fallback hops, prewalk, context promotion), returning the
+	 * switches (retry fallback hops, plan-yolo, context promotion), returning the
 	 * role the session was last assigned.
 	 */
 	getLastModelChangeRole(options?: { skipEphemeral?: boolean }): string | undefined {
@@ -4517,7 +4515,6 @@ export interface PersistedSessionInit {
 	advisor?: string;
 	compactionThreshold?: { thresholdPercent: number; thresholdTokens: number };
 	isolated?: boolean;
-	workPoolYieldItems?: WorkPoolYieldItem[];
 }
 
 /**
@@ -4545,7 +4542,6 @@ export function extractSessionInit(entries: readonly FileEntry[]): PersistedSess
 			advisor: entry.advisor,
 			isolated: entry.isolated,
 			...(entry.compactionThreshold !== undefined ? { compactionThreshold: entry.compactionThreshold } : undefined),
-			...(entry.workPoolYieldItems !== undefined ? { workPoolYieldItems: entry.workPoolYieldItems } : undefined),
 		};
 	}
 	return init;

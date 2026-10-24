@@ -17,9 +17,6 @@ declare module "@oh-my-pi/pi-agent-core" {
 		 *  wrapper skips tier and explicit prompts only while the effective input
 		 *  remains equal; deny policies and provider safety checks still apply. */
 		acpApprovedArgs?: unknown;
-		/** Reports the approval tier resolved after an extension rewrites an
-		 *  xd:// device call, so dispatch metadata describes the input that ran. */
-		xdevTierResolved?(tier: "read" | "write" | "exec"): void;
 		/** Set only after an interactive prompt approves provider computer safety checks. */
 		providerSafetyApproved?: boolean;
 		/** Set by the Cursor exec bridge, whose read frames compose `:raw` only to

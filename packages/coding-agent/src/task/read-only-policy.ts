@@ -9,9 +9,7 @@ export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"wait",
 	"grep",
 	"glob",
-	"find",
 	"web_search",
-	"ast_grep",
 	"yield",
 	"ask",
 	"todo",
@@ -19,8 +17,6 @@ export const READ_ONLY_TOOL_NAMES: ReadonlySet<string> = new Set([
 	"reflect",
 	"retain",
 	"memory_edit",
-	"checkpoint",
-	"rewind",
 ]);
 
 export function isReadOnlyAgent(agent: AgentDefinition): boolean {

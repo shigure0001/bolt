@@ -10,7 +10,6 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import { buildOutputValidator } from "@oh-my-pi/pi-coding-agent/tools/output-schema-validator";
 import { YieldTool } from "@oh-my-pi/pi-coding-agent/tools/yield";
-import { buildWorkPoolOutputSchema } from "../../src/task/workpool-yield";
 import { yieldSectionShapes } from "../../src/task/yield-assembly";
 import { assembleYieldResult } from "@oh-my-pi/pi-tui/tools/task-yield-assembly";
 
@@ -49,112 +48,6 @@ function makeCodexModel(): Model<"openai-codex-responses"> {
 }
 
 describe("YieldTool", () => {
-	it("accepts one workpool item per yield and completes on the final item", async () => {
-		let items: Array<{ id: string; index: number }> = [];
-		const tool = new YieldTool(createSession({ getWorkPoolYieldItems: () => items }));
-		expect(toRecord(tool.parameters).required).toEqual([]);
-
-		items = [
-			{ id: "review#1", index: 1 },
-			{ id: "review#2", index: 2 },
-		];
-		expect(toRecord(tool.parameters).required).toEqual(["key"]);
-		expect(tool.description).toContain("ONE workpool item at a time");
-		const first = await tool.execute("pool-1", { key: 1, data: "one" });
-		expect(first.content).toEqual([{ type: "text", text: "Item 1 submitted. Remaining item(s): 2." }]);
-		expect(first.details).toMatchObject({
-			status: "success",
-			type: ["review#1"],
-			complete: undefined,
-		});
-		await expect(tool.execute("pool-duplicate", { key: 1, data: { outcome: "again" } })).rejects.toThrow(
-			"already submitted",
-		);
-
-		const second = await tool.execute("pool-2", { key: 2, data: { outcome: "two" } });
-		expect(second.content).toEqual([
-			{ type: "text", text: "Item 2 submitted. All workpool items are complete; ending this turn." },
-		]);
-		expect(second.details).toMatchObject({ status: "success", type: ["review#2"], complete: true });
-
-		items = [{ id: "next#1", index: 1 }];
-		const next = await tool.execute("pool-next", { key: 1, data: { outcome: "new batch" } });
-		expect(next.details).toMatchObject({ type: ["next#1"], complete: true });
-	});
-
-	it("keeps a failed workpool item in the batch output and accepts its independent sibling", async () => {
-		const items = [
-			{ id: "review#1", index: 1 },
-			{ id: "review#2", index: 2 },
-		];
-		const tool = new YieldTool(createSession({ getWorkPoolYieldItems: () => items }));
-		const failed = await tool.execute("pool-failed", { key: 1, error: "review unavailable" });
-		expect(failed.details).toMatchObject({
-			status: "success",
-			error: "review unavailable",
-			data: { error: "review unavailable" },
-			type: ["review#1"],
-			complete: undefined,
-		});
-		expect(failed.content[0]).toMatchObject({ text: expect.stringContaining("Remaining item(s): 2") });
-		await expect(tool.execute("pool-duplicate", { key: 1, error: "again" })).rejects.toThrow("already submitted");
-		const completed = await tool.execute("pool-completed", { key: 2, data: { ok: true } });
-		if (!failed.details || !completed.details) throw new Error("yield details missing");
-		expect(completed.details.complete).toBe(true);
-		const assembled = assembleYieldResult(
-			[failed.details, completed.details],
-			undefined,
-			yieldSectionShapes(buildWorkPoolOutputSchema(items)),
-		);
-		expect(assembled?.data).toEqual({
-			"review#1": { error: "review unavailable" },
-			"review#2": { ok: true },
-		});
-		expect(buildOutputValidator(buildWorkPoolOutputSchema(items)).validator?.validate(assembled?.data).success).toBe(
-			true,
-		);
-	});
-
-	it("ends a workpool turn when its last item reports an error", async () => {
-		const items = [{ id: "review#1", index: 1 }];
-		const tool = new YieldTool(createSession({ getWorkPoolYieldItems: () => items }));
-		const failed = await tool.execute("pool-final-error", { key: 1, error: "review unavailable" });
-		if (!failed.details) throw new Error("yield details missing");
-		expect(failed.details).toMatchObject({
-			status: "success",
-			data: { error: "review unavailable" },
-			type: ["review#1"],
-			complete: true,
-		});
-		expect(
-			assembleYieldResult([failed.details], undefined, yieldSectionShapes(buildWorkPoolOutputSchema(items)))?.data,
-		).toEqual({
-			"review#1": { error: "review unavailable" },
-		});
-	});
-
-	it("assembles per-key workpool yields into the batch output schema", () => {
-		const items = [
-			{ id: "review#1", index: 1 },
-			{ id: "review#2", index: 2 },
-		];
-		const schema = buildWorkPoolOutputSchema(items);
-		const assembled = assembleYieldResult(
-			[
-				{ status: "success", type: ["review#1"], data: { outcome: "one" } },
-				{ status: "success", type: ["review#2"], data: { outcome: "two" }, complete: true },
-			],
-			undefined,
-			yieldSectionShapes(schema),
-		);
-		expect(assembled?.data).toEqual({
-			"review#1": { outcome: "one" },
-			"review#2": { outcome: "two" },
-		});
-		const validator = buildOutputValidator(schema).validator;
-		expect(validator?.validate(assembled?.data).success).toBe(true);
-	});
-
 	it("commits a terminal yield emitted before parent steering lands (#10645)", async () => {
 		// The parent's `hub send` arrives while the child is still streaming its
 		// yield call. The already-generated yield must execute and settle the
@@ -884,18 +777,6 @@ describe("YieldTool", () => {
 		expect(incremental).toBeInstanceOf(Error);
 		expect(String(incremental.message)).toContain('{"type":["findings"],"data":<your output>}');
 		expect(String(incremental.message)).toContain('{"error":"contradictory source"}');
-	});
-
-	it("keeps the workpool key in data/error conflict resend guidance", async () => {
-		const tool = new YieldTool(createSession({ getWorkPoolYieldItems: () => [{ id: "review#2", index: 2 }] }));
-		const failure = await tool
-			.execute("pool-conflict", { key: 2, data: { ok: true }, error: "boom" })
-			.catch(err => err);
-		expect(failure).toBeInstanceOf(Error);
-		expect(String(failure.message)).toContain("workpool yield requires exactly one of data or error");
-		expect(String(failure.message)).toContain('{"key":2,"data":<your output>}');
-		expect(String(failure.message)).toContain('{"key":2,"error":"boom"}');
-		expect(String(failure.message)).not.toContain('"type"');
 	});
 
 	it("aborts instead of throwing forever after repeated untyped empty results", async () => {

@@ -401,18 +401,16 @@ it("startup-mounted destructive tools gain the ACP permission gate when the brid
 	expect(permissionSpy).toHaveBeenCalledTimes(1);
 	expect(deleteTool.executeCalls).toBe(1);
 });
-it("edit, write, and ast_edit do not request ACP permission", async () => {
+it("edit and write do not request ACP permission", async () => {
 	const editTool = makeFakeTool("edit");
 	const writeTool = makeFakeTool("write");
-	const astEditTool = makeFakeTool("ast_edit");
 	const bridge = makeBridge({ outcome: "cancelled" });
 	const permissionSpy = spyOn(bridge, "requestPermission");
-	session = await createSession([editTool, writeTool, astEditTool], bridge);
+	session = await createSession([editTool, writeTool], bridge);
 
-	await session.setActiveToolsByName(["edit", "write", "ast_edit"]);
+	await session.setActiveToolsByName(["edit", "write"]);
 	const wrappedEdit = session.agent.state.tools.find(t => t.name === "edit");
 	const wrappedWrite = session.agent.state.tools.find(t => t.name === "write");
-	const wrappedAstEdit = session.agent.state.tools.find(t => t.name === "ast_edit");
 
 	await wrappedEdit!.execute("call-edit", { path: "/tmp/foo.ts" }, undefined, undefined as never, undefined as never);
 	await wrappedWrite!.execute(
@@ -422,18 +420,10 @@ it("edit, write, and ast_edit do not request ACP permission", async () => {
 		undefined as never,
 		undefined as never,
 	);
-	await wrappedAstEdit!.execute(
-		"call-ast",
-		{ paths: ["/tmp/foo.ts"] },
-		undefined,
-		undefined as never,
-		undefined as never,
-	);
 
 	expect(permissionSpy).toHaveBeenCalledTimes(0);
 	expect(editTool.executeCalls).toBe(1);
 	expect(writeTool.executeCalls).toBe(1);
-	expect(astEditTool.executeCalls).toBe(1);
 });
 
 it("edit delete and move operations request ACP permission before executing", async () => {

@@ -4,7 +4,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { CMUX_CONSOLE_CAPTURE_SCRIPT } from "@oh-my-pi/pi-coding-agent/tools/browser/console-capture";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
@@ -63,7 +62,6 @@ async function call(method: string, args: unknown[] = []): Promise<unknown> {
 
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	await fs.rm(root, { recursive: true, force: true });
 });
 

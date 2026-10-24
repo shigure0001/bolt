@@ -94,7 +94,7 @@ Kernel semantics are implemented in `executePython` / `PythonKernel` and apply t
 - `session` (default)
   - kernels are cached by `(session id, cwd, interpreter)`
   - multiple owners can share a retained kernel for the same key
-  - foreground eval tool calls use exclusive concurrency; this is not a blanket lock on background cells or kernel-defined tool requests
+  - foreground eval tool calls use exclusive concurrency; this is not a blanket lock on background cells
   - dead kernels are replaced before execution
 - `per-call`
   - creates a subprocess for the request

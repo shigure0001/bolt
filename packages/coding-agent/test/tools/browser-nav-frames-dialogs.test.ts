@@ -1,6 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { navigateMainFrame } from "@oh-my-pi/pi-coding-agent/tools/browser/navigation";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
@@ -119,7 +118,6 @@ async function observe(invoke: (parameters: unknown) => Promise<{ details?: unkn
 // Chromium takes about 10 s to shut down while the stuck-frame test's renderer is still spinning.
 afterAll(async () => {
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 	server.stop(true);
 }, 30_000);
 

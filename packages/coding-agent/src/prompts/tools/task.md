@@ -26,9 +26,7 @@ Subagents start with no memory of this conversation. Pass large inputs as `local
 {{#if seanceGuidance}}
 {{seanceGuidance}}
 {{/if}}
-{{#if evalToolsEnabled}}
-- `tools`: tools you defined in `eval`; they run in your kernel.
-{{/if}}
+
 {{#if effortEnabled}}
 - `effort`: `"lo"`, `"med"` or `"hi"`, according to how open-ended the problem is.
 {{/if}}

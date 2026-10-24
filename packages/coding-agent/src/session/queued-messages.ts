@@ -1,6 +1,5 @@
 import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@oh-my-pi/pi-ai";
-import { MAGIC_KEYWORDS } from "../modes/magic-keywords";
 import type { RestoredQueuedMessage } from "./agent-session-types";
 import { type CustomMessage, readQueueChipText } from "./messages";
 
@@ -71,9 +70,6 @@ export function isUserAuthoredQueuedMessage(message: AgentMessage): boolean {
 	return isUserQueuedMessage(message) && !("attribution" in message && message.attribution === "agent");
 }
 
-/** Hidden magic-keyword notice types (`<id>-notice`) queued alongside a user prompt. */
-const MAGIC_KEYWORD_NOTICE_TYPES: ReadonlySet<string> = new Set(MAGIC_KEYWORDS.map(keyword => `${keyword.id}-notice`));
-
 /** Hidden companion carrying vision descriptions for a text-only model. */
 export const IMAGE_ATTACHMENT_DESCRIPTION_TYPE = "image-attachment-description";
 
@@ -96,8 +92,7 @@ export function isHiddenUserCompanion(message: AgentMessage): boolean {
 	if (message.customType === SESSION_AGENT_NOTICE_TYPE) return true;
 	return (
 		message.attribution === "user" &&
-		(MAGIC_KEYWORD_NOTICE_TYPES.has(message.customType) ||
-			message.customType === IMAGE_ATTACHMENT_DESCRIPTION_TYPE ||
+		(message.customType === IMAGE_ATTACHMENT_DESCRIPTION_TYPE ||
 			message.customType === VIDEO_ATTACHMENT_TYPE ||
 			message.customType === IMAGE_ATTACHMENT_TYPE)
 	);

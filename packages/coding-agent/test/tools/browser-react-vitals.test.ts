@@ -2,7 +2,6 @@ import type { Server } from "bun";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as path from "node:path";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { disposeAllVmContexts } from "@oh-my-pi/pi-coding-agent/eval/js/context-manager";
 import { createBrowserPrelude } from "@oh-my-pi/pi-coding-agent/tools/browser";
 import { releaseAllTabs } from "@oh-my-pi/pi-coding-agent/tools/browser/tab-supervisor";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools/index";
@@ -101,7 +100,6 @@ ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(
 afterAll(async () => {
 	server.stop(true);
 	await releaseAllTabs({ kill: true });
-	await disposeAllVmContexts();
 });
 
 describe.skipIf(!CHROMIUM_AVAILABLE)("browser React introspection and Web Vitals", () => {

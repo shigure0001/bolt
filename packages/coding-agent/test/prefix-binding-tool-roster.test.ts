@@ -71,14 +71,17 @@ function newSession(
 		beforeRequest?: () => Promise<void>;
 		/** Prompt-cache key inherited from the session a fork was taken from. */
 		forkPromptCacheKey?: string;
+		withDeferredTool?: boolean;
 	} = {},
 ): TestSession {
 	const read = createTool("read");
 	const bash = createTool("bash");
+	const loadTools = createTool("load_tools");
 	const toolRegistry = new Map<string, AgentTool>([
 		[read.name, read],
 		[bash.name, bash],
 	]);
+	if (options.withDeferredTool) toolRegistry.set(loadTools.name, loadTools);
 	const mock = createMockModel({ responses: [{ content: ["ok"] }, { content: ["ok"] }] });
 	const contexts: Message[][] = [];
 	const systemPrompts: string[][] = [];
@@ -111,10 +114,13 @@ function newSession(
 	const session = new AgentSession({
 		agent,
 		sessionManager: options.sessionManager ?? SessionManager.inMemory(),
-		settings: Settings.isolated({ "compaction.enabled": false }),
+		settings: Settings.isolated({
+			"compaction.enabled": false,
+			"tools.deferred": options.withDeferredTool ? ["bash"] : [],
+		}),
 		modelRegistry: { getApiKey: async () => "test-key" } as never,
 		toolRegistry,
-		builtInToolNames: ["read", "bash"],
+		builtInToolNames: options.withDeferredTool ? ["read", "bash", "load_tools"] : ["read", "bash"],
 		providerPromptCacheKeySource: options.forkPromptCacheKey ? "fork" : undefined,
 		extensionRunner: options.beforeAgentStartSystemPrompt
 			? ({
@@ -187,6 +193,29 @@ describe("prefix-bound tool roster changes", () => {
 			expect(secondRequest.match(/Tool availability changed\./g)).toHaveLength(1);
 		});
 	}
+
+	it("does not repeat tools announced by load_tools in the next roster notice", async () => {
+		const harness = newSession(createPrefixBindingModel(), { withDeferredTool: true });
+		sessions.push(harness.session);
+		await harness.session.setActiveToolPresentation(["read", "load_tools"], []);
+		await harness.session.prompt("first");
+
+		expect(await harness.session.loadDeferredTools(["bash"])).toEqual({
+			loaded: ["bash"],
+			alreadyActive: [],
+			unknown: [],
+		});
+		expect(harness.session.getActiveToolNames()).toContain("bash");
+		await harness.session.prompt("second");
+
+		const notices = harness.session.agent.state.messages.filter(
+			message => message.role === "custom" && message.customType === "tool-roster-notice",
+		);
+		expect(notices).not.toContainEqual(
+			expect.objectContaining({ details: expect.objectContaining({ added: expect.arrayContaining(["bash"]) }) }),
+		);
+		expect(providerText(harness.contexts[1]!)).not.toContain("Now available: bash.");
+	});
 
 	it("rebuilds a prefix-bound prompt when the roster changes before the first turn", async () => {
 		const harness = newSession(createPrefixBindingModel());

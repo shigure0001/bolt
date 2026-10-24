@@ -147,7 +147,6 @@ describe("BashTool through AgentSession runs children in their own session (e2e)
 		const settings = Settings.isolated({
 			"compaction.enabled": false,
 			"todo.enabled": false,
-			"todo.eager": "default",
 			"todo.reminders": false,
 			// BashTool consults these — keep them off so the test path is the simple
 			// synchronous `executeBash` call, not the async-job manager.

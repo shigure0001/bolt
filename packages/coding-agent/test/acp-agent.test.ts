@@ -1184,12 +1184,12 @@ describe("ACP agent", () => {
 	});
 
 	it("pushes config_option_update when the model changes internally", async () => {
-		// Internal callers (prewalk hand-offs, retry-fallback, model cycling)
+		// Internal callers (plan-yolo hand-offs, retry-fallback, model cycling)
 		// change AgentSession's model directly without going through the ACP
 		// setSessionConfigOption surface. Once the session-lifetime subscription
 		// is installed, those changes must surface to clients as
 		// `config_option_update` — otherwise a client's model indicator (e.g.
-		// Zed's status bar) goes stale the moment prewalk hands off to a
+		// Zed's status bar) goes stale the moment a hand-off switches to another
 		// cheaper model mid-session.
 		const harness = await createHarness();
 		vi.useFakeTimers();

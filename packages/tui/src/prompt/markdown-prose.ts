@@ -1,16 +1,9 @@
 import { FENCE_RE } from "../render/render-utils";
 
 /**
- * Markdown structure awareness for the magic-keyword affordances (see
- * `magic-keywords.ts`) and the spelling provider.
- *
- * Keyword detection and editor/transcript highlighting must fire only on prose
- * the user is actually addressing to the model — never on a word that happens to
- * live inside a fenced code block, an inline code span, or an HTML/XML section.
- * {@link maskNonProse} returns a length-preserving copy of the text where every
- * such region is blanked to spaces, so a word-bounded match run against the mask
- * never lands inside code/markup while its indices still address the original
- * text for painting.
+ * Markdown structure awareness for the spelling provider. `maskNonProse`
+ * blanks code fences, inline code spans, and HTML/XML sections while retaining
+ * their original character positions.
  */
 
 // Tag/element name: HTML5/XML start char + name chars. Sticky so we can probe at
@@ -231,15 +224,4 @@ export function maskNonProse(text: string): string {
 		if (masked[p] && arr[p] !== "\n") arr[p] = " ";
 	}
 	return arr.join("");
-}
-
-/**
- * Whether `text` contains a standalone keyword match (per the non-global,
- * word-bounded `word` regex) that lives in prose rather than inside a code
- * block, inline code span, or HTML/XML section. `word` MUST be non-global so
- * `.test` stays stateless.
- */
-export function keywordInProse(text: string, word: RegExp): boolean {
-	if (!word.test(text)) return false;
-	return word.test(maskNonProse(text));
 }

@@ -16,7 +16,6 @@ import type { DescribeContext, NativeChild, NativeNode } from "../src/native/nod
 const ANSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 const OVERRIDE_KEYS = {
 	model: "task.agentModelOverrides",
-	prewalk: "task.agentPrewalk",
 	advisor: "task.agentAdvisor",
 } as const;
 
@@ -101,7 +100,6 @@ async function createHub(settings: TestSettings): Promise<{
 				for (const agent of agents) {
 					agent.disabled = settings.lists.get("task.disabledAgents")?.includes(agent.name) ?? false;
 					agent.overrideModel = settings.records.get(OVERRIDE_KEYS.model)?.[agent.name];
-					agent.prewalkOverride = settings.records.get(OVERRIDE_KEYS.prewalk)?.[agent.name];
 					agent.advisorOverride = settings.records.get(OVERRIDE_KEYS.advisor)?.[agent.name];
 				}
 				return agents;
@@ -109,7 +107,6 @@ async function createHub(settings: TestSettings): Promise<{
 			getAvailableModels: () => [sonnet],
 			effectiveModelPatterns: agent => (agent.overrideModel ? [agent.overrideModel] : []),
 			resolvePatterns: () => undefined,
-			effectivePrewalkPattern: () => undefined,
 			effectiveAdvisorPattern: agent => (agent.advisorOverride === "on" ? "@advisor" : undefined),
 			setAgentDisabled: (name, { disabled }) =>
 				settings.setMember("task.disabledAgents", name, { member: disabled }),
@@ -196,8 +193,7 @@ describe("AgentsHub configuration strips", () => {
 		const { hub, strip } = await createHub(settings);
 		hub.handleInput("\r"); // agent strip for `dev`
 		expect(strip()).toContain("dev →");
-		hub.handleInput("\x1b[C"); // model → prewalk
-		hub.handleInput("\x1b[C"); // prewalk → advisor
+		hub.handleInput("\x1b[C"); // model → advisor
 		hub.handleInput("\r"); // advisor value strip
 		expect(strip()).toContain("dev · advisor →");
 		hub.handleInput("\x1b[C"); // agent default → on
@@ -212,8 +208,7 @@ describe("AgentsHub configuration strips", () => {
 		settings.records.set("task.agentAdvisor", { dev: "on" });
 		const { hub, type } = await createHub(settings);
 		hub.handleInput("\r");
-		hub.handleInput("\x1b[C");
-		hub.handleInput("\x1b[C");
+		hub.handleInput("\x1b[C"); // model → advisor
 		hub.handleInput("\r"); // advisor strip
 		// agent default → on → off → pick model… → pattern…
 		for (let i = 0; i < 4; i++) hub.handleInput("\x1b[C");
@@ -315,7 +310,7 @@ describe("AgentsHub picker", () => {
 		expect(pickerProps(hub).selected).toBe("agent:bundled:scout");
 		hub.handleNativeEvent({ type: "action", key: "", act: "configure", mods: [] });
 		const strip = pickerProps(hub).strip;
-		expect(strip?.items.map(item => item.label)).toEqual(["Disable", "model: auto", "prewalk: off", "advisor: off"]);
+		expect(strip?.items.map(item => item.label)).toEqual(["Disable", "model: auto", "advisor: off"]);
 		expect(pickerProps(hub).focus).toBe("strip");
 
 		hub.handleNativeEvent({ type: "action", key: "", act: "strip", value: "0", mods: [] });
@@ -367,7 +362,7 @@ describe("AgentsHub native events", () => {
 
 		hub.handleNativeEvent({ type: "activate", key: agents.path, item: "agent:bundled:scout" });
 		const strip = mustFind(hub, "strip");
-		expect(strip.node.k === "tabs" && strip.node.p?.items.length).toBe(4);
+		expect(strip.node.k === "tabs" && strip.node.p?.items.length).toBe(3);
 
 		// Chip 0 is the enable/disable toggle; activating it persists only scout.
 		hub.handleNativeEvent({ type: "activate", key: strip.path, item: "0" });

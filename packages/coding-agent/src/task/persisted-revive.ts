@@ -30,7 +30,6 @@ import {
 	followMCPTools,
 	subagentRetryFallbackRole,
 } from "./executor";
-import { isCompletionProbeEnabled } from "./completion-probe";
 import { cfgTaskAgentAccountPools } from "./settings";
 import { type RestoredSeanceSession, restoreSeanceSession } from "./seance";
 import { seanceIsolationOptions } from "./seance-policy";
@@ -301,8 +300,6 @@ export function createPersistedSubagentReviverFactory(
 			await session.setActiveToolsByName(
 				restoredSeance ? revivedToolNames : [...revivedToolNames, ...session.getMountedXdevToolNames()],
 			);
-			// The yield tool's schema carries the last batch's items; the replayed prefix must match it.
-			if (init.workPoolYieldItems) await session.setWorkPoolYieldItems(init.workPoolYieldItems);
 			// Wire the extension runtime exactly as the live executor does. Without
 			// this the runner stays pre-init, every action method throws
 			// `ExtensionRuntimeNotInitializedError`, and a `tool_call` handler that
@@ -322,7 +319,6 @@ export function createPersistedSubagentReviverFactory(
 			attachIrcWakeTurnMonitor(session, {
 				id: ref.id,
 				agent: persistedAgentDefinition(ref.displayName, init),
-				completionProbe: isCompletionProbeEnabled(ctx.settings, taskDepth - 1),
 				eventBus: ctx.eventBus,
 				subagentEventBus: ctx.subagentEventBus,
 				sessionFile,

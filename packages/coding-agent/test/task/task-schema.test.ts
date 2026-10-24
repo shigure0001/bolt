@@ -41,25 +41,7 @@ describe("task schema (single-spawn)", () => {
 		expect(parsed instanceof type.errors).toBe(true);
 	});
 
-	it("removes eval tool names from the wire shape when eval.tools.enabled is off", () => {
-		const schema = getTaskSchema({
-			isolationEnabled: false,
-			batchEnabled: false,
-			evalToolsEnabled: false,
-		});
-		const parsed = schema({
-			agent: "scout",
-			task: "Map the auth module.",
-			solutionSpace: "c",
-			tools: ["word_count"],
-		});
-		expect(parsed instanceof type.errors).toBe(false);
-		if (parsed && typeof parsed === "object" && !(parsed instanceof type.errors)) {
-			expect("tools" in parsed).toBe(false);
-		}
-	});
-
-	it("retains caller outputSchema, schemaMode, and eval tool names while stripping stale keys", () => {
+	it("retains caller outputSchema and schemaMode while stripping stale keys", () => {
 		const outputSchema = { type: "object", properties: { answer: { type: "string" } } };
 		const parsed = taskSchema({
 			agent: "scout",
@@ -67,7 +49,6 @@ describe("task schema (single-spawn)", () => {
 			solutionSpace: "c",
 			outputSchema,
 			schemaMode: "strict",
-			tools: ["word_count"],
 			context: "shared background",
 			tasks: [{ name: "A", task: "..." }],
 			schema: '{"properties":{}}',
@@ -76,7 +57,6 @@ describe("task schema (single-spawn)", () => {
 		if (!(parsed instanceof type.errors)) {
 			expect(parsed.outputSchema).toEqual(outputSchema);
 			expect(parsed.schemaMode).toBe("strict");
-			expect(parsed.tools).toEqual(["word_count"]);
 			expect("tasks" in parsed).toBe(false);
 			expect("context" in parsed).toBe(false);
 			expect("schema" in parsed).toBe(false);
@@ -91,7 +71,6 @@ describe("task schema seance fields", () => {
 				const schema = getTaskSchema({
 					batchEnabled,
 					isolationEnabled,
-					evalToolsEnabled: false,
 					seanceFields: seanceTaskSchemaFields,
 				});
 				const modelSelector = batchEnabled

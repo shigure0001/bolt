@@ -102,7 +102,7 @@ Generated blocks that are outside block 0 remain normal: the `<project-context>`
 
 The generated project/footer route already renders `contextFiles` and `appendPrompt` once. A template SHOULD NOT render those fields in block 0 unless it intentionally wants duplicate copies.
 
-Use effective session settings and live tool data rather than copying today's rendered prose. `subagent` is true when rendering a task subagent's prompt; the bundled templates use it to replace verification duties with a hand-off to the main agent. `eagerTasks` and `eagerTasksAlways` reflect task settings captured when the session starts, while `xdevDocs`, `toolInventory`, and `toolRefs` reflect mounted devices and tool state whenever the prompt rebuilds. `xdevDocs` also reflects the `tools.xdevDocs` / `tools.xdevInlineDevices` settings used for that rebuild.
+Use effective session settings and live tool data rather than copying today's rendered prose. `subagent` is true when rendering a task subagent's prompt; the bundled templates use it to replace verification duties with a hand-off to the main agent. `delegationBias` reflects the active model's delegation policy, while `xdevDocs`, `toolInventory`, and `toolRefs` reflect mounted devices and tool state whenever the prompt rebuilds. `xdevDocs` also reflects the `tools.xdevDocs` / `tools.xdevInlineDevices` settings used for that rebuild.
 
 The template has the same helper set used by the bundled prompt (`if`, `each`, `unless`, `list`, `when`, `has`, `ifAny`, `includes`, and the other registered helpers). No extra helper is created for a user file. Values inserted into a template are data, not a second template pass: Handlebars-looking text inside `xdevDocs`, context files, tool descriptions, or other values is not recursively rendered.
 
@@ -162,15 +162,11 @@ Create `<cwd>/.omp/SYSTEM_TEMPLATE.md` (or pass the same file to `--system-promp
 
 ```handlebars
 # Delegation
-{{#if eagerTasksAlways}}
-After settling the design, MUST delegate substantial work through `{{toolRefs.task}}`.
+{{#when delegationBias "==" "gated"}}
+Delegate only when explicitly requested.
 {{else}}
-{{#if eagerTasks}}
-After settling the design, SHOULD delegate substantial work through `{{toolRefs.task}}`.
-{{else}}
-Delegate only when the request or repository guidance calls for it.
-{{/if}}
-{{/if}}
+Decide whether delegation helps before calling `{{toolRefs.task}}`.
+{{/when}}
 
 # Tools
 {{toolInventory}}
@@ -182,7 +178,7 @@ Write JSON args as `content` to `xd://<tool>` via `{{toolRefs.write}}`.
 {{/if}}
 ```
 
-This is a complete, runnable Handlebars Markdown template. It uses only built-in block helpers and live fields. It deliberately references `eagerTasksAlways`, `eagerTasks`, `toolInventory`, `xdevTools`, `toolRefs`, and `xdevDocs`; omitted fields would not be inserted automatically.
+This is a complete, runnable Handlebars Markdown template. It uses only built-in block helpers and live fields. It deliberately references `delegationBias`, `toolInventory`, `xdevTools`, `toolRefs`, and `xdevDocs`; omitted fields would not be inserted automatically.
 
 ### Replace the personality block
 

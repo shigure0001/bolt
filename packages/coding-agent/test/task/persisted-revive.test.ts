@@ -1239,14 +1239,7 @@ describe("cold revival replays the system prompt the last request sent", () => {
 		const requests: string[][] = [];
 		const toolRequests: string[] = [];
 		const owner: { session?: AgentSession } = {};
-		// Like the real yield tool, its wire definition carries the active work-pool items.
-		const yieldTool: AgentTool = {
-			...createTool("yield"),
-			get description() {
-				const items = owner.session?.getWorkPoolYieldItems() ?? [];
-				return `yield tool${items.map(item => ` ${item.id}#${item.index}`).join("")}`;
-			},
-		};
+		const yieldTool: AgentTool = createTool("yield");
 		const tools = [...toolNames.map(createTool), yieldTool];
 		const agent = new Agent({
 			getApiKey: () => "test-key",
@@ -1392,52 +1385,6 @@ describe("cold revival replays the system prompt the last request sent", () => {
 		expect((await reviveAndFollowUp(cwd, dropRead)).system).toEqual(spawned.requests.at(-1)!);
 	});
 
-	it("replays the blocks after a later work-pool rebuild in the live session", async () => {
-		const cwd = makeTempDir("@pi-revive-explicit-rebuild-");
-		let batch = 1;
-		const buildPrompt = (toolNames: string[]) => ["base", `batch ${batch}`, `tools: ${toolNames.join(",")}`];
-		const spawned = await spawn(cwd, buildPrompt, spawnResponses());
-		// The next work-pool batch installs its yield contract, which rebuilds the base prompt.
-		batch = 2;
-		await spawned.session.setWorkPoolYieldItems([{ id: "item", index: 0 }]);
-		await spawned.session.prompt("next batch");
-		await spawned.session.waitForIdle();
-		expect(spawned.requests.at(-1)).toEqual(["base", "batch 2", "tools: read,yield"]);
-		await spawned.session.dispose();
-
-		expect((await reviveAndFollowUp(cwd)).system).toEqual(spawned.requests.at(-1)!);
-	});
-
-	it("replays the blocks after a warm revive rebuilds the base and runs a request, without the finished batch's items", async () => {
-		const cwd = makeTempDir("@pi-revive-warm-rebuild-");
-		let batch = 1;
-		const buildPrompt = (toolNames: string[]) => ["base", `batch ${batch}`, `tools: ${toolNames.join(",")}`];
-		await spawn(cwd, buildPrompt, spawnResponses());
-		const lifecycle = AgentLifecycleManager.global();
-		await lifecycle.park("prompt-blocks");
-		let warm: RecordingSession | undefined;
-		vi.spyOn(sdkModule, "createAgentSession").mockImplementationOnce(async options => {
-			warm = createRecordingSession(options!.sessionManager!, buildPrompt, [{ content: ["next"] }]);
-			return { session: warm.session } as CreateAgentSessionResult;
-		});
-		const live = await lifecycle.ensureLive("prompt-blocks");
-		if (!warm || live !== warm.session) throw new Error("Expected a warm revive through the lifecycle");
-		// The next work-pool batch installs its yield contract, which rebuilds the base prompt.
-		batch = 2;
-		await live.setWorkPoolYieldItems([{ id: "item", index: 0 }]);
-		await live.prompt("next batch");
-		await live.waitForIdle();
-		expect(warm.requests.at(-1)).toEqual(["base", "batch 2", "tools: read,yield"]);
-		expect(warm.toolRequests.at(-1)).toContain("yield tool item#0");
-		// The pool clears the contract when the batch finishes, without a model call.
-		await live.setWorkPoolYieldItems([]);
-		await lifecycle.park("prompt-blocks");
-
-		const revived = await reviveAndFollowUp(cwd);
-		expect(revived.system).toEqual(warm.requests.at(-1)!);
-		expect(revived.tools).not.toContain("item#0");
-	});
-
 	it("warm-revives with the tools its spawn enabled, without the parent-owned todo", async () => {
 		const cwd = makeTempDir("@pi-revive-warm-tools-");
 		const buildPrompt = (toolNames: string[]) => ["base", `tools: ${toolNames.join(",")}`];
@@ -1580,7 +1527,7 @@ describe("cold revival replays the system prompt the last request sent", () => {
 		await spawned.session.sessionManager.flush();
 		const beforeBatch = await Bun.file(sessionFile).text();
 		batch = 2;
-		await spawned.session.setWorkPoolYieldItems([{ id: "item", index: 0 }]);
+		await spawned.session.refreshBaseSystemPrompt();
 		await spawned.session.prompt("next batch");
 		await spawned.session.waitForIdle();
 		// An older transcript, whose latest contract is the batch-1 one, is restored and reloaded.

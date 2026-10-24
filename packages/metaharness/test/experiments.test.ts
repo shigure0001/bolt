@@ -24,7 +24,6 @@ function runRow(overrides: Partial<RunRow>): RunRow {
 		agent: "omp",
 		models: "anthropic/claude-opus-4-8",
 		label: "",
-		prewalk: null,
 		config: {},
 		role: "",
 		note: "",
@@ -123,28 +122,6 @@ describe("summarizeArm", () => {
 		expect(finished.projected).toBeNull();
 		// Decided-trace cost ($1 trial), not costUsd/done.
 		expect(finished.costPerTask).toBeCloseTo(1, 5);
-	});
-
-	it("describes the prewalk config in the arm line", () => {
-		const arm = summarizeArm(
-			runRow({
-				jobName: "sb2-nact",
-				prewalk: JSON.stringify({ into: "google/gemini-3.5-flash" }),
-			}),
-			[],
-		);
-		expect(arm.config).toBe("harbor · anthropic/claude-opus-4-8 → google/gemini-3.5-flash at first action");
-	});
-
-	it("still labels legacy reasoning-slide rows", () => {
-		const arm = summarizeArm(
-			runRow({
-				jobName: "sb2-nact",
-				prewalk: JSON.stringify({ model: "google/gemini-3.5-flash", onAction: true, plan: true }),
-			}),
-			[],
-		);
-		expect(arm.config).toBe("harbor · anthropic/claude-opus-4-8 → google/gemini-3.5-flash on first edit/write +plan");
 	});
 });
 

@@ -1,9 +1,7 @@
 import { combine, register } from "../config/registry";
 import { cfgAutolearnEnabled } from "../autolearn/settings";
 import { cfgBashEnabled } from "../exec/settings";
-import { cfgCompactionExperimentalContextManagement } from "../session/context-settings";
-import { cfgEvalJs, cfgEvalPy } from "../eval/settings";
-import { cfgIdaAvailable } from "../ida/install";
+import { cfgEvalPy } from "../eval/settings";
 import { cfgLspEnabled } from "../lsp/settings";
 import { cfgTaskMaxRecursionDepth } from "../task/settings";
 
@@ -395,28 +393,6 @@ export const cfgTodoRemindersMax = register({
 	},
 });
 
-export const cfgTodoEager = register({
-	id: "todo.eager",
-	type: "enum",
-	values: ["default", "preferred", "always"] as const,
-	default: "default",
-	ui: {
-		tab: "tools",
-		group: "Todos",
-		label: "Create Todos Automatically",
-		description: "How strongly to push automatic todo-list creation after the first message",
-		options: [
-			{ value: "default", label: "Default", description: "Model decides; no automatic todo list" },
-			{
-				value: "preferred",
-				label: "Preferred",
-				description: "Suggests a todo list on the first message (reminder, not forced)",
-			},
-			{ value: "always", label: "Always", description: "Forces a comprehensive todo list on the first message" },
-		],
-	},
-});
-
 export const cfgTasksTodoClearDelay = register({
 	id: "tasks.todoClearDelay",
 	type: "number",
@@ -502,66 +478,7 @@ export const cfgGrepContextAfter = register({
 	},
 });
 
-export const cfgAstGrepEnabled = register({
-	id: "astGrep.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "AST Grep",
-		description: "Enable the ast_grep tool for structural AST search",
-	},
-});
-
-export const cfgAstEditEnabled = register({
-	id: "astEdit.enabled",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "AST Edit",
-		description: "Enable the ast_edit tool for structural AST rewrites",
-	},
-});
-
-export const cfgFindEnabled = register({
-	id: "find.enabled",
-	type: "enum",
-	values: ["auto", "on", "off"] as const,
-	default: "auto",
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Find (semantic grep)",
-		description:
-			"Enable the find tool: natural-language search for files and line ranges, judged by the judge model role. Auto enables it only when the judge role resolves to a native TypeSafe jev model",
-		options: [
-			{
-				value: "auto",
-				label: "Auto",
-				description: "Enable when the judge role resolves to a native TypeSafe jev model",
-			},
-			{ value: "on", label: "On", description: "Always enable, whichever model the judge role resolves to" },
-			{ value: "off", label: "Off", description: "Disable the find tool" },
-		],
-	},
-});
-
 // Optional tools
-
-export const cfgDebugEnabled = register({
-	id: "debug.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Debug",
-		description: "Enable the debug tool for DAP-based debugging",
-	},
-});
 
 export const cfgLaunchEnabled = register({
 	id: "launch.enabled",
@@ -609,31 +526,6 @@ export const cfgComputerEnabled = register({
 		group: "Available Tools",
 		label: "Computer",
 		description: "Enable the scriptable host-desktop eval prelude (screenshots, input, accessibility)",
-	},
-});
-
-export const cfgRatchetEnabled = register({
-	id: "ratchet.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Ratchet",
-		description: "Enable the ratchet eval/hillclimb prelude; /ratchet turns it on for the current session",
-	},
-});
-
-export const cfgArchiveEnabled = register({
-	id: "archive.enabled",
-	type: "boolean",
-	default: true,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Archive",
-		description:
-			"Enable the read-only archive eval prelude: prompt history, recent projects, past sessions and recaps",
 	},
 });
 
@@ -718,18 +610,6 @@ export const cfgImagesQuestionTimeoutMs = register({
 			{ value: "180000", label: "3 minutes" },
 			{ value: "300000", label: "5 minutes" },
 		],
-	},
-});
-
-export const cfgCheckpointEnabled = register({
-	id: "checkpoint.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Checkpoint/Rewind",
-		description: "Enable the checkpoint and rewind tools for context checkpointing",
 	},
 });
 
@@ -821,19 +701,6 @@ export const cfgWebSearchEnabled = register({
 	},
 });
 
-export const cfgSecurityEnabled = register({
-	id: "security.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Available Tools",
-		label: "Security",
-		description:
-			"Enable OMP-native security scan planning, execution, and the read-only security:// resource namespace",
-	},
-});
-
 export const cfgAskEnabled = register({
 	id: "ask.enabled",
 	type: "boolean",
@@ -870,37 +737,6 @@ export const cfgToolsAbortOnFabricatedResult = register({
 		label: "Abort On Fabricated Tool Result",
 		description:
 			"With in-band tool calls, stop the model immediately when it starts hallucinating a tool result mid-turn. Disable to let the model finish generating and discard the fabricated continuation instead.",
-	},
-});
-
-export const cfgToolsSpeculativeExecutionEnabled = register({
-	id: "tools.speculativeExecution.enabled",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "tools",
-		group: "Execution",
-		label: "Experimental Speculative Execution",
-		description:
-			"Enable the discard-safe first slice: validated local reads through direct read calls and nested eval. Network requests, provider completions, and live filesystem writes are not part of this baseline.",
-	},
-});
-
-export const cfgToolsSpeculativeExecutionMaxInFlight = register({
-	id: "tools.speculativeExecution.maxInFlight",
-	type: "number",
-	default: 2,
-	ui: {
-		tab: "tools",
-		group: "Execution",
-		label: "Speculative Execution Concurrency",
-		description: "Maximum number of validated local reads allowed to run before normal dispatch.",
-		options: [
-			{ value: "1", label: "1 operation" },
-			{ value: "2", label: "2 operations" },
-			{ value: "3", label: "3 operations" },
-			{ value: "4", label: "4 operations" },
-		],
 	},
 });
 
@@ -1013,19 +849,11 @@ export const DEFAULT_DEFERRED_TOOLS: readonly string[] = [
 	"task",
 	"eval",
 	"lsp",
-	"ast_edit",
-	"ast_grep",
 	"ask",
 	"wait",
 	"todo",
 	"web_search",
-	"find",
-	"debug",
 	"github",
-	"checkpoint",
-	"rewind",
-	"security_scan",
-	"ida",
 	"mcp__*",
 ];
 
@@ -1098,24 +926,15 @@ export const cfgDevAutoqaConsent = register({
 /** Settings read by `resolveBuiltinToolPlan` (`tools/index.ts`); a live session reconciles its built-ins when any changes. */
 export const cfgBuiltinToolGates = combine({
 	ask: cfgAskEnabled,
-	astEdit: cfgAstEditEnabled,
-	astGrep: cfgAstGrepEnabled,
 	async: cfgAsyncEnabled,
 	autolearn: cfgAutolearnEnabled,
 	bash: cfgBashEnabled,
-	checkpoint: cfgCheckpointEnabled,
-	contextManagement: cfgCompactionExperimentalContextManagement,
-	debug: cfgDebugEnabled,
-	evalJs: cfgEvalJs,
 	evalPy: cfgEvalPy,
-	find: cfgFindEnabled,
 	github: cfgGithubEnabled,
 	glob: cfgGlobEnabled,
 	grep: cfgGrepEnabled,
-	ida: cfgIdaAvailable,
 	launch: cfgLaunchEnabled,
 	lsp: cfgLspEnabled,
-	security: cfgSecurityEnabled,
 	taskMaxRecursionDepth: cfgTaskMaxRecursionDepth,
 	todo: cfgTodoEnabled,
 	webSearch: cfgWebSearchEnabled,

@@ -97,9 +97,6 @@ export interface SegmentContext {
 		enabled: boolean;
 		paused: boolean;
 	} | null;
-	prewalk: {
-		enabled: boolean;
-	} | null;
 	loopMode: {
 		state: "waiting" | "running" | "paused";
 		limit?: LoopLimitRuntime;
@@ -109,9 +106,6 @@ export interface SegmentContext {
 	goalMode: {
 		enabled: boolean;
 		paused: boolean;
-	} | null;
-	vibeMode: {
-		enabled: boolean;
 	} | null;
 	/** Modal editing state, or null when `tui.vimMode` is off. */
 	vim: {

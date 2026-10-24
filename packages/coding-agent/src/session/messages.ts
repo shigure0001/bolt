@@ -20,8 +20,6 @@ export {
 	SKILL_PROMPT_MESSAGE_TYPE,
 	LSP_LATE_DIAGNOSTIC_MESSAGE_TYPE,
 	BACKGROUND_TAN_DISPATCH_MESSAGE_TYPE,
-	PREWALK_PLAN_MESSAGE_TYPE,
-	VIBE_MODE_CONTEXT_MESSAGE_TYPE,
 	DEFAULT_CUSTOM_MESSAGE_TYPE,
 	LIVE_DELEGATION_MESSAGE_TYPE,
 	type CustomMessageContent,
@@ -393,12 +391,6 @@ function normalizeSessionMessageForProviderReplay(message: AgentMessage): unknow
 
 /** Custom message type for hidden interrupted-thinking continuity context. */
 export const INTERRUPTED_THINKING_MESSAGE_TYPE = "interrupted-thinking";
-
-/** Custom message type for the transient checkpoint-active reminder. */
-export const CHECKPOINT_ACTIVE_REMINDER_TYPE = "checkpoint-active-reminder";
-
-/** Custom message type carrying a completed rewind's report into model context. */
-export const REWIND_REPORT_MESSAGE_TYPE = "rewind-report";
 
 /** Metadata persisted with a hidden interrupted-thinking continuity message. */
 export interface InterruptedThinkingDetails {

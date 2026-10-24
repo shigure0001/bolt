@@ -143,26 +143,20 @@ describe("job widget registry", () => {
 		expect(calls).toHaveLength(1);
 	});
 
-	it("asks for a subagent's widget only once it says what to watch, and again when that changes", async () => {
+	it("can author a subagent widget from tool output and does not retry after a decline", async () => {
 		const { manager, widgets, calls, advance } = setup();
-		const { job, tools, brief } = startTask(manager, "Tuner");
+		const { job, tools } = startTask(manager, "Tuner");
 		tools.append("» read src/decode.rs\n34:};\n» bash run the bench\nBENCH tok_s=162\n");
 		advance(120_000);
 		widgets.view(job);
-		// Without a word from the subagent its tool results are file contents, not progress.
-		expect(calls).toHaveLength(0);
-
-		brief.watch = "the result of grep TODO";
-		widgets.view(job);
-		expect(calls[0].request.brief.watch).toBe("the result of grep TODO");
-		calls[0].answer.resolve({ skip: "a search result is no progress" });
-		await settle();
-		widgets.view(job);
 		expect(calls).toHaveLength(1);
-
-		brief.watch = "BENCH lines, tok_s higher is better";
-		widgets.view(job);
-		expect(calls).toHaveLength(2);
+		expect(calls[0].request.sources[0]?.id).toBe("tools");
+		calls[0].answer.resolve({ skip: "search results do not show progress" });
+		await settle();
+		tools.append("» bash rerun the bench\nBENCH tok_s=175\n");
+		advance(600_000);
+		expect(widgets.view(job)?.state).toBe("fallback");
+		expect(calls).toHaveLength(1);
 	});
 
 	it("keeps at most two spec requests in flight across jobs", () => {

@@ -32,7 +32,6 @@ import { denyError, resolveApproval, resolveApprovalFromContext } from "../tools
 import { getApprovalGrants } from "../tools/approval-cache";
 import { wrapToolWithMetaNotice } from "../tools/output-meta";
 import { isFilesystemSourcePath } from "../tools/path-utils";
-import { supportsExternalThinking } from "../tools/think";
 import { ToolAbortError } from "../tools/tool-errors";
 import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import {
@@ -62,7 +61,7 @@ import type { SessionEntry } from "./session-entries";
 import type { SessionManager } from "./session-manager";
 
 import { cfgDisabledExtensions, cfgSkills, type SkillsSettings } from "../extensibility/settings";
-import { cfgExternalThinking, cfgIncludeModelInPrompt, cfgInlineToolDescriptors, cfgSkillful } from "./settings";
+import { cfgIncludeModelInPrompt, cfgInlineToolDescriptors, cfgSkillful } from "./settings";
 import { cfgStartupQuiet } from "../modes/settings";
 import {
 	cfgToolsApproval,
@@ -155,9 +154,6 @@ export interface SettingsGatedToolDelta {
 interface SessionToolsOptions {
 	autoApprove?: boolean;
 	toolRegistry?: Map<string, AgentTool>;
-	createVibeTools?: () => AgentTool[];
-	/** Creates the private `think` scratchpad tool for runtime setting changes. */
-	createThinkTool?: () => Promise<AgentTool | null>;
 	builtInToolNames?: Iterable<string>;
 	presentationPinnedToolNames?: ReadonlySet<string>;
 	/** MCP tool names whose current registry entries came from the manager snapshot. */
@@ -353,9 +349,6 @@ export class SessionTools {
 	readonly #host: SessionToolsHost;
 	#autoApprove: boolean;
 	#toolRegistry: Map<string, AgentTool>;
-	#createVibeTools: (() => AgentTool[]) | undefined;
-	#createThinkTool: SessionToolsOptions["createThinkTool"];
-	#installedVibeToolNames = new Set<string>();
 	#builtInToolNames: Set<string>;
 	#rpcHostToolNames = new Set<string>();
 	#mcpManagerToolNames = new Set<string>();
@@ -485,8 +478,6 @@ export class SessionTools {
 		this.#host = host;
 		this.#autoApprove = options.autoApprove === true;
 		this.#toolRegistry = options.toolRegistry ?? new Map();
-		this.#createVibeTools = options.createVibeTools;
-		this.#createThinkTool = options.createThinkTool;
 		this.#builtInToolNames = new Set(options.builtInToolNames ?? []);
 		this.#mcpManagerToolNames = new Set(options.mcpManagerToolNames ?? []);
 		if (options.mcpManagerToolNames === undefined) {
@@ -827,57 +818,6 @@ export class SessionTools {
 		const wrapped = wrapToolWithMetaNotice(tool);
 		const extensionRunner = this.#host.extensionRunner();
 		return extensionRunner ? new ExtensionToolWrapper(wrapped, extensionRunner) : wrapped;
-	}
-
-	/** Installs and activates the ephemeral vibe tool set. */
-	activateVibeTools(baseToolNames: string[]): Promise<void> {
-		return this.runToolRegistryMutation(async () => {
-			const createVibeTools = this.#createVibeTools;
-			if (!createVibeTools) {
-				throw new Error("Vibe tools are unavailable in this session.");
-			}
-
-			const tools = createVibeTools();
-			const vibeToolNames = tools.map(tool => tool.name);
-			if (new Set(vibeToolNames).size !== vibeToolNames.length) {
-				throw new Error("Vibe tool names must be unique.");
-			}
-
-			for (const tool of tools) {
-				if (this.#toolRegistry.has(tool.name)) continue;
-				this.#toolRegistry.set(tool.name, this.#wrapRuntimeTool(tool));
-				this.#builtInToolNames.add(tool.name);
-				this.#installedVibeToolNames.add(tool.name);
-			}
-
-			await this.#applyActiveToolsByName([...new Set([...baseToolNames, ...vibeToolNames])]);
-		});
-	}
-
-	/** Uninstalls vibe tools and activates the replacement set. */
-	deactivateVibeTools(nextToolNames: string[]): Promise<void> {
-		return this.runToolRegistryMutation(async () => {
-			this.#uninstallVibeTools();
-			await this.#applyActiveToolsByName(nextToolNames);
-		});
-	}
-
-	/** Removes vibe tools without restoring a source-session snapshot. */
-	removeVibeToolsPreservingActive(): Promise<void> {
-		return this.runToolRegistryMutation(async () => {
-			const removed = new Set(this.#installedVibeToolNames);
-			this.#uninstallVibeTools();
-			const nextEnabled = this.getEnabledToolNames().filter(name => !removed.has(name));
-			await this.#applyActiveToolsByName(nextEnabled);
-		});
-	}
-
-	#uninstallVibeTools(): void {
-		for (const name of this.#installedVibeToolNames) {
-			this.#toolRegistry.delete(name);
-			this.#builtInToolNames.delete(name);
-		}
-		this.#installedVibeToolNames.clear();
 	}
 
 	#getEditModeSession() {
@@ -1699,7 +1639,7 @@ export class SessionTools {
 	#buildPendingToolRosterNotice(
 		pending: { added: Set<string>; removed: Set<string> } | undefined,
 	): CustomMessage<ToolRosterNoticeDetails> | undefined {
-		if (!pending) return undefined;
+		if (!pending || (pending.added.size === 0 && pending.removed.size === 0)) return undefined;
 		const added = [...pending.added];
 		const removed = [...pending.removed];
 		return {
@@ -2014,6 +1954,12 @@ export class SessionTools {
 		if (result.loaded.length === 0) return result;
 		for (const name of result.loaded) this.#loadedDeferredToolNames.add(name);
 		await this.setActiveToolsByName([...this.getEnabledToolNames(), ...result.loaded]);
+		// load_tools already reports these names in its result. Do not repeat
+		// them in the hidden roster notice on the next model request.
+		for (const name of result.loaded) {
+			this.#pendingToolRosterDelta?.added.delete(name);
+			this.#pendingToolRosterDeltaAfterBase?.added.delete(name);
+		}
 		return result;
 	}
 
@@ -2120,42 +2066,6 @@ export class SessionTools {
 				nextActive.push(wrapped.name);
 			}
 			await this.#applyActiveToolsByName([...new Set(nextActive)]);
-		});
-	}
-
-	/**
-	 * Reconciles the private `think` scratchpad with the `externalThinking`
-	 * setting and the active model. Enabling constructs the tool once;
-	 * disabling removes it from the active set but keeps its registry entry.
-	 *
-	 * @returns false when enabling was requested but this session cannot build the tool.
-	 */
-	reconcileThinkTool(): Promise<boolean> {
-		return this.#setThinkToolActive(
-			cfgExternalThinking.get(this.#host.settings) && supportsExternalThinking(this.#host.model()),
-		);
-	}
-
-	#setThinkToolActive(enabled: boolean): Promise<boolean> {
-		return this.runToolRegistryMutation(async () => {
-			const active = this.getEnabledToolNames();
-			if (!enabled) {
-				if (active.includes("think")) {
-					await this.#applyActiveToolsByName(active.filter(name => name !== "think"));
-				}
-				return true;
-			}
-			if (!this.#toolRegistry.has("think")) {
-				const tool = await this.#createThinkTool?.();
-				if (tool?.name !== "think") return false;
-				const wrapped = this.#wrapRuntimeTool(tool);
-				this.#toolRegistry.set(wrapped.name, wrapped);
-				this.#builtInToolNames.add(wrapped.name);
-			}
-			if (!active.includes("think")) {
-				await this.#applyActiveToolsByName([...active, "think"]);
-			}
-			return true;
 		});
 	}
 
@@ -2363,7 +2273,7 @@ export class SessionTools {
 	 *
 	 * Inputs NOT covered: tool input schemas; memory instructions read from disk;
 	 * and SDK-init-time closure constants in `sdk.ts` (`inlineToolDescriptors`,
-	 * `eagerTasks`, `intentField`, `mcpDiscoveryEnabled`). The
+	 * `intentField`, `mcpDiscoveryEnabled`). The
 	 * closure-captured ones cannot change at runtime regardless of skip behavior.
 	 * For everything else, callers must explicitly call {@link refreshBaseSystemPrompt}
 	 * after side-effecting changes; see the memory hooks and {@link syncAfterModelChange}.

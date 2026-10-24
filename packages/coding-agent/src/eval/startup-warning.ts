@@ -2,13 +2,13 @@ import { sanitizeDisplayWarnings } from "@oh-my-pi/pi-tui/render/render-utils";
 import type { Args } from "../cli/args";
 import type { Settings } from "../config/settings";
 import { checkPythonKernelAvailability } from "./py/kernel";
-import { cfgEvalJs, cfgEvalPy, cfgPythonInterpreter } from "./settings";
+import { cfgEvalPy, cfgPythonInterpreter } from "./settings";
 
 const PYTHON_FIX_HINT = "Install Python 3.8+ or set python.interpreter, then verify with `omp setup python --check`.";
 
 /**
  * Warning for an enabled Python eval backend with no working interpreter.
- * Disabled backends (`eval.py` / `eval.js`, `PI_PY` / `PI_JS`) are intentional and never reported,
+ * A disabled backend (`eval.py`, `PI_PY`) is intentional and never reported,
  * and neither is a probe cancelled through `signal`.
  */
 export async function resolvePythonEvalWarning({
@@ -26,9 +26,7 @@ export async function resolvePythonEvalWarning({
 	if (availability.ok || signal?.aborted) return undefined;
 	// The reason embeds interpreter paths and spawn errors: shorten home, strip controls, bound length.
 	const [reason] = sanitizeDisplayWarnings([availability.reason ?? "no working Python interpreter"]);
-	return cfgEvalJs.get(settings)
-		? `Python eval unavailable (${reason}); eval will run JavaScript only. ${PYTHON_FIX_HINT}`
-		: `Eval tool unavailable: ${reason}, and JavaScript eval is disabled. ${PYTHON_FIX_HINT}`;
+	return `Eval tool unavailable: ${reason}. ${PYTHON_FIX_HINT}`;
 }
 
 /**

@@ -454,7 +454,7 @@ describe("streaming tool call preview height (bounded across renderers)", () => 
 		// subtraction, and this test asserts windowing, not operator layout.
 		const longLines = Array.from({ length: total }, (_, i) => `line_${i}`);
 		const { lines, text } = renderPending("eval", {
-			language: "js",
+			language: "py",
 			title: "big",
 			code: longLines.map(line => `const ${line} = 1;`).join("\n"),
 		});

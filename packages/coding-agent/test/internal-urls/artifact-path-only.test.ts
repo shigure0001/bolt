@@ -86,7 +86,7 @@ describe("resolveToolSearchScope locates large artifacts", () => {
 		await fs.rm(testDir, { recursive: true, force: true });
 	});
 
-	it("resolves ast_grep/ast_edit search scope for large artifacts without the inline-content cap", async () => {
+	it("resolves grep search scope for large artifacts without the inline-content cap", async () => {
 		// The URL stays the search root; its stat must reach the backing file, not
 		// InternalUrlRouter's capped content resolution.
 		const scope = await resolveToolSearchScope({

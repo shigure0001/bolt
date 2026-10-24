@@ -348,10 +348,6 @@ export interface JobTile {
 	live: boolean;
 	/** The job's widget; only a live one (a spec drives it) draws figures and charts, any lends its stage. */
 	widget?: JobWidgetView;
-	/** A task's own completion estimate (0–100), drawn as a ring. */
-	completionPercent?: number;
-	/** What the job is doing now, when its widget names nothing: a task's stage in its own words. */
-	stage?: string;
 	exitCode?: number;
 }
 
@@ -383,10 +379,8 @@ export function describeJobTiles(tiles: readonly JobTile[]): NativeNode {
 
 /**
  * One job as a tile (role `omp.job.tile`): a head line (status, name, id,
- * a task's own completion estimate as a ring, clock), then what a live
- * widget shows (the figure a glance takes away, its primary block, quiet
- * lines of stats) and the stage. With nothing to chart, the stage is the
- * tile's body.
+ * clock), then what a live widget shows (the figure a glance takes away,
+ * its primary block, quiet lines of stats) and the stage.
  */
 export function describeJobTile(tile: JobTile): NativeNode {
 	const view = tile.widget?.state === "live" ? tile.widget : undefined;
@@ -395,7 +389,6 @@ export function describeJobTile(tile: JobTile): NativeNode {
 	const id = plainLine(tile.id);
 	const pulse = tile.live && tile.status === "running";
 	const clock = tile.durationMs === undefined ? undefined : elapsed(tile.durationMs, !tile.live);
-	const percent = tile.completionPercent === undefined ? undefined : Math.round(tile.completionPercent);
 	const figure =
 		glance &&
 		text(figureSpans(glance), {
@@ -421,20 +414,6 @@ export function describeJobTile(tile: JobTile): NativeNode {
 						role: "omp.job.tile.id",
 						wrap: "none",
 					}),
-			// Tern tints the ring by its value and shows the label on hover.
-			percent === undefined
-				? undefined
-				: keyed(
-						node("meter", {
-							role: "omp.job.tile.ring",
-							style: "ring",
-							size: "sm",
-							value: fraction(percent, 100),
-							label: `${percent}%`,
-							title: `The agent's own completion estimate: ${percent}%`,
-						}),
-						"ring",
-					),
 			clock && keyed(clock, "clock"),
 		]),
 		{ role: "omp.job.tile.head", gap: "xs", align: "center" },
@@ -556,8 +535,7 @@ function tileMeter(value: number, tone: TspTone = DEFAULT_TONE): NativeNode {
  * the tile has nothing to chart.
  */
 function tileNotes(tile: JobTile, view: JobWidgetView | undefined, lead: boolean): NativeNode[] {
-	// The widget's stage is newer than the job's report (a rule reads it live) or the same report.
-	const stage = plainLine(tile.widget?.stage ?? tile.stage ?? "");
+	const stage = plainLine(tile.widget?.stage ?? "");
 	const failed = tile.exitCode !== undefined && tile.exitCode !== 0 ? `exit ${tile.exitCode}` : "";
 	const notes: NativeNode[] = [];
 	for (const block of view?.blocks ?? []) {
@@ -865,7 +843,7 @@ export function renderJobTileLines(tile: JobTile, width: number, theme: Theme, o
 	const blocks = shown.filter(block => block.kind !== "stat" && block.kind !== "text");
 	const labelWidth = ansiLabelWidth(blocks, w);
 	for (const block of blocks) lines.push(...renderBlock(block, w, labelWidth, theme));
-	const stage = plainLine(tile.widget?.stage ?? tile.stage ?? "");
+	const stage = plainLine(tile.widget?.stage ?? "");
 	for (const block of view?.blocks ?? []) {
 		if (block.kind === "stat" || (block.kind === "text" && plainLine(block.text) !== stage)) {
 			lines.push(...renderBlock(block, w, 0, theme));

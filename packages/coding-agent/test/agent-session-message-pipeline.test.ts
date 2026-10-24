@@ -834,7 +834,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			taskDepth: 1,
 			agentId: "SubAgent",
 		});
@@ -914,7 +913,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			taskDepth: 1,
 			agentId: "SubAgent",
 		});
@@ -2212,7 +2210,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			taskDepth: 1,
 			agentId: "SubAgent",
 		});
@@ -2282,7 +2279,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			taskDepth: 1,
 		});
 		try {
@@ -2360,7 +2356,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			taskDepth: 1,
 		});
 		try {
@@ -2459,7 +2454,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			toolNames: ["bash"],
 		});
 		try {
@@ -2562,7 +2556,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			toolNames: ["bash"],
 		});
 		try {
@@ -2680,7 +2673,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			toolNames: ["bash"],
 		});
 		try {
@@ -2781,7 +2773,6 @@ describe("AgentSession message pipeline", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			toolNames: ["web_search"],
 		});
 		try {

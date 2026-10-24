@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "bun:test";
 import { TOOL_INTERRUPT_ABORT_REASON } from "@oh-my-pi/pi-agent-core";
 import { AsyncJobManager } from "@oh-my-pi/pi-coding-agent/async/job-manager";
 import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
-import { runEvalWait } from "@oh-my-pi/pi-coding-agent/eval/handle-bridge";
 import { IrcBus } from "@oh-my-pi/pi-coding-agent/irc/bus";
 import * as daemonClient from "@oh-my-pi/pi-coding-agent/launch/client";
 import type { DaemonBrokerClient } from "@oh-my-pi/pi-coding-agent/launch/client";
@@ -400,35 +399,6 @@ describe("wait", () => {
 			await ask();
 			expect(await idleText(childWait())).toContain("`Main` cannot reply before you finish");
 			release();
-		});
-
-		test("returns at once while the agent asked waits on the caller's eval handle with no timeout", async () => {
-			registerParentAndChild();
-			const manager = new AsyncJobManager({ onJobComplete: () => {} });
-			const childRun = registerChildJob(manager);
-			const parentSession = { asyncJobManager: manager, getAgentId: () => "Main" } as unknown as ToolSession;
-			const handleWait = runEvalWait({ items: [{ kind: "agent", id: "Child" }] }, { session: parentSession });
-			await ask();
-			expect(await idleText(childWait(manager))).toContain("`Main` cannot reply before you finish");
-			childRun.resolve("done");
-			await handleWait;
-		});
-
-		test("keeps waiting while the agent asked runs a timed eval handle wait on the caller", async () => {
-			registerParentAndChild();
-			const manager = new AsyncJobManager({ onJobComplete: () => {} });
-			const childRun = registerChildJob(manager);
-			const parentSession = { asyncJobManager: manager, getAgentId: () => "Main" } as unknown as ToolSession;
-			const handleWait = runEvalWait(
-				{ items: [{ kind: "agent", id: "Child" }], timeoutMs: 60_000 },
-				{ session: parentSession },
-			);
-			await ask();
-			const waiting = childWait(manager);
-			await IrcBus.global().send({ from: "Main", to: "Child", body: "heliotrope" });
-			expect((await waiting).details?.waited).toMatchObject({ from: "Main", body: "heliotrope" });
-			childRun.resolve("done");
-			await handleWait;
 		});
 
 		test("a broadcast owes the caller no reply", async () => {

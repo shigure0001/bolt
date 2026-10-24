@@ -40,7 +40,7 @@ describe("AgentSession eval preludes", () => {
 	});
 
 	it("updates enabled preludes without registering browser or computer tools", async () => {
-		const settings = Settings.isolated({ "browser.enabled": false, "archive.enabled": false, "tools.deferred": [] });
+		const settings = Settings.isolated({ "browser.enabled": false, "tools.deferred": [] });
 		const { session } = await createAgentSession({
 			cwd: registryDir,
 			agentDir: registryDir,
@@ -55,7 +55,6 @@ describe("AgentSession eval preludes", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 		});
 		sessions.push(session);
 
@@ -94,7 +93,7 @@ describe("AgentSession eval preludes", () => {
 	// `/computer on` mid-session used to rebuild the system prompt and eval
 	// description, busting the provider prompt cache on the next request.
 	it("announces mid-session toggles in a hidden notice without rewriting the cached prefix", async () => {
-		const settings = Settings.isolated({ "browser.enabled": false, "archive.enabled": false, "tools.deferred": [] });
+		const settings = Settings.isolated({ "browser.enabled": false, "tools.deferred": [] });
 		const { session } = await createAgentSession({
 			cwd: registryDir,
 			agentDir: registryDir,
@@ -109,7 +108,6 @@ describe("AgentSession eval preludes", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 		});
 		sessions.push(session);
 		const mock = createMockModel({ handler: { content: ["ok"] } });
@@ -180,7 +178,6 @@ describe("AgentSession eval preludes", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 		});
 		sessions.push(session);
 
@@ -211,7 +208,6 @@ describe("AgentSession eval preludes", () => {
 			slashCommands: [],
 			mcpManager: manager,
 			enableLsp: false,
-			skipPythonPreflight: true,
 		});
 		sessions.push(session);
 
@@ -253,7 +249,6 @@ describe("AgentSession eval preludes", () => {
 			slashCommands: [],
 			enableMCP: false,
 			enableLsp: false,
-			skipPythonPreflight: true,
 			restrictToolNames: true,
 			toolNames: ["eval"],
 		});

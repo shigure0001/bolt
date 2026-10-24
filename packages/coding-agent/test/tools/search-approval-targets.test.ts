@@ -15,7 +15,6 @@ import {
 	getApprovalGrants,
 } from "@oh-my-pi/pi-coding-agent/tools/approval-cache";
 import { approvalTargetKey, approvalTreeSearchKey } from "@oh-my-pi/pi-coding-agent/tools/approval-targets";
-import { AstGrepTool } from "@oh-my-pi/pi-coding-agent/tools/ast-grep";
 import { GlobTool } from "@oh-my-pi/pi-coding-agent/tools/glob";
 import { GrepTool } from "@oh-my-pi/pi-coding-agent/tools/grep";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/sdk";
@@ -194,15 +193,5 @@ describe("search tool approval cache targets", () => {
 		} finally {
 			agentDir.removeSync();
 		}
-	});
-
-	it("keys ast_grep roots like grep, so it cannot read past a read prompt", () => {
-		const astGrep = new AstGrepTool(createToolSession(cwd));
-		expect(astGrep.approvalCacheTargets?.({ pat: "$X", path: "src" })).toEqual([
-			approvalTreeSearchKey(approvalDirectoryKey(srcDir)),
-		]);
-		expect(
-			resolveApproval(astGrep, { pat: "$X", path: "src" }, "always-ask-cached", {}, readTierGrants()).policy,
-		).toBe("prompt");
 	});
 });

@@ -1,44 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { handleAur } from "@oh-my-pi/pi-coding-agent/web/scrapers/aur";
-import { handleBrew } from "@oh-my-pi/pi-coding-agent/web/scrapers/brew";
 import { handleMaven } from "@oh-my-pi/pi-coding-agent/web/scrapers/maven";
 import { handleNuGet } from "@oh-my-pi/pi-coding-agent/web/scrapers/nuget";
 import { handlePackagist } from "@oh-my-pi/pi-coding-agent/web/scrapers/packagist";
 import { handleRubyGems } from "@oh-my-pi/pi-coding-agent/web/scrapers/rubygems";
 
 const SKIP = !Bun.env.WEB_FETCH_INTEGRATION;
-
-describe.skipIf(SKIP)("handleBrew", () => {
-	it("fetches wget formula", async () => {
-		const result = await handleBrew("https://formulae.brew.sh/formula/wget", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("brew");
-		expect(result?.content).toContain("wget");
-		expect(result?.content).toContain("brew install wget");
-		expect(result?.contentType).toBe("text/markdown");
-	});
-
-	it("fetches firefox cask", async () => {
-		const result = await handleBrew("https://formulae.brew.sh/cask/firefox", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("brew");
-		expect(result?.content).toContain("Firefox");
-		expect(result?.content).toContain("brew install --cask firefox");
-		expect(result?.contentType).toBe("text/markdown");
-	});
-});
-
-describe.skipIf(SKIP)("handleAur", () => {
-	it("fetches yay package", async () => {
-		const result = await handleAur("https://aur.archlinux.org/packages/yay", 20);
-		expect(result).not.toBeNull();
-		expect(result?.method).toBe("aur");
-		expect(result?.content).toContain("yay");
-		expect(result?.content).toContain("AUR helper");
-		expect(result?.content).toContain("yay -S yay");
-		expect(result?.contentType).toBe("text/markdown");
-	});
-});
 
 describe.skipIf(SKIP)("handleRubyGems", () => {
 	it("fetches rails gem", async () => {

@@ -9,7 +9,6 @@ import type { EvalPreludeDefinition } from "../eval/preludes";
 import type { PromptTemplate } from "../config/prompt-templates";
 import type { Settings } from "../config/settings";
 import { EditTool } from "../edit";
-import { checkPythonKernelAvailability } from "../eval/py/kernel";
 import type { ToolPathWithSource } from "../extensibility/custom-tools";
 import type {
 	BeforeSubagentSpawnEvent,
@@ -39,27 +38,18 @@ import { TaskTool } from "../task";
 import type { AgentOutputManager } from "../task/output-manager";
 import { type AgentDefinition, canSpawnAtDepth } from "../task/types";
 import { type StructuredSubagentSchemaMode } from "@oh-my-pi/pi-tui/tools/task";
-import type { WorkPoolYieldItem } from "../task/workpool-yield";
 import type { EventBus } from "../utils/event-bus";
 import { WebSearchTool } from "../web/search";
 import type { WorkspaceTree } from "../workspace-tree";
 import { AskTool } from "./ask";
-import { AstEditTool } from "./ast-edit";
-import { AstGrepTool } from "./ast-grep";
 import { BashTool } from "./bash";
 import { type BuiltinToolName, type HiddenToolName, normalizeToolNames } from "./builtin-names";
-import { type CheckpointState, CheckpointTool, type CompletedRewindState, RewindTool } from "./checkpoint";
-import { ContextNotesTool, NewContextTool } from "./context-notes";
-import { DebugTool } from "./debug";
-import { cfgIdaAvailable } from "../ida/install";
 import { EvalTool } from "./eval";
 import { resolveEvalBackends } from "./eval-backends";
 import { GithubTool } from "./gh";
 import { GlobTool } from "./glob";
 import { GrepTool } from "./grep";
-import { IdaTool } from "./ida";
 import { isIrcEnabled } from "../irc/messaging";
-import { FindTool, isFindEnabled } from "./jfind";
 import { LearnTool } from "./learn";
 import { ManageSkillTool } from "./manage-skill";
 import { MemoryEditTool } from "./memory-edit";
@@ -69,8 +59,6 @@ import { MemoryRetainTool } from "./memory-retain";
 import { wrapToolWithMetaNotice } from "./output-meta";
 import { ReadTool } from "./read";
 import type { PlanProposalHandler } from "./resolve";
-import { SecurityScanTool } from "./security-scan";
-import { supportsExternalThinking, ThinkTool } from "./think";
 import { type TodoPhase } from "@oh-my-pi/pi-tui/tools/todo";
 import { TodoTool } from "./todo";
 import { WriteTool } from "./write";
@@ -82,16 +70,11 @@ import { LoadToolsTool } from "./load-tools";
 
 import {
 	cfgAskEnabled,
-	cfgAstEditEnabled,
-	cfgAstGrepEnabled,
 	cfgAsyncEnabled,
-	cfgCheckpointEnabled,
-	cfgDebugEnabled,
 	cfgGithubEnabled,
 	cfgGlobEnabled,
 	cfgGrepEnabled,
 	cfgLaunchEnabled,
-	cfgSecurityEnabled,
 	cfgTodoEnabled,
 	cfgToolsDeferred,
 	cfgToolsXdev,
@@ -99,9 +82,6 @@ import {
 } from "./settings";
 import { cfgAutolearnEnabled } from "../autolearn/settings";
 import { cfgBashEnabled } from "../exec/settings";
-import { cfgCompactionExperimentalContextManagement } from "../session/context-settings";
-import { cfgPythonInterpreter } from "../eval/settings";
-import { cfgExternalThinking } from "../session/settings";
 import { cfgGoalEnabled } from "../goals/settings";
 import { cfgLspEnabled } from "../lsp/settings";
 import { cfgMemoryBackend } from "../memory-backend/settings";
@@ -114,8 +94,6 @@ export * from "@oh-my-pi/pi-tui/tools/streaming-output";
 export * from "../task";
 export * from "../web/search";
 export * from "./ask";
-export * from "./ast-edit";
-export * from "./ast-grep";
 export * from "./bash";
 export type {
 	BashToolDetails,
@@ -124,12 +102,8 @@ export type {
 	ShellRendererConfig,
 } from "@oh-my-pi/pi-tui/tools/bash";
 export * from "./browser";
-export * from "./checkpoint";
 export * from "./computer";
 export * from "./computer/supervisor";
-export * from "./context-notes";
-export * from "./debug";
-export * from "./ida";
 export * from "./essential-tools";
 export * from "./eval";
 export * from "./eval-backends";
@@ -138,7 +112,6 @@ export * from "./file-write-fallback";
 export * from "./gh";
 export * from "./glob";
 export * from "./grep";
-export * from "./jfind";
 export type { AgentActivitySnapshot, CoordinationDetails, JobSnapshot } from "@oh-my-pi/pi-tui/tools/wait";
 export * from "./image-gen";
 export * from "./learn";
@@ -156,13 +129,9 @@ export type {
 	FindingDetails,
 	SubmitReviewDetails,
 } from "@oh-my-pi/pi-tui/tools/task";
-export * from "./security-scan";
-export * from "./think";
 export * from "./todo";
 export * from "./tts";
-export * from "./vibe";
 export * from "./wait";
-export type { VibeToolDetails } from "@oh-my-pi/pi-tui/tools/vibe";
 export * from "./write";
 export * from "./xdev";
 export * from "./yield";
@@ -237,8 +206,6 @@ export interface ToolSession {
 	getApiKey?: AgentOptions["getApiKey"];
 	/** Current session whose stored credential affinities should seed a child session. */
 	getCredentialSourceSessionId?: () => string | undefined;
-	/** Skip subprocess-kernel availability checks and warmup */
-	skipPythonPreflight?: boolean;
 	/** Pre-loaded context files (AGENTS.md, etc) */
 	contextFiles?: ContextFileEntry[];
 	/** Pre-loaded workspace tree (forwarded to subagents to skip re-scanning) */
@@ -318,9 +285,6 @@ export interface ToolSession {
 	outputSchemaMode?: StructuredSubagentSchemaMode;
 	/** Whether to include the yield tool by default */
 	requireYieldTool?: boolean;
-	/** Session starts with a prewalk hand-off armed. Keeps `todo` in yield-gated
-	 *  (subagent) registries: the prewalk plan nudge + todo gate need it. */
-	prewalkArmed?: boolean;
 	/**
 	 * Constrain the active set to the caller's explicit built-in names (plus a
 	 * required yield tool). Suppresses automatic tool-set expansion.
@@ -477,8 +441,6 @@ export interface ToolSession {
 	 * so branch rehydration agrees with the in-memory list.
 	 */
 	persistTodoPhases?: (phases: TodoPhase[]) => void;
-	/** Active workpool items whose incremental yields complete the current turn. */
-	getWorkPoolYieldItems?: () => readonly WorkPoolYieldItem[];
 	/**
 	 * Trimmed text of the most recent assistant message, or `undefined` when the
 	 * turn carries no text (e.g. thinking-only). The yield tool uses it to reject
@@ -489,8 +451,6 @@ export interface ToolSession {
 	getYieldReportText?: (toolCallId: string) => string | undefined;
 	/** The `i` intent the model wrote on a tool call of the current turn, by call ID. */
 	getToolCallIntent?: (toolCallId: string) => string | undefined;
-	/** Replace the active workpool item contract and refresh its provider-facing prompt. */
-	setWorkPoolYieldItems?: (items: readonly WorkPoolYieldItem[]) => Promise<void>;
 	/** The tool-choice queue used to force forthcoming tool invocations and carry invocation handlers. */
 	getToolChoiceQueue?(): ToolChoiceQueue;
 	/** Build a model-provider-specific ToolChoice that targets the named tool, or undefined if unsupported. */
@@ -512,13 +472,6 @@ export interface ToolSession {
 	peekPlanProposalHandler?(): PlanProposalHandler | undefined;
 	/** Register or clear the plan-proposal handler. Passing `null` clears it. */
 	setPlanProposalHandler?(handler: PlanProposalHandler | null): void;
-	/** Get active checkpoint state if any. */
-	getCheckpointState?: () => CheckpointState | undefined;
-	/** Set or clear active checkpoint state. */
-	setCheckpointState?: (state: CheckpointState | null) => void;
-	/** Get the most recent completed rewind, if this session just rewound a checkpoint. */
-	getLastCompletedRewind?: () => CompletedRewindState | undefined;
-
 	/** Native snapshots, clipboard registers, and no-op guard shared by edit calls. */
 	editStore?: EditStore;
 
@@ -564,24 +517,14 @@ export type ToolFactory = (session: ToolSession) => Tool | null | Promise<Tool |
  */
 export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 	read: s => new ReadTool(s),
-	security_scan: s => new SecurityScanTool(s),
 	bash: s => new BashTool(s),
 	edit: s => new EditTool(s),
-	ast_grep: s => new AstGrepTool(s),
-	ast_edit: s => new AstEditTool(s),
 	ask: AskTool.createIf,
-	debug: DebugTool.createIf,
-	ida: IdaTool.createIf,
 	eval: s => new EvalTool(s),
 	github: GithubTool.createIf,
 	glob: s => new GlobTool(s, { rootPathAlias: true }),
 	grep: s => new GrepTool(s),
-	find: s => new FindTool(s),
 	lsp: LspTool.createIf,
-	checkpoint: CheckpointTool.createIf,
-	rewind: RewindTool.createIf,
-	context_notes: ContextNotesTool.createIf,
-	new_context: NewContextTool.createIf,
 	task: s => TaskTool.create(s),
 	wait: s => new WaitTool(s),
 	todo: s => new TodoTool(s),
@@ -597,7 +540,6 @@ export const BUILTIN_TOOLS: Record<BuiltinToolName, ToolFactory> = {
 };
 
 export const HIDDEN_TOOLS: Record<HiddenToolName, ToolFactory> = {
-	think: () => new ThinkTool(),
 	yield: s => new YieldTool(s),
 	goal: s => new GoalTool(s),
 };
@@ -639,79 +581,16 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 			: undefined;
 	const goalEnabled = cfgGoalEnabled.get(session.settings);
 	const goalModeActive = !restrictToolNames && goalEnabled && session.getGoalModeState?.()?.enabled === true;
-	const externalThinkingActive =
-		cfgExternalThinking.get(session.settings) && supportsExternalThinking(session.getActiveModel?.());
 	if (goalModeActive && requestedTools && !requestedTools.includes("goal")) {
 		requestedTools.push("goal");
 	}
-	const backends = resolveEvalBackends(session);
-	const allowPython = backends.python;
-	const allowJs = backends.js;
-	const skipEvalPreflight = session.skipPythonPreflight === true;
-	// Eval tool is enabled if ANY backend is reachable. JS needs no preflight, so
-	// we only probe Python when JS is disabled — otherwise allowEval is
-	// already true and per-backend availability is checked at first invocation.
-	let pythonAvailable = true;
-	const evalRequested = requestedTools === undefined || requestedTools.includes("eval");
-	if (!skipEvalPreflight && !allowJs && evalRequested) {
-		if (allowPython) {
-			const availability = await logger.time(
-				"createTools:pythonCheck",
-				checkPythonKernelAvailability,
-				session.cwd,
-				cfgPythonInterpreter.get(session.settings)?.trim() || undefined,
-			);
-			pythonAvailable = availability.ok;
-			if (!availability.ok) {
-				logger.warn("Python kernel unavailable and JS backend disabled", { reason: availability.reason });
-			}
-		}
-	}
+	// A Python-less host still lists eval; the first call reports the missing
+	// interpreter. Probing here would delay every tool build on cold start.
+	const allowEval = resolveEvalBackends(session).python;
 
-	const effectivePythonAllowed = allowPython && pythonAvailable;
-	// Eval is exposed whenever any backend is reachable. A backend may be
-	// unreachable, in which case eval dispatches exclusively to the others.
-	const allowEval = effectivePythonAllowed || allowJs;
-
-	// Checkpoint and rewind are a pair: listing one without the other strands
-	// the agent (it can checkpoint but not rewind, or vice versa). Auto-include
-	// the sister tool so a one-sided frontmatter `tools:` entry still works.
-	// Unlike the AST/auto-learn convenience auto-includes below, this is a
-	// safety pairing — it applies to restricted sessions too.
-	if (requestedTools && cfgCheckpointEnabled.get(session.settings)) {
-		if (requestedTools.includes("checkpoint") && !requestedTools.includes("rewind")) {
-			requestedTools.push("rewind");
-		} else if (requestedTools.includes("rewind") && !requestedTools.includes("checkpoint")) {
-			requestedTools.push("checkpoint");
-		}
-	}
-	// Auto-include AST counterparts when their text-based sibling is present.
-	// Restricted callers own the active list and must not have it widened.
 	if (requestedTools && !restrictToolNames) {
-		if (
-			cfgCompactionExperimentalContextManagement.get(session.settings) &&
-			requestedTools.includes("read") &&
-			requestedTools.includes("grep")
-		) {
-			if (!requestedTools.includes("context_notes")) requestedTools.push("context_notes");
-			if (!requestedTools.includes("new_context")) requestedTools.push("new_context");
-		}
 		if (goalModeActive && !requestedTools.includes("goal")) {
 			requestedTools.push("goal");
-		}
-		if (
-			requestedTools.includes("grep") &&
-			!requestedTools.includes("ast_grep") &&
-			cfgAstGrepEnabled.get(session.settings)
-		) {
-			requestedTools.push("ast_grep");
-		}
-		if (
-			requestedTools.includes("edit") &&
-			!requestedTools.includes("ast_edit") &&
-			cfgAstEditEnabled.get(session.settings)
-		) {
-			requestedTools.push("ast_edit");
 		}
 		if (["hindsight", "mnemopi"].includes(cfgMemoryBackend.get(session.settings))) {
 			for (const name of ["recall", "retain", "reflect"]) {
@@ -720,9 +599,6 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		}
 		if (cfgMemoryBackend.get(session.settings) === "mnemopi" && !requestedTools.includes("memory_edit")) {
 			requestedTools.push("memory_edit");
-		}
-		if (externalThinkingActive && !requestedTools.includes("think")) {
-			requestedTools.push("think");
 		}
 		// Auto-learn tools are gated by `autolearn.enabled` but, like the memory
 		// tools above, must also be force-included into an explicit requestedTools
@@ -754,27 +630,12 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		if (name === "lsp") return enableLsp && cfgLspEnabled.get(session.settings);
 		if (name === "bash") return cfgBashEnabled.get(session.settings);
 		if (name === "eval") return allowEval;
-		if (name === "debug") return cfgDebugEnabled.get(session.settings);
-		if (name === "ida") return cfgIdaAvailable.get(session.settings);
-		if (name === "todo")
-			return (!includeYield || session.prewalkArmed === true) && cfgTodoEnabled.get(session.settings);
+		if (name === "todo") return !includeYield && cfgTodoEnabled.get(session.settings);
 		if (name === "glob") return cfgGlobEnabled.get(session.settings);
 		if (name === "grep") return cfgGrepEnabled.get(session.settings);
-		if (name === "find") return isFindEnabled(session);
 		if (name === "github") return cfgGithubEnabled.get(session.settings);
-		if (name === "ast_grep") return cfgAstGrepEnabled.get(session.settings);
-		if (name === "ast_edit") return cfgAstEditEnabled.get(session.settings);
 		if (name === "web_search") return cfgWebSearchEnabled.get(session.settings);
-		if (name === "security_scan") return cfgSecurityEnabled.get(session.settings);
-		if (name === "think") return externalThinkingActive;
 		if (name === "ask") return cfgAskEnabled.get(session.settings);
-		if (name === "context_notes" || name === "new_context")
-			return cfgCompactionExperimentalContextManagement.get(session.settings);
-		if (name === "checkpoint" || name === "rewind")
-			return (
-				cfgCheckpointEnabled.get(session.settings) &&
-				((session.taskDepth ?? 0) === 0 || requestedTools !== undefined)
-			);
 		if (name === "wait") {
 			return (
 				cfgAsyncEnabled.get(session.settings) ||
@@ -812,7 +673,6 @@ export async function resolveBuiltinToolPlan(session: ToolSession, toolNames?: s
 		name => (name in BUILTIN_TOOLS || name in HIDDEN_TOOLS) && isToolAllowed(name),
 	) ?? [
 		...Object.keys(BUILTIN_TOOLS).filter(isToolAllowed),
-		...(externalThinkingActive ? ["think"] : []),
 		...(includeYield ? ["yield"] : []),
 		...(goalModeActive ? ["goal"] : []),
 	];
@@ -919,7 +779,7 @@ export async function createTools(session: ToolSession, toolNames?: string[]): P
 		session.xdev = createXdevState(session, toolRegistry, builtInNames, mountedNames);
 		tools = kept;
 	}
-	// Staged previews from deferrable tools (e.g. ast_edit) resolve through a
+	// Staged previews from deferrable tools resolve through a
 	// `write` to xd://resolve/reject, so retain write whenever one can stage.
 	const xdevMounted = (session.xdev?.mountedNames.size ?? 0) > 0;
 	if (
@@ -967,7 +827,6 @@ export type {
 	TodoToolDetails,
 	CollapsedTodoSelection,
 } from "@oh-my-pi/pi-tui/tools/todo";
-export type { ThinkRenderArgs } from "@oh-my-pi/pi-tui/tools/think";
 export type { ResolutionDeviceName, ResolveDetails } from "@oh-my-pi/pi-tui/tools/resolve";
 export type {
 	GhToolDetails,

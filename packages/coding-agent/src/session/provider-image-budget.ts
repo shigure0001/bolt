@@ -222,7 +222,7 @@ export function clampProviderContextImageBytes(context: Context, model: Model): 
  * Caps snapcompact archive frames at `model`'s frame payload budget.
  *
  * The archive is sized when the agent context is built, for the model active then. A later switch to a host with a
- * smaller budget (`/model`, cycling, retry and role fallbacks, prewalk hand-offs, context promotion, an advisor on
+ * smaller budget (`/model`, cycling, retry and role fallbacks, plan-yolo hand-offs, context promotion, an advisor on
  * another host) would otherwise resend the larger archive, and hosts without an inline byte budget have no other clamp.
  * Archive frames are the images of summary (rewritten-history) user messages.
  */

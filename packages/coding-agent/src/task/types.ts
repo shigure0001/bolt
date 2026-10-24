@@ -52,7 +52,6 @@ export const taskItemSchema = type({
 	"solutionSpace?": "string",
 	"outputSchema?": outputSchemaInputSchema,
 	"schemaMode?": '"permissive" | "strict"',
-	"tools?": "string[]",
 	"+": "delete",
 });
 const taskItemSchemaIsolated = type({
@@ -62,7 +61,6 @@ const taskItemSchemaIsolated = type({
 	"solutionSpace?": "string",
 	"outputSchema?": outputSchemaInputSchema,
 	"schemaMode?": '"permissive" | "strict"',
-	"tools?": "string[]",
 	"isolated?": "boolean",
 	"+": "delete",
 });
@@ -74,7 +72,6 @@ export const taskSchema = type({
 	"solutionSpace?": "string",
 	"outputSchema?": outputSchemaInputSchema,
 	"schemaMode?": '"permissive" | "strict"',
-	"tools?": "string[]",
 	"isolated?": "boolean",
 	"+": "delete",
 });
@@ -85,7 +82,6 @@ const taskSchemaNoIsolation = type({
 	"solutionSpace?": "string",
 	"outputSchema?": outputSchemaInputSchema,
 	"schemaMode?": '"permissive" | "strict"',
-	"tools?": "string[]",
 	"+": "delete",
 });
 function guardBatchAgent(schema: BaseType): BaseType {
@@ -142,7 +138,6 @@ function createTaskSchema(options: {
 	batchEnabled: boolean;
 	defaultAgent: string;
 	effortEnabled: boolean;
-	evalToolsEnabled: boolean;
 	structured: boolean;
 	seanceFields: SeanceTaskSchemaFields;
 }): BaseType {
@@ -151,7 +146,6 @@ function createTaskSchema(options: {
 	const schemaFields = options.structured
 		? { "outputSchema?": outputSchemaInputSchema, "schemaMode?": '"permissive" | "strict"' }
 		: {};
-	const toolsField = options.evalToolsEnabled ? { "tools?": "string[]" } : {};
 	const seanceFields = options.seanceFields;
 	if (options.batchEnabled) {
 		if (options.isolationEnabled) {
@@ -162,7 +156,6 @@ function createTaskSchema(options: {
 				"solutionSpace?": "string",
 				...effortField,
 				...schemaFields,
-				...toolsField,
 				...seanceFields,
 				"isolated?": "boolean",
 				"+": "delete",
@@ -182,7 +175,6 @@ function createTaskSchema(options: {
 			"solutionSpace?": "string",
 			...effortField,
 			...schemaFields,
-			...toolsField,
 			...seanceFields,
 			"+": "delete",
 		});
@@ -202,7 +194,6 @@ function createTaskSchema(options: {
 			"solutionSpace?": "string",
 			...effortField,
 			...schemaFields,
-			...toolsField,
 			...seanceFields,
 			"isolated?": "boolean",
 			"+": "delete",
@@ -215,7 +206,6 @@ function createTaskSchema(options: {
 		"solutionSpace?": "string",
 		...effortField,
 		...schemaFields,
-		...toolsField,
 		...seanceFields,
 		"+": "delete",
 	});
@@ -226,8 +216,6 @@ export function getTaskSchema(options: {
 	isolationEnabled: boolean;
 	batchEnabled: boolean;
 	effortEnabled?: boolean;
-	/** Advertise the `tools` field for eval-defined tools (`eval.tools.enabled`, default on). */
-	evalToolsEnabled?: boolean;
 	/** Advertise `outputSchema`/`schemaMode` (`task.structured`); default on. */
 	structured?: boolean;
 	defaultAgent?: string;
@@ -236,20 +224,18 @@ export function getTaskSchema(options: {
 }): TaskToolSchemaInstance {
 	const defaultAgent = options.defaultAgent ?? "task";
 	const effortEnabled = options.effortEnabled ?? false;
-	const evalToolsEnabled = options.evalToolsEnabled ?? true;
 	const structured = options.structured ?? true;
 	const seanceFields = options.seanceFields ?? {};
-	if (defaultAgent === "task" && !effortEnabled && evalToolsEnabled && structured && !options.seanceFields) {
+	if (defaultAgent === "task" && !effortEnabled && structured && !options.seanceFields) {
 		if (options.batchEnabled) return options.isolationEnabled ? taskSchemaBatch : taskSchemaBatchNoIsolation;
 		return options.isolationEnabled ? taskSchema : taskSchemaNoIsolation;
 	}
-	const key = `${options.isolationEnabled ? "iso" : "flat"}:${options.batchEnabled ? "batch" : "single"}:${effortEnabled ? "effort" : "default"}:${evalToolsEnabled ? "tools" : "notools"}:${structured ? "structured" : "prose"}:${options.seanceFields ? "seance" : "plain"}:${defaultAgent}`;
+	const key = `${options.isolationEnabled ? "iso" : "flat"}:${options.batchEnabled ? "batch" : "single"}:${effortEnabled ? "effort" : "default"}:${structured ? "structured" : "prose"}:${options.seanceFields ? "seance" : "plain"}:${defaultAgent}`;
 	const cached = taskSchemaCache.get(key);
 	if (cached) return cached;
 	const schema = createTaskSchema({
 		...options,
 		effortEnabled,
-		evalToolsEnabled,
 		structured,
 		defaultAgent,
 		seanceFields,
@@ -283,8 +269,6 @@ export interface AgentDefinition {
 	autoloadSkills?: string[];
 	/** When `false`, the agent's `read` tool returns verbatim file content instead of structural summaries. */
 	readSummarize?: boolean;
-	/** Prewalk hand-off for the spawned session: `true` = switch to the default prewalk target at the first edit/write, string = custom target model pattern. */
-	prewalk?: boolean | string;
 	/** Advisor for spawned sessions of this agent: `true` = advise with the default advisor-role model, string = advise with that model pattern (optional `:level` suffix). Absent/`false` = no advisor. */
 	advisor?: boolean | string;
 	source: AgentSource;

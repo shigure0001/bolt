@@ -40,9 +40,7 @@ import {
 } from "./composer-attachments";
 import { type MacOSSpellingFeatures, MacOSSpellingProvider } from "./macos-spelling";
 import { TypingWordTracker } from "./typing-word";
-import { hasMagicKeyword, highlightMagicKeywords, magicKeywordRanges } from "./magic-keywords";
 import type { TspEditorDecoration, TspText } from "@oh-my-pi/pi-wire";
-import { isNativeRendering } from "../native/state";
 import { isQueuedMessageList, parseQueueShorthand, QUEUE_LIST_MARKER_RE } from "./queue-input";
 import { type WordCompletionMethod, WordCompletionProvider } from "./word-completion";
 import { fgOrPlain, theme } from "../theme/theme";
@@ -465,6 +463,8 @@ export class CustomEditor extends Editor {
 	/** The word being typed: its typo mark waits until the caret leaves it. */
 	#typing = new TypingWordTracker();
 	#wordCompletion = new WordCompletionProvider();
+	/** Host repaint hook for asynchronous spelling, completion, and draft-image updates. */
+	#requestRepaint: (() => void) | undefined;
 	imageLinks?: readonly (string | undefined)[];
 
 	/** Draft images pasted into the composer, consumed on submit. Co-located with
@@ -520,7 +520,7 @@ export class CustomEditor extends Editor {
 		super(pickEditorTheme(args));
 		const requestTextAssistRepaint = (): void => {
 			this.invalidate();
-			this.#requestShimmerRepaint?.();
+			this.#requestRepaint?.();
 		};
 		this.#spelling.onUpdate = requestTextAssistRepaint;
 		this.#wordCompletion.onUpdate = requestTextAssistRepaint;
@@ -803,7 +803,7 @@ export class CustomEditor extends Editor {
 		if (!links || this.pendingImages !== images) return;
 		this.pendingImageLinks = links;
 		this.imageLinks = this.pendingImageLinks;
-		this.#requestShimmerRepaint?.();
+		this.#requestRepaint?.();
 	}
 
 	/** Treat image/paste references — compact chip tokens and bracketed markers alike — as
@@ -827,21 +827,6 @@ export class CustomEditor extends Editor {
 		this.#tokenPattern = this.atomicTokenPattern;
 	}
 
-	/** Magic-keyword shimmer cadence — drives one editor repaint every 70 ms while
-	 *  a keyword is on screen and the prompt is focused. ~14 frames/s is smooth
-	 *  without flooding the renderer. */
-	static readonly SHIMMER_FRAME_MS = 70;
-	/** Time for the gradient to sweep one full cycle across each keyword. */
-	static readonly SHIMMER_PERIOD_MS = 1800;
-
-	/** Per-render scratch flag: did any layout line in this render contain a magic
-	 *  keyword that should shimmer? Reset by {@link #scheduleShimmerIfNeeded} each
-	 *  time a frame is queued. */
-	#shimmerTimer: Timer | undefined;
-	/** Repaint hook the host wires once at construction. Called from the shimmer
-	 *  timer to request the next animation frame. Undefined when nobody is
-	 *  listening (tests, headless callers); the timer chain still self-cleans. */
-	#requestShimmerRepaint: (() => void) | undefined;
 	/** Text revision the per-revision decoration inputs below were computed for. */
 	#decorationRevision = -1;
 	#decorationText = "";
@@ -849,7 +834,7 @@ export class CustomEditor extends Editor {
 	#queueShorthandActive = false;
 	#queueListActive = false;
 
-	/** Decorate magic keywords, attachments, and the queue-composer header/list markers.
+	/** Decorate attachments and queue-composer header/list markers.
 	 *  Queue shorthand reserves its first logical line as a dim `Queueing` label; sequential
 	 *  item markers use the accent color so separate follow-ups remain visible while composing.
 	 *  Called once per layout segment, so whole-buffer inputs are computed once per text revision. */
@@ -871,9 +856,6 @@ export class CustomEditor extends Editor {
 		const caret = this.getCursor();
 		this.#typing.update(this.textRevision, this.#decorationLines, caret.line, caret.col, this.focused);
 		const typing = this.#typing.word;
-		const animated = this.focused && this.#shimmerEnabled() && hasMagicKeyword(editorText);
-		const phase = animated ? (Date.now() % CustomEditor.SHIMMER_PERIOD_MS) / CustomEditor.SHIMMER_PERIOD_MS : 0;
-		if (animated) this.#scheduleShimmerFrame();
 		let sourceSearchOffset = 0;
 		const locateSource = (value: string): number => {
 			const offset = text.indexOf(value, sourceSearchOffset);
@@ -886,17 +868,13 @@ export class CustomEditor extends Editor {
 			{
 				renderText: value => {
 					const sourceOffset = locateSource(value);
-					const highlighted = this.#spelling.decorateTypos(
-						value,
-						{
-							editorText,
-							lines: this.#decorationLines,
-							line: context.line,
-							startCol: context.startCol + sourceOffset,
-							typing,
-						},
-						span => highlightMagicKeywords(span, undefined, phase),
-					);
+					const highlighted = this.#spelling.decorateTypos(value, {
+						editorText,
+						lines: this.#decorationLines,
+						line: context.line,
+						startCol: context.startCol + sourceOffset,
+						typing,
+					});
 					if (this.#queueShorthandActive && (value.startsWith("->") || value.startsWith("=>"))) {
 						const icon = typeof theme === "undefined" ? "➤" : theme.nav.selected;
 						return `${fgOrPlain("dim", `Queueing ${icon}`)}${highlighted.slice(2)}`;
@@ -951,11 +929,10 @@ export class CustomEditor extends Editor {
 	}
 
 	/**
-	 * TSP decorations: magic keywords shimmer (terminal-clocked) in the accent
-	 * color, chips and markers take their token colors, misspellings are marked,
-	 * and queue-composer markers are dimmed/accented, all as ranges over the raw
-	 * buffer instead of painted text. A shell-mode draft is code: only its sigil
-	 * is decorated, hidden behind the mode chip.
+	 * TSP decorations: chips and markers take their token colors, misspellings
+	 * are marked, and queue-composer markers are dimmed/accented, all as ranges
+	 * over the raw buffer instead of painted text. A shell-mode draft is code:
+	 * only its sigil is decorated, hidden behind the mode chip.
 	 */
 	override describeDecorations = (lines: readonly string[]): readonly TspEditorDecoration[] => {
 		const text = lines.join("\n");
@@ -985,9 +962,6 @@ export class CustomEditor extends Editor {
 			this.atomicTokenPattern,
 		);
 
-		const fx = this.#shimmerEnabled() ? "shimmer" : undefined;
-		for (const range of magicKeywordRanges(text)) decor.push({ ...range, s: "accent", fx });
-
 		const queueBody = parseQueueShorthand(text);
 		const queueList = queueBody !== undefined && isQueuedMessageList(queueBody);
 		const typing = this.#typing.word;
@@ -1013,15 +987,6 @@ export class CustomEditor extends Editor {
 		return decor.sort((a, b) => a.from - b.from);
 	};
 
-	/** Optional test override for the magic-keyword shimmer gate. */
-	magicKeywordsEnabledOverride: boolean | undefined;
-
-	/**
-	 * Host-owned setting reader. Startup defaults to enabled without loading the
-	 * settings graph; InteractiveMode replaces this with the live session setting.
-	 */
-	magicKeywordsEnabled: () => boolean = () => true;
-
 	/**
 	 * Late-bound OSC hyperlink renderer. Startup stays plain until the full
 	 * interactive graph supplies the settings-aware implementation.
@@ -1033,33 +998,10 @@ export class CustomEditor extends Editor {
 		renderLabel: (text: string) => string,
 	) => string = (label, _index, _imageLinks, renderLabel) => renderLabel(label);
 
-	#shimmerEnabled(): boolean {
-		return this.magicKeywordsEnabledOverride ?? this.magicKeywordsEnabled();
+	setRepaintHandler(handler: (() => void) | undefined): void {
+		this.#requestRepaint = handler;
 	}
 
-	/** Bind the host's render request callback. Idempotent — the host wires this
-	 *  once after construction (and again after `setEditorComponent` swaps the
-	 *  editor). Passing `undefined` clears any pending frame. */
-	setShimmerRepaintHandler(handler: (() => void) | undefined): void {
-		this.#requestShimmerRepaint = handler;
-		if (!handler && this.#shimmerTimer) {
-			clearTimeout(this.#shimmerTimer);
-			this.#shimmerTimer = undefined;
-		}
-	}
-
-	/** Schedule one shimmer frame if none is already pending. The next render
-	 *  decides whether to schedule another, so the chain stops by itself when
-	 *  `focused` flips off or the keyword leaves the buffer. */
-	#scheduleShimmerFrame(): void {
-		// A TSP terminal animates the keyword shimmer from `describeDecorations`.
-		if (this.#shimmerTimer || !this.#requestShimmerRepaint || isNativeRendering()) return;
-		this.#shimmerTimer = setTimeout(() => {
-			this.#shimmerTimer = undefined;
-			this.#requestShimmerRepaint?.();
-		}, CustomEditor.SHIMMER_FRAME_MS);
-		this.#shimmerTimer.unref?.();
-	}
 	/** Editing is available during bootstrap; atomic sends wait until submission is wired and enabled
 	 *  and no dictation is still writing into the draft. */
 	protected override get nativeSendable(): boolean {

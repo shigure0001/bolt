@@ -115,18 +115,6 @@ export const cfgCompactionEnabled = register({
 	},
 });
 
-export const cfgCompactionExperimentalContextManagement = register({
-	id: "compaction.experimentalContextManagement",
-	type: "boolean",
-	default: false,
-	ui: {
-		tab: "context",
-		group: "Compaction",
-		label: "Notes-backed context windows (experimental)",
-		description: "Keep persistent notes and searchable raw history across context windows.",
-	},
-});
-
 export const cfgCompactionMidTurnEnabled = register({
 	id: "compaction.midTurnEnabled",
 	type: "boolean",
@@ -384,7 +372,6 @@ export const cfgCompactionDropUseless = register({
 /** Every `compaction.*` setting as one memoized snapshot (the configured compaction policy). */
 export const cfgCompaction = combine({
 	enabled: cfgCompactionEnabled,
-	experimentalContextManagement: cfgCompactionExperimentalContextManagement,
 	methodOrder: cfgCompactionMethodOrder,
 	thresholdPercent: cfgCompactionThresholdPercent,
 	thresholdTokens: cfgCompactionThresholdTokens,
