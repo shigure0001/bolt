@@ -482,6 +482,25 @@ describe("structured subagent primitive", () => {
 		expect(dispatched[0]?.inheritedSessionAgents).toEqual([inheritedAgent]);
 		await fs.rm(settled.artifactsDir, { recursive: true, force: true });
 	});
+	it("hands the parent's AGENTS.md context files, nested ones included, to the child unchanged", async () => {
+		mockDiscovery();
+		const contextFiles = [
+			{ path: "/repo/AGENTS.md", content: "root rules", depth: 1 },
+			{ path: "/repo/packages/app/AGENTS.md", content: "app rules", depth: 0 },
+			{ path: "/repo/CLAUDE.md", content: "claude rules", depth: 1 },
+		];
+		const parentSession = { ...session(), contextFiles } as unknown as ToolSession;
+		const dispatched: executorModule.ExecutorOptions[] = [];
+		vi.spyOn(executorModule, "runSubprocess").mockImplementation(async options => {
+			dispatched.push(options);
+			return result();
+		});
+
+		const settled = await runStructuredSubagent(request({ session: parentSession, retainArtifacts: true }));
+
+		expect(dispatched[0]?.contextFiles).toEqual(contextFiles);
+		await fs.rm(settled.artifactsDir, { recursive: true, force: true });
+	});
 	it("holds the parent on an inline child until it settles, but not on a detached one", async () => {
 		mockDiscovery();
 		const awaits = AgentRegistry.global().awaits;

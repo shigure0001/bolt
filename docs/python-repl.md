@@ -181,14 +181,14 @@ The pause/resume events are the sole mechanism that suspends the budget; `%pip` 
 
 ### Kernel execution cancellation
 
-On abort/timeout:
+On abort/timeout the kernel is interrupted, never killed, so its Python namespace survives:
 
-- The host sends `kill("SIGINT")` to the runner subprocess.
-- The runner's exec-time signal handler raises `KeyboardInterrupt` inside the user code.
-- Result includes `cancelled=true`; a kernel timeout is annotated as `eval cell timed out after <n>s; kernel interrupted but remains running. Reset the kernel via { reset: true } if state appears corrupted.`
+- POSIX: the host sends `kill("SIGINT")` to the runner subprocess.
+- Windows: `SIGINT` terminates a process and the runner does not read stdin during a cell (see `_serve_windows`), so the host instead creates an empty marker file `<interrupt dir>/interrupt.<request id>` in a private per-kernel temp directory whose base path reaches the runner through `OMP_PYTHON_INTERRUPT_PATH`. A runner thread polls for the active request's marker (filesystem only, never the control pipe), deletes it, and calls `signal.raise_signal(SIGINT)`, which behaves like Ctrl-C: it wakes `time.sleep` and other interruptible waits. Stale markers for settled requests are swept at the next cell start, and the directory is removed on shutdown.
+- In both cases the runner's exec-time signal handler raises `KeyboardInterrupt` inside the user code (a top-level `await` cell is cancelled instead), and the cell settles with `cancelled=true`. A kernel timeout is annotated as `eval cell timed out after <n>s; kernel interrupted but remains running with its state preserved. ...`.
 - Between requests the runner installs `SIG_IGN` for SIGINT so a stray cancel does not tear down the kernel.
 
-If the runner does not emit `done` within 5s of the interrupt (`INTERRUPT_ESCALATION_MS` — e.g. stuck in C code holding the GIL), the host shuts the subprocess down (escalating `exit` → `SIGTERM` → `SIGKILL`), the cell is annotated as kernel-killed, and the kernel is recreated on the next call.
+If the runner does not emit `done` within 5s of the interrupt (`INTERRUPT_ESCALATION_MS` — e.g. blocked in C code, a lock wait, or a child process), the host does **not** kill the kernel. It releases the caller with the cell reported as timed out/cancelled and `kernelKilled=false`, and marks the kernel busy (`BaseKernel.isBusy()`) until the cell's late `done` frame arrives; that late frame is absorbed. A new cell submitted meanwhile waits up to 2s for it, then fails with a `ToolError` telling the caller to wait or call eval with `reset: true`. Tool-bridge requests are not gated. Only an explicit `reset: true`, owner disposal, or shutdown (`exit` → `SIGTERM` → `SIGKILL`) kills the process; a kernel that dies on its own is annotated as killed and recreated on the next call.
 
 ### stdin behavior
 

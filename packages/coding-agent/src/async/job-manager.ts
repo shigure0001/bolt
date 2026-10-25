@@ -73,6 +73,8 @@ export interface AsyncJobDetails extends Record<string, unknown> {
 	images?: ImageContent[];
 	/** Tool output metadata needed when a completion is delivered or recovered later. */
 	meta?: OutputMeta;
+	/** Non-zero exit status of a finished command job; absent on success and for non-command jobs. */
+	exitCode?: number;
 }
 
 export interface AsyncJob {

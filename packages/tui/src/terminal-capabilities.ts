@@ -63,6 +63,7 @@ export type TerminalId =
 	| "alacritty"
 	| "warp"
 	| "orca"
+	| "windows-terminal"
 	| "otty"
 	| "rio"
 	| "tern"
@@ -212,8 +213,8 @@ export function isNotificationSuppressed(): boolean {
 	return value === "off" || value === "0" || value === "false";
 }
 
-function getForcedImageProtocol(): ImageProtocol | null | undefined {
-	const raw = $env.PI_FORCE_IMAGE_PROTOCOL?.trim().toLowerCase();
+function getForcedImageProtocol(env: NodeJS.ProcessEnv = $env): ImageProtocol | null | undefined {
+	const raw = env.PI_FORCE_IMAGE_PROTOCOL?.trim().toLowerCase();
 	if (!raw) return undefined;
 	if (raw === "kitty") return ImageProtocol.Kitty;
 	if (raw === "iterm2" || raw === "iterm") return ImageProtocol.Iterm2;
@@ -485,6 +486,33 @@ export function shouldEnableHyperlinksByDefault(
 	return true;
 }
 
+/**
+ * Whether asynchronously rasterized chart images (`tui.autoGraph` table charts)
+ * may be drawn inline under their table.
+ *
+ * A chart's pixels land after the table's rows were already written, and the
+ * host must keep the image anchored to its reserved rows while scrollback
+ * grows and reflows. Kitty/iTerm2 hosts store the image against the cell grid.
+ * SIXEL on Windows (Windows Terminal 1.22+, or anything behind ConPTY) is
+ * painted as plain pixels into a grid ConPTY tracks separately, so a chart
+ * that finishes after its table was committed to scrollback is drawn over the
+ * text instead of beneath it (and again on each repaint). Those hosts keep the
+ * table as text.
+ *
+ * A user who pins the protocol with `PI_FORCE_IMAGE_PROTOCOL` has made an
+ * explicit choice and is never overridden here.
+ */
+export function supportsInlineChartImages(
+	imageProtocol: ImageProtocol | null = TERMINAL.imageProtocol,
+	env: NodeJS.ProcessEnv = Bun.env,
+	platform: NodeJS.Platform = process.platform,
+): boolean {
+	if (imageProtocol === null) return false;
+	if (getForcedImageProtocol(env) !== undefined) return true;
+	if (imageProtocol === ImageProtocol.Sixel && (platform === "win32" || Boolean(env.WT_SESSION))) return false;
+	return true;
+}
+
 function getFallbackImageProtocol(
 	terminalId: TerminalId,
 	env: NodeJS.ProcessEnv = Bun.env,
@@ -599,6 +627,13 @@ const KNOWN_TERMINALS = Object.freeze({
 	vscode: new TerminalInfo("vscode", null, true, true, NotifyProtocol.Bell),
 	alacritty: new TerminalInfo("alacritty", null, true, true, NotifyProtocol.Bell),
 	orca: new TerminalInfo("orca", null, true, false, NotifyProtocol.Bell, false, false, false, 2),
+	// Windows Terminal identifies via WT_SESSION (it sets no COLORTERM and, by
+	// default, no TERM_PROGRAM). It renders 24-bit color and OSC 8 hyperlinks
+	// (Ctrl+click opens them). The image protocol stays null on purpose: SIXEL
+	// (preview 1.22+) is negotiated by the runtime probe, never assumed, and
+	// its placement through ConPTY is unsafe for async-rasterized charts (see
+	// {@link supportsInlineChartImages}).
+	"windows-terminal": new TerminalInfo("windows-terminal", null, true, true, NotifyProtocol.Bell),
 	// Warp identifies via TERM_PROGRAM=WarpTerminal and ships the Kitty graphics
 	// protocol on macOS/Linux (direct placement only — no Unicode placeholders, so
 	// detectKittyUnicodePlaceholdersSupport correctly excludes it). It does not
@@ -717,6 +752,19 @@ export function detectTerminalId(env: NodeJS.ProcessEnv = Bun.env): TerminalId {
 
 	if (TERM?.toLowerCase().includes("ghostty")) return "ghostty";
 	if (TERM && caseEq(TERM, "monstar")) return "monstar";
+
+	// Windows Terminal exports `WT_SESSION` and, by default, no `TERM_PROGRAM`.
+	// Other hosts that spoof the variable (Tabby) name themselves in
+	// `TERM_PROGRAM`, and multiplexers inherit it from the launching shell
+	// without proving the pane's outer terminal, so both stay on the fallback
+	// identity.
+	if (
+		env.WT_SESSION &&
+		(!TERM_PROGRAM || caseEq(TERM_PROGRAM, "windows_terminal")) &&
+		!isInsideTerminalMultiplexer(env)
+	) {
+		return "windows-terminal";
+	}
 
 	if (COLORTERM) {
 		if (caseEq(COLORTERM, "truecolor") || caseEq(COLORTERM, "24bit")) return "trueColor";

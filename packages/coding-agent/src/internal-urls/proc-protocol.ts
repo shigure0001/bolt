@@ -181,7 +181,8 @@ export class ProcProtocolHandler implements ProtocolHandler {
 						job.endTime === undefined
 							? `up ${formatDuration(now - job.startTime)}`
 							: `in ${formatDuration(job.endTime - job.startTime)}`;
-					return `${job.id} [${job.type}] ${job.status} ${duration} — ${job.label.replace(/\s+/g, " ")}`;
+					const exit = job.latestDetails?.exitCode === undefined ? "" : ` (exit ${job.latestDetails.exitCode})`;
+					return `${job.id} [${job.type}] ${job.status}${exit} ${duration} — ${job.label.replace(/\s+/g, " ")}`;
 				}),
 				...runningAgentsOutsideJobs(session).map(
 					agent =>
@@ -212,9 +213,13 @@ export class ProcProtocolHandler implements ProtocolHandler {
 			);
 		}
 		if (job) {
-			const lines = [`${job.id} [${job.type}] — ${job.status} — ${job.label}`];
+			const exitCode = job.latestDetails?.exitCode;
+			const status = exitCode === undefined ? job.status : `${job.status} (exit ${exitCode})`;
+			const lines = [`${job.id} [${job.type}] — ${status} — ${job.label}`];
 			if (job.resultText) lines.push(job.resultText);
-			if (job.errorText) lines.push(`Error: ${job.errorText}`);
+			// A command that exited non-zero failed on its own terms: its error text
+			// is the command's output, not a harness error, so it gets no label.
+			if (job.errorText) lines.push(exitCode === undefined ? `Error: ${job.errorText}` : job.errorText);
 			if (job.status === "running") {
 				const details = job.latestDetails;
 				if (typeof details?.output === "string") lines.push(details.output);

@@ -179,6 +179,57 @@ describe("inline mouse tracking", () => {
 		}
 	});
 
+	it("hands the pointer back on release and re-arms on the next keypress", () => {
+		const enabled = { current: true };
+		const { terminal, tui } = makeInlineTui(enabled);
+		try {
+			tui.start();
+			tui.renderNow();
+			const onAt = terminal.output.lastIndexOf(TRACKING_ON);
+			expect(onAt).toBeGreaterThan(-1);
+
+			// Wheel hand-back: reporting is off at once, so the host scrolls and selects natively.
+			tui.releaseInlineMouseTracking();
+			const offAt = terminal.output.lastIndexOf(TRACKING_OFF);
+			expect(offAt).toBeGreaterThan(onAt);
+
+			// Frames and further mouse reports leave the terminal released.
+			tui.renderNow();
+			terminal.sendInput("\x1b[<65;5;5M");
+			tui.renderNow();
+			expect(terminal.output.lastIndexOf(TRACKING_ON)).toBe(onAt);
+			expect(terminal.output.lastIndexOf(TRACKING_OFF)).toBe(offAt);
+
+			// Focus reports are not keypresses.
+			terminal.sendInput("\x1b[I");
+			tui.renderNow();
+			expect(terminal.output.lastIndexOf(TRACKING_ON)).toBe(onAt);
+
+			// A keypress re-arms capture.
+			terminal.sendInput("a");
+			tui.renderNow();
+			expect(terminal.output.lastIndexOf(TRACKING_ON)).toBeGreaterThan(offAt);
+		} finally {
+			tui.stop();
+		}
+	});
+
+	it("ignores a release while capture is not live", () => {
+		const enabled = { current: false };
+		const { terminal, tui } = makeInlineTui(enabled);
+		try {
+			tui.start();
+			tui.renderNow();
+			tui.releaseInlineMouseTracking();
+			// The release must not linger and swallow a later enable.
+			enabled.current = true;
+			tui.renderNow();
+			expect(terminal.output.includes(TRACKING_ON)).toBe(true);
+		} finally {
+			tui.stop();
+		}
+	});
+
 	it("stays off by default", () => {
 		const enabled = { current: false };
 		const { terminal, tui } = makeInlineTui(enabled);

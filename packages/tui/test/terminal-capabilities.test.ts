@@ -12,6 +12,7 @@ import {
 	resolveWarpImageProtocol,
 	shouldEnableHyperlinksByDefault,
 	shouldEnableSynchronizedOutputByDefault,
+	supportsInlineChartImages,
 	synchronizedOutputUserOverride,
 	classifyTerminalMultiplexer,
 	hasTerminalMultiplexerSession,
@@ -982,5 +983,68 @@ describe("detectStyledUnderlineSupport", () => {
 		expect(detectStyledUnderlineSupport("ghostty", { STY: "1234.pts-0.host" })).toBe(false);
 		expect(detectStyledUnderlineSupport("wezterm", { TERM: "screen-256color" })).toBe(false);
 		expect(detectStyledUnderlineSupport("iterm2", { TERM_PROGRAM_VERSION: "3.5.0", ZELLIJ: "0" })).toBe(false);
+	});
+});
+
+describe("Windows Terminal identity", () => {
+	it("resolves WT_SESSION to a hyperlink-capable, true-color identity without a graphics protocol", () => {
+		const env = { WT_SESSION: "5c0b2f60-aaaa-bbbb-cccc-0123456789ab" };
+		const id = detectTerminalId(env);
+		expect(id).toBe("windows-terminal");
+		const info = getTerminalInfo(id);
+		expect(info.hyperlinks).toBe(true);
+		expect(info.trueColor).toBe(true);
+		expect(info.imageProtocol).toBeNull();
+		expect(shouldEnableHyperlinksByDefault(env, id)).toBe(true);
+		expect(resolveImageProtocol(id, env, true)).toBeNull();
+	});
+
+	it("accepts the Windows_Terminal TERM_PROGRAM advertisement", () => {
+		expect(detectTerminalId({ WT_SESSION: "1", TERM_PROGRAM: "Windows_Terminal" })).toBe("windows-terminal");
+	});
+
+	it("keeps explicit hyperlink overrides authoritative", () => {
+		expect(shouldEnableHyperlinksByDefault({ WT_SESSION: "1", PI_NO_HYPERLINKS: "1" }, "windows-terminal")).toBe(
+			false,
+		);
+	});
+
+	it("does not claim hosts that spoof WT_SESSION or sit behind a multiplexer", () => {
+		expect(detectTerminalId({ WT_SESSION: "0", TERM_PROGRAM: "Tabby", COLORTERM: "truecolor" })).toBe("trueColor");
+		expect(detectTerminalId({ WT_SESSION: "1", STY: "1234.pts-0.host", TERM: "screen-256color" })).toBe("base");
+		expect(detectTerminalId({ WT_SESSION: "1", ZELLIJ: "0" })).toBe("base");
+	});
+
+	it("leaves terminals without WT_SESSION unchanged", () => {
+		expect(detectTerminalId({})).toBe("base");
+		expect(detectTerminalId({ COLORTERM: "truecolor" })).toBe("trueColor");
+		expect(detectTerminalId({ KITTY_WINDOW_ID: "1", WT_SESSION: "1" })).toBe("kitty");
+		expect(detectTerminalId({ TERM_PROGRAM: "WezTerm", WT_SESSION: "1" })).toBe("wezterm");
+	});
+});
+
+describe("supportsInlineChartImages", () => {
+	it("never draws a chart without an image protocol", () => {
+		expect(supportsInlineChartImages(null, {}, "linux")).toBe(false);
+		expect(supportsInlineChartImages(null, { PI_FORCE_IMAGE_PROTOCOL: "off" }, "win32")).toBe(false);
+	});
+
+	it("skips SIXEL on Windows hosts, where the raster lands over the table text", () => {
+		expect(supportsInlineChartImages(ImageProtocol.Sixel, {}, "win32")).toBe(false);
+		expect(supportsInlineChartImages(ImageProtocol.Sixel, { WT_SESSION: "1" }, "linux")).toBe(false);
+	});
+
+	it("keeps charts on SIXEL and graphics hosts outside Windows Terminal", () => {
+		expect(supportsInlineChartImages(ImageProtocol.Sixel, {}, "linux")).toBe(true);
+		expect(supportsInlineChartImages(ImageProtocol.Kitty, {}, "linux")).toBe(true);
+		expect(supportsInlineChartImages(ImageProtocol.Kitty, {}, "win32")).toBe(true);
+		expect(supportsInlineChartImages(ImageProtocol.Iterm2, {}, "darwin")).toBe(true);
+	});
+
+	it("honors an explicit PI_FORCE_IMAGE_PROTOCOL opt-in on Windows", () => {
+		expect(supportsInlineChartImages(ImageProtocol.Sixel, { PI_FORCE_IMAGE_PROTOCOL: "sixel" }, "win32")).toBe(true);
+		expect(
+			supportsInlineChartImages(ImageProtocol.Sixel, { WT_SESSION: "1", PI_FORCE_IMAGE_PROTOCOL: "sixel" }, "linux"),
+		).toBe(true);
 	});
 });

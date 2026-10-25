@@ -7,4 +7,6 @@ Reads files, directories, archives, SQLite, PDFs/office docs, notebooks, images 
 {{#if IS_HL_MODE}}
 - File output starts with a `[file.ts#1A2B]` snapshot tag and numbered lines. Copy the tag exactly into anchored edits; never invent one.
 {{/if}}
-- Directories list children up to 12 per subdirectory. `x.db` lists tables, `x.db:table[:key]` rows (`?where=`, `?q=SELECT …`). `x.zip` lists members, `x.zip:inner/path` reads one. `x.json?q=<jq filter>`. URLs return readable text, `:raw` the HTML. `:conflicts` lists merge conflicts.
+- Directories list children, up to 12 per subdirectory. `x.zip` lists members; `x.zip:inner/path` reads one. `x.json?q=<jq filter>` queries JSON. `file:conflicts` lists merge conflicts.
+- SQLite: `x.db` lists tables, `x.db:table` shows schema and sample rows (filter with `?where=`), `x.db:table:key` one row; `x.db?q=SELECT …` runs a query.
+- URLs return readable text; `:raw` returns the HTML.

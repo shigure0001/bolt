@@ -24,7 +24,7 @@ The params object is one cell. There is no `cells` array, language selector, hea
 | `code` | `string` | Yes | Inline Python, or one standalone `%load` / `%pip install` command. |
 | `title` | `string` | No | Short transcript label. |
 | `timeout` | `number` | No | Active-runtime timeout window in seconds. Default 30; `0` disables it. Nonzero values are clamped by the tool timeout policy (`TOOL_TIMEOUTS.eval`: 1–3600 s) and `tools.maxTimeout`. Paused host waits resume with a fresh window, not the unused remainder. |
-| `reset` | `boolean` | No | Recreate the retained kernel before execution. Default `false`. |
+| `reset` | `boolean` | No | Recreate the retained kernel before execution, discarding its variables and any still-running cell. Default `false`. |
 
 Example across three calls:
 
@@ -124,7 +124,7 @@ With `eval.autoBackground.enabled` (default `false`), a cell that outlives `eval
 ## Prelude helpers
 
 - `read(path, offset?, limit?)`, `write(path, content)`, `env(...)`, `output(...)`
-- `tool.<name>(args)` for a normal session tool call (`await tool.read({...})`)
+- `tool.<name>(args)` for a normal session tool call (`await tool.read({...})`); the provider wire spelling also resolves (`tool._read` on Claude OAuth sessions), an exactly registered name winning, and an unknown name fails with the available tool list. Dunder and `_x_` attribute probes are never treated as tools
 - `log(message)`, `phase(title)`, `budget`
 
 Python file helpers are synchronous while `tool.<name>()` is a coroutine. `read()` delegates non-`local://` schemes to the registered read tool, resolves `local://` through injected roots, and reads regular paths relative to cwd. A bare `read("artifact://<id>")` returns the artifact file's full text, with `offset`/`limit` selecting lines, whichever session's artifacts dir holds it; selector forms such as `artifact://<id>:raw:5-9` go to the read tool. `write()` accepts regular and `local://` paths but rejects other protocol URLs.
@@ -165,7 +165,7 @@ bare strings for text-only results without details.
 - Prelude helpers may read/write files and call arbitrary registered tools.
 - Python uses a retained subprocess kernel speaking framed local IPC.
 - Retained kernels have no heartbeat or idle timer; they survive calls until reset, owner disposal (`EvalRunner.disposeKernels()` calls `disposeKernelSessionsByOwner` keyed by `kernelOwnerId`, in `packages/coding-agent/src/session/eval-runner.ts`), or process exit.
-- Cancellation is destructive when needed: managed kernels interrupt and may escalate to shutdown. A reset is likewise destructive to concurrent work sharing that kernel session.
+- Cancellation and timeouts never kill a retained kernel: the runner interrupts the cell (`KeyboardInterrupt`) and the kernel keeps its process and variables, so a later cell can read state defined before the timeout. A cell that ignores the interrupt for 5 s is released to the caller as timed out/cancelled while it keeps running; the next call waits briefly for it to finish, then fails with an error asking for `reset: true`. Only an explicit `reset: true`, owner disposal, or shutdown kills the kernel, and a reset is destructive to concurrent work sharing that kernel session.
 
 ## Limits and errors
 

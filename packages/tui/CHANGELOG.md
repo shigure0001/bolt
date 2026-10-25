@@ -13,6 +13,9 @@
 
 ### Fixed
 
+- Fixed Windows Terminal/ConPTY charts under `tui.autoGraph` tables being drawn over the table text: table charts are no longer lifted where SIXEL is the image protocol on a Windows host (`WT_SESSION` or native win32) unless `PI_FORCE_IMAGE_PROTOCOL` pins it, so the table stays plain text with no blank gap. Explicit SVG fences are unchanged.
+- Fixed the mouse wheel being swallowed while inline mouse capture (`tui.mouse`) is on: the wheel now hands the pointer back to the terminal (`TUI.releaseInlineMouseTracking()`), so history scrolls and native selection/copy/OSC 8 link clicks work, and the next keypress re-arms capture.
+- Fixed Windows Terminal resolving to the `base` identity: a `WT_SESSION` environment (without a contradicting `TERM_PROGRAM`, outside multiplexers) now resolves a `windows-terminal` identity with true color and OSC 8 hyperlinks enabled and no assumed graphics protocol.
 - Fixed long URLs in fenced code blocks opening only their first visual line on ctrl/cmd-click; each wrapped fragment now carries the full OSC 8 hyperlink when the terminal supports it ([#16740](https://github.com/can1357/oh-my-pi/pull/16740) by [@OriginalByteMe](https://github.com/OriginalByteMe))
 - Fixed the newest inline charts and images at the bottom of the screen showing as text placeholders while older ones stayed rendered once a session (or a resumed one) holds more than `tui.maxInlineImages` images ([#16660](https://github.com/can1357/oh-my-pi/issues/16660))
 - Fixed Markdown tables in the terminal ignoring their column alignment, so right-aligned and centered columns rendered flush left ([#16658](https://github.com/can1357/oh-my-pi/pull/16658) by [@adi-IL](https://github.com/adi-IL))

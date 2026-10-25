@@ -124,10 +124,10 @@ export function formatSessionTimeoutAnnotation(timeoutMs?: number): string {
 export function formatSessionKernelTimeoutAnnotation(timeoutMs: number | undefined, kernelKilled: boolean): string {
 	const secs = timeoutMs === undefined ? undefined : Math.max(1, Math.round(timeoutMs / 1000));
 	if (kernelKilled) {
-		return "eval cell timed out and the kernel was unresponsive to interrupt; the kernel has been killed and will be recreated on the next call.";
+		return "eval cell timed out and the kernel exited; it will be recreated on the next call and earlier variables are lost.";
 	}
 	const duration = secs === undefined ? "the configured timeout" : `${secs}s`;
-	return `eval cell timed out after ${duration}; kernel interrupted but remains running. Reset the kernel via { reset: true } if state appears corrupted.`;
+	return `eval cell timed out after ${duration}; kernel interrupted but remains running with its state preserved. If the cell ignored the interrupt it may still be running; the next call then waits briefly and otherwise asks you to use { reset: true }.`;
 }
 
 export function createKernelSessionRegistry<

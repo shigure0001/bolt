@@ -4,7 +4,7 @@ import {
 	type AgentToolUpdateCallback,
 	validateAgentToolArguments,
 } from "@oh-my-pi/pi-agent-core";
-import { type ImageContent, toolWireSchema } from "@oh-my-pi/pi-ai";
+import { type ImageContent, stripClaudeToolPrefix, toolWireSchema } from "@oh-my-pi/pi-ai";
 import { isRecord } from "@oh-my-pi/pi-utils";
 import { INTENT_FIELD } from "@oh-my-pi/pi-wire";
 import type { ToolSession } from "../../tools";
@@ -40,12 +40,20 @@ function toolResultHasError(result: AgentToolResult): boolean {
 	return isRecord(result.details) && result.details.isError === true;
 }
 
-function getTool(session: ToolSession, name: string): AgentTool {
-	const tool = session.getToolForEvalBridge ? session.getToolForEvalBridge(name) : session.getToolByName?.(name);
-	if (!tool) {
-		throw new ToolError(`Unknown tool from js runtime: ${name}`);
+/**
+ * Resolves a script-supplied tool name to its registered tool. Scripts may use
+ * the provider wire spelling the model sees (`_grep` on Claude OAuth) as well
+ * as the internal name (`grep`); an exact registration wins, so a real tool
+ * whose own name starts with the prefix is never shadowed.
+ */
+function resolveTool(session: ToolSession, requestedName: string): { tool: AgentTool; name: string } {
+	for (const name of new Set([requestedName, stripClaudeToolPrefix(requestedName)])) {
+		const tool = session.getToolForEvalBridge ? session.getToolForEvalBridge(name) : session.getToolByName?.(name);
+		if (tool) return { tool, name };
 	}
-	return tool;
+	const available = session.getEvalBridgeToolNames?.() ?? [];
+	const suffix = available.length > 0 ? ` Available tools: ${available.join(", ")}.` : "";
+	throw new ToolError(`Unknown tool: ${requestedName}.${suffix}`);
 }
 
 function parsePreludeRequest(args: unknown): { name: string; parameters: unknown } {
@@ -152,8 +160,12 @@ export function bridgeValueFromToolResult(
 	return value;
 }
 
-export async function callSessionTool(name: string, args: unknown, options: ToolBridgeOptions): Promise<ToolValue> {
-	if (name === "__prelude__") {
+export async function callSessionTool(
+	requestedName: string,
+	args: unknown,
+	options: ToolBridgeOptions,
+): Promise<ToolValue> {
+	if (requestedName === "__prelude__") {
 		const request = parsePreludeRequest(args);
 		const toolCallId = `prelude-${request.name}-${crypto.randomUUID()}`;
 		try {
@@ -184,7 +196,7 @@ export async function callSessionTool(name: string, args: unknown, options: Tool
 			throw error;
 		}
 	}
-	const tool = getTool(options.session, name);
+	const { tool, name } = resolveTool(options.session, requestedName);
 	const toolCallId = `js-${name}-${crypto.randomUUID()}`;
 	// A schema-owned name stays tool data across alternatives. Deleting an
 	// invalid value to make another branch match could select a different operation.

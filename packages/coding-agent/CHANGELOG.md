@@ -22,7 +22,8 @@
 
 - Anthropic web search and Files API uploads follow `PI_ANTHROPIC_API_VERSION=2026-10-21`; web search omits `temperature` under that version ([#16706](https://github.com/can1357/oh-my-pi/pull/16706) by [@H4vC](https://github.com/H4vC))
 - llama.cpp auto-discovery now also finds local servers on llama-server's new default port 9931 when nothing answers on 8080 ([#16675](https://github.com/can1357/oh-my-pi/pull/16675) by [@bartbroere](https://github.com/bartbroere))
-- `load_tools` and `tools.deferred`: tools matching the `tools.deferred` globs (default: task, eval, lsp, ask, wait, todo, web_search and all MCP tools) stay registered but off the request; `load_tools` lists them one line each and activates the ones the model names, which are then ordinary tools for the rest of the session. Explicit tool lists (subagent definitions, `--tools`) and restricted selections such as plan mode are never deferred
+- `load_tools` and `tools.deferred`: tools matching the `tools.deferred` globs (default: eval, lsp, web_search, github and all MCP tools; `task`, `todo`, `ask` and `wait` stay eager) stay registered but off the request; `load_tools` lists them one line each and activates the ones the model names, which are then ordinary tools for the rest of the session. Explicit tool lists (subagent definitions, `--tools`) and restricted selections such as plan mode are never deferred
+- The `<workstation>` block lists which common commands are on PATH (`git`, `gh`, `python`/`python3`/`py`, `uv`, `node`, the JS package managers, `bun`, `deno`, `cargo`, `go`, `java`, `dotnet`, `docker`, `make`), so the first command uses a spelling that exists; on Windows a `python` that is only the Microsoft Store App Installer alias is not listed
 
 ### Changed
 
@@ -38,6 +39,8 @@
 - Rewrote the main system prompt, project footer, subagent prompt and default personality in plain prose: no RFC 2119 legend, `§` sections or duplicated `<critical>` blocks; the redundant tool-name inventory is gone in native tool mode and formatting guidance appears only when the TUI renders it
 - Rewrote the remaining built-in tool descriptions (read, bash, write, grep, glob, todo, task, ask, wait, eval, lsp, checkpoint, web_search) and internal URL docs as plain explanations; `bash` no longer claims `head`/`tail`/redirection are forbidden, and the `replace` edit prompt no longer recommends `sed`
 - `read` ranges no longer add enclosing-block lines: every read shows exactly the requested lines, and the footer matches what is shown
+- The system prompt's `load_tools` line points at the tool's own catalog instead of naming tools (it named GitHub even when `github.enabled` was off), and URL guidance moved from `web_search` to the system prompt: known URLs go to `read`, search tools find URLs, and other fetch tools (or the eval `browser`) are fallbacks, which also applies when only MCP search/fetch tools are configured
+- The `read`, `glob` and `bash` descriptions spell out their selectors and defaults: SQLite selectors now say that `x.db:table` returns schema and sample rows, where `?where=` and `?q=` apply, and the Windows shell notes are a separate line
 - `edit` results in non-hashline modes number rows `N|text`, matching `read` and `grep` output, instead of hashline-style `N:text`
 - The `bash` description says commands run in a built-in bash-compatible shell on every platform (with Windows-specific guidance)
 - `glob` takes its pattern in `pattern` (was `path`)
@@ -73,11 +76,18 @@
 - An empty `glob` result says gitignored files were skipped and that `gitignore: false` includes them; bash timeout notices say "1 second" instead of "1 seconds"; shell I/O errors use POSIX wording (`No such file or directory`, `Permission denied`) instead of the OS's localized message
 - `edit`'s description says a text differing only in whitespace or quote style still matches (was "small whitespace differences are tolerated"); `read`'s `path` parameter description names the line selector (`:50-80`)
 - An empty `glob` result names what was skipped: gitignored files (`gitignore: false` includes them) and `node_modules` unless the pattern names it; it no longer claims `gitignore: false` reaches `node_modules`. The `glob` description states the `node_modules` rule
-- The system prompt says to keep scratch files in `local://` or the system temp dir and never to create files or folders in the working directory's parent, or elsewhere outside it, unless the task needs them there
+- The system prompt says to keep scratch files in `local://` or the system temp dir and not to create scratch files or folders in the working directory's parent unless the task needs them there
 - On Windows the `bash` description says `/tmp` means `$TMPDIR` only inside the shell and to pass native programs `$TMPDIR`; a command that makes a native program write the drive root's `tmp` (`C:\tmp\x` for `/tmp/x`) gets a notice naming the stray path
 
 ### Fixed
 
+- Fixed `eval` rejecting the tool names the model sees on Claude subscription (OAuth) sessions: `tool._grep` now calls `grep` like `tool.grep`, and an unknown tool name lists the available ones
+- Fixed `proc://<id>` labeling a background command's own output as `Error:` when it exited non-zero; the job header and `proc://` listing now show `failed (exit N)` instead, and `Error:` marks only harness failures
+- Fixed `todo` silently ignoring `items` on operations other than `init` and `append`: `done` with `items` used to complete every task; such a call now errors and leaves the list unchanged
+- Task subagents now inherit the parent's `AGENTS.md` repo rules instead of dropping every `agents.md` context file
+- Fixed the inline mouse capture (`tui.mouse`) swallowing the wheel: the first wheel notch now releases capture so the terminal scrolls history and selects/copies/opens links natively, and the next keypress re-arms capture. `tui.mouse` and `tui.autoGraph` descriptions document the behavior.
+- Fixed Windows Terminal/ConPTY auto-graph charts overlapping table text: table charts are skipped on Windows hosts that negotiate SIXEL (override with `PI_FORCE_IMAGE_PROTOCOL`), and Windows Terminal now gets OSC 8 hyperlinks by default.
+- The persistent Python eval kernel now survives a cell timeout or cancellation: it is interrupted but never killed, so variables defined earlier stay readable. On Windows the interrupt travels through a marker file the runner turns into Ctrl-C, since `SIGINT` terminated the process. A cell that ignores its interrupt is released as timed out while the kernel keeps running; the next call waits briefly, then reports that `reset: true` is needed.
 - Fixed `omp gc --compress` exiting with "the event loop drained while it was still pending" on Bun 1.3.14 when a session artifact is pretty-printed JSON larger than 1 MiB, and session header probes (gc, session move and transfer) reading whole artifacts on Windows ([#15745](https://github.com/can1357/oh-my-pi/issues/15745), [#16754](https://github.com/can1357/oh-my-pi/pull/16754) by [@wolfiesch](https://github.com/wolfiesch))
 - `/resume` into another session now cancels the previous session's background jobs, as `/new` does, instead of delivering their results into the resumed session and starting a turn there ([#16760](https://github.com/can1357/oh-my-pi/pull/16760) by [@will-bogusz](https://github.com/will-bogusz))
 - Fixed the models config migration writing `models.yml` readable by other users on the machine, and dropping every custom provider when the write was interrupted; the migrated file is now published atomically with owner-only permissions ([#16654](https://github.com/can1357/oh-my-pi/pull/16654) by [@adi-IL](https://github.com/adi-IL))

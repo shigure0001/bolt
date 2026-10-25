@@ -2,7 +2,7 @@ import type { AssistantMessage, ImageContent, TextContent } from "@oh-my-pi/pi-a
 import { presentNarrationAsAnswer } from "@oh-my-pi/pi-ai/utils/narration";
 import { type Component, Container } from "../tui";
 import { Image, type ImageBudget } from "../components/image";
-import { ImageProtocol, TERMINAL } from "../terminal-capabilities";
+import { ImageProtocol, supportsInlineChartImages, TERMINAL } from "../terminal-capabilities";
 import {
 	type DefaultTextStyle,
 	holdPartialTableRow,
@@ -1389,8 +1389,18 @@ export class AssistantMessageComponent extends Container {
 			this.#showImages &&
 			TERMINAL.imageProtocol !== null &&
 			!isNativeRendering() &&
-			((svgFigureRendering() && hasSvgFence(text)) || (this.#showTableCharts && hasChartTable(text)))
+			((svgFigureRendering() && hasSvgFence(text)) || (this.#drawsTableCharts() && hasChartTable(text)))
 		);
+	}
+
+	/**
+	 * Whether this terminal gets a raster chart under numeric tables: the main
+	 * session's transcript, on a host that keeps inline images anchored (see
+	 * {@link supportsInlineChartImages}). Elsewhere the table stays plain text
+	 * with no reserved gap. Native (TSP) terminals draw their own charts.
+	 */
+	#drawsTableCharts(): boolean {
+		return this.#showTableCharts && supportsInlineChartImages();
 	}
 
 	/** Re-describe once a smart table chart pick lands. */
@@ -1411,13 +1421,16 @@ export class AssistantMessageComponent extends Container {
 	 */
 	#proseBlock(index: number, text: string, previous: ReadonlyMap<number, FigureMarkdown>): ProseBlock {
 		if (!this.#liftsFigures(text)) return this.#createMarkdown("text", text);
+		const charts = this.#drawsTableCharts();
 		let block = previous.get(index);
-		if (block) {
+		// The image protocol can change after the block was built (the SIXEL
+		// probe lands late): a block that baked the old chart decision in is rebuilt.
+		if (block && block.charts === charts) {
 			block.setText(text);
 		} else {
 			block = new FigureMarkdown(text, {
 				markdown: value => this.#createMarkdown("text", value),
-				charts: this.#showTableCharts,
+				charts,
 				budget: this.#imageBudget,
 				onChange: () => {
 					this.#blockVersion++;

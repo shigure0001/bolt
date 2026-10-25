@@ -34,6 +34,7 @@ import { normalizeConcurrencyLimit } from "./task/parallel";
 import type { ActiveRepoContext } from "@oh-my-pi/pi-tui/status-line/host";
 import { XD_URL_PREFIX } from "@oh-my-pi/pi-tui/tools/xd-url";
 import { resolveActiveRepoContext } from "./utils/active-repo-context";
+import { findCommandsOnPath } from "./utils/path-commands";
 import { normalizePromptPath } from "./utils/prompt-path";
 import { AGENTS_MD_LIMIT, buildWorkspaceTree, type WorkspaceTree } from "./workspace-tree";
 import { combine } from "./config/registry";
@@ -216,13 +217,17 @@ function renderActiveRepoContextPrompt(activeRepoContext: ActiveRepoContext | nu
 }
 
 const SYSTEM_PROMPT_PREP_TIMEOUT_MS = 5000;
-/** Workstation facts the model needs to pick commands and paths: platform/release, CPU architecture and VCS state. */
-function getEnvironmentInfo(vcsState: string | undefined): Array<{ label: string; value: string }> {
+/** Workstation facts the model needs to pick commands and paths: platform/release, CPU architecture, VCS state and common commands on PATH. */
+function getEnvironmentInfo(
+	vcsState: string | undefined,
+	commandsOnPath: string[],
+): Array<{ label: string; value: string }> {
 	const environment = [
 		{ label: "OS", value: `${os.platform()} ${os.release()}` },
 		{ label: "Arch", value: os.arch() },
 	];
 	if (vcsState) environment.push({ label: "VCS", value: vcsState });
+	if (commandsOnPath.length > 0) environment.push({ label: "On PATH", value: commandsOnPath.join(", ") });
 	return environment;
 }
 
@@ -804,6 +809,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 			? Promise.resolve(providedActiveRepoContext)
 			: logger.time("resolveActiveRepoContext", () => resolveActiveRepoContext(resolvedCwd));
 	const vcsStatePromise = describeVcsState(resolvedCwd);
+	const commandsOnPathPromise = findCommandsOnPath();
 	// "none" (explicit off — and every subagent) omits the block and skips the file lookup.
 	const bundledPersonality = personality === "none" ? "" : PERSONALITY_SPECS[personality].trim();
 	const personalityPromise: Promise<string> =
@@ -822,6 +828,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		workspaceTree,
 		activeRepoContext,
 		vcsState,
+		commandsOnPath,
 		personalityBlock,
 	] = await Promise.all([
 		withDeadline(
@@ -846,6 +853,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 		withDeadline("buildWorkspaceTree", workspaceTreePromise, prepDefaults.workspaceTree),
 		withDeadline("resolveActiveRepoContext", activeRepoContextPromise, prepDefaults.activeRepoContext),
 		withDeadline("describeVcsState", vcsStatePromise, undefined),
+		withDeadline("findCommandsOnPath", commandsOnPathPromise, []),
 		withDeadline("loadPersonalityOverride", personalityPromise, bundledPersonality),
 	]);
 	clearTimeout(deadlineTimer);
@@ -947,7 +955,7 @@ export async function buildSystemPrompt(options: BuildSystemPromptOptions = {}):
 	];
 	const injectedAlwaysApplyRules = dedupeAlwaysApplyRules(alwaysApplyRules, promptSources);
 
-	const environment = getEnvironmentInfo(vcsState);
+	const environment = getEnvironmentInfo(vcsState, commandsOnPath);
 	const data = {
 		systemPromptCustomization: effectiveSystemPromptCustomization,
 		customPrompt: resolvedCustomPrompt,

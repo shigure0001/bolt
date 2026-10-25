@@ -1921,6 +1921,31 @@ describe("createAgentSession defaultInactive tool activation", () => {
 		}
 	});
 
+	it("sends core tools up front by default while heavy tools wait behind load_tools", async () => {
+		const tempDir = makeTempDir();
+		// Default `tools.deferred`: only the xdev override differs from a stock session.
+		const { session } = await createAgentSession({
+			...baseOptions(tempDir),
+			settings: Settings.isolated({ "tools.xdev": true }),
+			enableLsp: true,
+		});
+
+		try {
+			const active = session.getActiveToolNames();
+			expect(active).toEqual(expect.arrayContaining(["task", "todo"]));
+			expect(active).toContain("load_tools");
+			expect(active).not.toContain("lsp");
+			const deferred = session.getDeferredTools().map(entry => entry.name);
+			expect(deferred).toContain("lsp");
+			expect(deferred).not.toContain("task");
+			expect(deferred).not.toContain("todo");
+			expect(deferred).not.toContain("ask");
+			expect(deferred).not.toContain("wait");
+		} finally {
+			await session.dispose();
+		}
+	});
+
 	it("permits only explicitly named SDK custom tools when a restricted caller opts in", async () => {
 		const tempDir = makeTempDir();
 		const { session } = await createAgentSession({

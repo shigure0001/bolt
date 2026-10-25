@@ -500,7 +500,10 @@ if "__omp_prelude_loaded__" not in globals():
         __slots__ = ()
 
         def __getattr__(self, name: str) -> _ToolCallable:
-            if name.startswith("_"):
+            # Dunders and `_x_` hooks (`__deepcopy__`, `_repr_html_`) are protocol
+            # probes, never tools. A single leading underscore is the provider wire
+            # spelling (`tool._grep`), which the host resolves to the real tool.
+            if name.startswith("__") or name.endswith("_"):
                 raise AttributeError(name)
             return _ToolCallable(name)
 

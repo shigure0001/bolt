@@ -396,7 +396,24 @@ function removeTasks(phases: TodoPhase[], entry: TodoOpEntryValue, errors: strin
 	return phases;
 }
 
+/**
+ * `items` is only meaningful for `init` (flat form) and `append`. On any other
+ * op it used to be silently ignored, so e.g. `{op:"done", items:[...]}` fell
+ * through to "no target" and completed every task. A non-empty `items` there is
+ * an error; an empty array stays tolerated (see the schema comment).
+ */
+function unexpectedItemsError(entry: TodoOpEntryValue): string | undefined {
+	if (entry.op === "init" || entry.op === "append") return undefined;
+	if (!entry.items || entry.items.length === 0) return undefined;
+	return `${entry.op} does not accept items; items is only valid for init and append. Target tasks with task or phase instead.`;
+}
+
 function applyEntry(phases: TodoPhase[], entry: TodoOpEntryValue, errors: string[]): TodoPhase[] {
+	const itemsError = unexpectedItemsError(entry);
+	if (itemsError) {
+		errors.push(itemsError);
+		return phases;
+	}
 	switch (entry.op) {
 		case "init":
 			return initPhases(entry, errors);
@@ -497,7 +514,11 @@ function inferTodoOp(args: Record<string, unknown>, hasExistingPhases: boolean):
  */
 function resolveTodoParams(raw: unknown, hasExistingPhases: boolean): TodoOpEntryValue | string {
 	const direct = todoSchema(raw);
-	if (!(direct instanceof type.errors)) return direct;
+	if (!(direct instanceof type.errors)) {
+		// `view` skips applyEntry (pure read), so reject stray items here for every op.
+		const itemsError = unexpectedItemsError(direct);
+		return itemsError ? `Invalid todo arguments: ${itemsError}` : direct;
+	}
 	if (isRecord(raw) && raw.op === undefined) {
 		const inferred = inferTodoOp(raw, hasExistingPhases);
 		if (inferred) {

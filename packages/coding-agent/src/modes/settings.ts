@@ -474,7 +474,7 @@ export const cfgTuiAutoGraph = register({
 		group: "Display",
 		label: "Auto-Graph Tables",
 		description:
-			"Draw a chart under numeric tables in the agent's answers, in your theme's colors, on terminals that show graphics",
+			"Draw a chart under numeric tables in the agent's answers, in your theme's colors, on terminals that show graphics. Skipped (table stays text) on Windows Terminal/ConPTY, where SIXEL graphics draw over text; set PI_FORCE_IMAGE_PROTOCOL to opt in anyway",
 		options: [
 			{
 				value: "smart",
@@ -578,7 +578,7 @@ export const cfgTuiMouse = register({
 		label: "Mouse Click-to-Focus",
 		get description() {
 			const shift = formatKeyHint("shift");
-			return `Capture mouse clicks in the main session so live subagent cards and HUD rows focus on click, with a hover highlight on the target. Native text selection becomes ${shift}+drag and wheel scroll becomes ${shift}+wheel while on`;
+			return `Capture mouse clicks in the main session so live subagent cards and HUD rows focus on click, with a hover highlight on the target. While capture is armed, native text selection and link clicks need ${shift}; the first wheel notch hands the mouse back to the terminal so the wheel scrolls history and selection, copy and links work natively, and the next keypress re-arms capture`;
 		},
 	},
 });

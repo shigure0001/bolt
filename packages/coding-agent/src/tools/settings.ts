@@ -845,17 +845,7 @@ export const cfgToolsXdevInlineDevices = register({
 });
 
 /** Tools registered but kept off the request until the model loads them with `load_tools`. */
-export const DEFAULT_DEFERRED_TOOLS: readonly string[] = [
-	"task",
-	"eval",
-	"lsp",
-	"ask",
-	"wait",
-	"todo",
-	"web_search",
-	"github",
-	"mcp__*",
-];
+export const DEFAULT_DEFERRED_TOOLS: readonly string[] = ["eval", "lsp", "web_search", "github", "mcp__*"];
 
 export const cfgToolsDeferred = register({
 	id: "tools.deferred",

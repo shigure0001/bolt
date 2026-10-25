@@ -3,14 +3,27 @@
  *
  * Speaks NDJSON with `runner.py` over stdin/stdout. One subprocess per kernel
  * instance; sessions reuse a single subprocess across executions. Cancellation
- * is `kill("SIGINT")` which raises a real `KeyboardInterrupt` inside user
- * code. Shutdown writes `{"type":"exit"}` and escalates to SIGTERM/SIGKILL on
- * timeout.
+ * raises a real `KeyboardInterrupt` inside user code: `kill("SIGINT")` on
+ * POSIX, and on Windows (where SIGINT terminates the process) a marker file
+ * the runner's interrupt watchdog turns into the same interrupt. A cell that
+ * ignores its interrupt is released without killing the kernel, so session
+ * state survives. Only an explicit shutdown writes `{"type":"exit"}` and
+ * escalates to SIGTERM/SIGKILL on timeout.
  */
+import * as fs from "node:fs/promises";
+import * as os from "node:os";
 import * as path from "node:path";
 import { $flag, isBunTestRuntime, logger, Snowflake } from "@oh-my-pi/pi-utils";
+import type { Subprocess } from "bun";
 import { Settings } from "../../config/settings";
-import { BaseKernel, getRemainingTimeMs, type KernelExecuteOptions, type KernelStartOptions } from "../kernel-base";
+import {
+	BaseKernel,
+	getRemainingTimeMs,
+	type KernelExecuteOptions,
+	type KernelShutdownOptions,
+	type KernelShutdownResult,
+	type KernelStartOptions,
+} from "../kernel-base";
 import { type BackendProbeOptions, probeCandidates } from "../probe";
 import { stageRunnerScript } from "../runner-cache";
 import { PYTHON_PRELUDE } from "./prelude";
@@ -36,13 +49,16 @@ const TRACE_IPC = $flag("PI_PYTHON_IPC_TRACE");
 
 const SHUTDOWN_GRACE_MS = 1_000;
 const STARTUP_TIMEOUT_MS = 10_000;
-// How long to wait after SIGINT for the runner to emit `done`. If the cell is
-// stuck in code that ignores Python signals (e.g. a C extension holding the
-// GIL), we escalate to a full subprocess shutdown so the host queue unblocks
-// instead of hanging the session forever. The grace window is intentionally
-// generous: a clean interrupt is far preferable to losing the persistent
-// kernel's state, so we only kill as a last-resort recovery path.
+// How long to wait after an interrupt for the runner to emit `done`. If the
+// cell is stuck in code that ignores Python signals (e.g. a C extension holding
+// the GIL), the caller is released after this window but the kernel is NOT
+// killed: its namespace is the session's state. The kernel stays busy until the
+// cell's late `done` arrives, and `reset: true` is the explicit way out.
 const INTERRUPT_ESCALATION_MS = 5_000;
+// Env var carrying the interrupt-marker base path to the Windows runner.
+const INTERRUPT_PATH_ENV = "OMP_PYTHON_INTERRUPT_PATH";
+// Marker file stem inside the interrupt directory; the runner looks for `<stem>.<request id>`.
+const INTERRUPT_MARKER = "interrupt";
 
 const PYTHON_RESERVED_PRELUDE_EXPORTS: Record<string, true> = {
 	_omp_prelude: true,
@@ -136,17 +152,25 @@ async function probePythonKernelAvailability(
 
 export class PythonKernel extends BaseKernel<KernelExecuteOptions> {
 	#installedPreludes = new Map<string, PythonPreludeSource>();
+	readonly #interruptDir: string | undefined;
 
-	/** @param pythonPath Interpreter executable this kernel runs on; reported as the runtime in eval state. */
+	/**
+	 * @param pythonPath Interpreter executable this kernel runs on; reported as the runtime in eval state.
+	 * @param interruptDir Private directory for interrupt markers; set only where SIGINT cannot reach the runner (Windows).
+	 */
 	private constructor(
 		id: string,
 		readonly pythonPath: string,
+		interruptDir?: string,
 	) {
 		super(id, {
 			languageName: "Python",
 			traceIpc: TRACE_IPC,
 			exitPayload: JSON.stringify({ type: "exit" }),
 			interruptEscalationMs: INTERRUPT_ESCALATION_MS,
+			interruptRequest: interruptDir
+				? msgId => Bun.write(path.join(interruptDir, `${INTERRUPT_MARKER}.${msgId}`), "").then(() => undefined)
+				: undefined,
 			shutdownGraceMs: SHUTDOWN_GRACE_MS,
 			buildPayload: (code, msgId, opts) =>
 				JSON.stringify({
@@ -159,6 +183,15 @@ export class PythonKernel extends BaseKernel<KernelExecuteOptions> {
 					storeHistory: opts?.storeHistory ?? !(opts?.silent ?? false),
 				}),
 		});
+		this.#interruptDir = interruptDir;
+	}
+
+	override async shutdown(options?: KernelShutdownOptions): Promise<KernelShutdownResult> {
+		const result = await super.shutdown(options);
+		if (result.confirmed && this.#interruptDir) {
+			await fs.rm(this.#interruptDir, { recursive: true, force: true }).catch(() => {});
+		}
+		return result;
 	}
 
 	/** Synchronize enabled capability snippets before the next user cell. */
@@ -259,20 +292,31 @@ export class PythonKernel extends BaseKernel<KernelExecuteOptions> {
 		spawnEnv.PYTHONIOENCODING = "utf-8";
 
 		const scriptPath = await stageRunnerScript("omp-python-runner", "py", RUNNER_SCRIPT);
-		const kernel = new PythonKernel(Snowflake.next(), runtime.pythonPath);
+		// SIGINT terminates a Windows process and its runner does not read stdin mid-cell, so the host
+		// interrupts through marker files in a private directory instead.
+		const interruptDir =
+			process.platform === "win32" ? await fs.mkdtemp(path.join(os.tmpdir(), "omp-python-interrupt-")) : undefined;
+		if (interruptDir) spawnEnv[INTERRUPT_PATH_ENV] = path.join(interruptDir, INTERRUPT_MARKER);
+		const kernel = new PythonKernel(Snowflake.next(), runtime.pythonPath, interruptDir);
 
-		const proc = Bun.spawn([runtime.pythonPath, "-u", scriptPath], {
-			cwd: options.cwd,
-			detached: shouldDetachKernel(process.platform),
-			env: spawnEnv,
-			stdin: "pipe",
-			stdout: "pipe",
-			stderr: "pipe",
-			windowsHide: shouldHideKernelWindow({
-				platform: process.platform,
-				hostHasInheritableConsole: hostHasInheritableConsole(),
-			}),
-		});
+		let proc: Subprocess<"pipe", "pipe", "pipe">;
+		try {
+			proc = Bun.spawn([runtime.pythonPath, "-u", scriptPath], {
+				cwd: options.cwd,
+				detached: shouldDetachKernel(process.platform),
+				env: spawnEnv,
+				stdin: "pipe",
+				stdout: "pipe",
+				stderr: "pipe",
+				windowsHide: shouldHideKernelWindow({
+					platform: process.platform,
+					hostHasInheritableConsole: hostHasInheritableConsole(),
+				}),
+			});
+		} catch (err) {
+			if (interruptDir) await fs.rm(interruptDir, { recursive: true, force: true }).catch(() => {});
+			throw err;
+		}
 
 		kernel.setProcess(proc);
 

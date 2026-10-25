@@ -1048,6 +1048,11 @@ export class TUI extends Container {
 	#mouseTracking: MouseTrackingState = "off";
 	/** Product-owned probe for opt-in normal-buffer click capture (`tui.mouse`). Read every frame. */
 	#inlineMouseProvider: (() => boolean) | undefined;
+	/**
+	 * Inline capture handed back to the terminal by {@link releaseInlineMouseTracking}
+	 * until the next keypress re-arms it.
+	 */
+	#inlineMouseReleased = false;
 	#altPreviousLines: string[] = [];
 	#altPreparedRows: PreparedLine[] = [];
 	#altEnterWidth = 0;
@@ -1415,6 +1420,23 @@ export class TUI extends Container {
 	 */
 	setInlineMouseTrackingProvider(provider: (() => boolean) | undefined): void {
 		this.#inlineMouseProvider = provider;
+	}
+
+	/**
+	 * Hand the pointer back to the terminal while inline capture is on. The
+	 * transcript lives in the terminal's native scrollback, which the app cannot
+	 * scroll: with reporting on, the host forwards the wheel as SGR reports (and
+	 * keeps selection and OSC 8 link clicks for itself behind Shift) instead of
+	 * scrolling. Releasing turns reporting off immediately, so the wheel scrolls
+	 * history and drag-select/copy/link clicks work natively. Capture re-arms on
+	 * the next keypress; a fullscreen overlay is
+	 * unaffected, since it owns its own reporting. No-op unless inline capture
+	 * is currently live.
+	 */
+	releaseInlineMouseTracking(): void {
+		if (this.#mouseTracking !== "inline") return;
+		this.#inlineMouseReleased = true;
+		this.#setMouseTracking("off");
 	}
 
 	/** Transition mouse reporting, emitting only the sequences a change needs. */
@@ -2960,6 +2982,14 @@ export class TUI extends Container {
 		}
 		if (data.length === 0) return;
 
+		// A keypress ends a wheel hand-back: the render this input triggers
+		// re-enables inline capture. Mouse reports and focus-in/out reports are
+		// not keypresses.
+		if (this.#inlineMouseReleased && !data.startsWith("\x1b[<") && data !== "\x1b[I" && data !== "\x1b[O") {
+			this.#inlineMouseReleased = false;
+			this.requestRender();
+		}
+
 		if (this.#heldInput !== undefined && this.#focusedComponent === this.#heldFocus) {
 			this.#holdInput(data);
 			return;
@@ -3847,7 +3877,7 @@ export class TUI extends Container {
 		const wantAlt = topOverlay?.options?.fullscreen === true;
 		const wantMouse: MouseTrackingState =
 			topOverlay === undefined
-				? this.#inlineMouseProvider?.() === true
+				? this.#inlineMouseProvider?.() === true && !this.#inlineMouseReleased
 					? "inline"
 					: "off"
 				: wantAlt && topOverlay.options?.mouseTracking !== false

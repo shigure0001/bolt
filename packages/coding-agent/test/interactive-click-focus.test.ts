@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "bun:test";
 import * as path from "node:path";
 import { Agent } from "@oh-my-pi/pi-agent-core";
 import { ModelRegistry } from "@oh-my-pi/pi-coding-agent/config/model-registry";
@@ -225,6 +225,43 @@ describe("inline click-to-focus geometry", () => {
 		term.sendInput(`\x1b[<32;5;${bottomRow + 1}M`);
 		await term.waitForRender(() => !changed(before));
 		expect(workerBg()).toEqual(before);
+	});
+
+	it("hands the wheel back to the terminal instead of swallowing it, and re-arms on a keypress", async () => {
+		cfgTuiMouse.set(mode.settings, true);
+		await mode.init({ suppressWelcomeIntro: true });
+		void mode.getUserInput();
+		await term.waitForRender();
+		mode.ui.requestRender();
+		await term.waitForRender();
+
+		const written: string[] = [];
+		const write = term.write.bind(term);
+		const spy = vi.spyOn(term, "write").mockImplementation(data => {
+			written.push(data);
+			write(data);
+		});
+		try {
+			const TRACKING_ON = "\x1b[?1000h\x1b[?1003h\x1b[?1006h";
+			const TRACKING_OFF = "\x1b[?1006l\x1b[?1003l\x1b[?1000l";
+			const output = (): string => written.join("");
+
+			// A wheel notch turns reporting off so the host scrolls native history.
+			term.sendInput("\x1b[<65;5;5M");
+			expect(output()).toContain(TRACKING_OFF);
+			expect(output()).not.toContain(TRACKING_ON);
+
+			// The released terminal stays released across frames until a key arrives.
+			mode.ui.requestRender();
+			await term.waitForRender();
+			expect(output()).not.toContain(TRACKING_ON);
+
+			term.sendInput("a");
+			await term.waitForRender(() => output().includes(TRACKING_ON));
+			expect(output()).toContain(TRACKING_ON);
+		} finally {
+			spy.mockRestore();
+		}
 	});
 
 	it("expands and collapses the pinned jump list through SGR clicks", async () => {

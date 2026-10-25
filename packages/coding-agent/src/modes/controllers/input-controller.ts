@@ -780,6 +780,12 @@ export class InputController {
 	 * the hover band on the target under the cursor. Every SGR report is consumed
 	 * while inline tracking owns the terminal so button/wheel bytes never reach
 	 * the editor as typed input; clicks on chrome simply swallow.
+	 *
+	 * The wheel cannot scroll anything here: the transcript sits in the
+	 * terminal's native scrollback. A wheel report therefore hands the pointer
+	 * back to the terminal (reporting off) so the wheel scrolls history and
+	 * selection, copy and OSC 8 link clicks work natively; the next keypress
+	 * re-arms capture.
 	 */
 	#handleInlineMouse(data: string): { consume?: boolean; data?: string } | undefined {
 		if (!data.startsWith("\x1b[<")) return undefined;
@@ -787,7 +793,8 @@ export class InputController {
 		if (this.ctx.ui.hasOverlay()) return undefined;
 		const event = parseSgrMouse(data);
 		if (!event) return undefined;
-		if (event.motion) this.#updateHoverHighlight(event.row);
+		if (event.wheel !== null) this.ctx.ui.releaseInlineMouseTracking();
+		else if (event.motion) this.#updateHoverHighlight(event.row);
 		else if (event.leftClick) this.#focusClickedAgent(event.row);
 		return { consume: true };
 	}

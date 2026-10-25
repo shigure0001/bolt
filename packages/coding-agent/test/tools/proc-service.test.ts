@@ -209,6 +209,43 @@ describe("proc:// background jobs", () => {
 		}
 	});
 
+	it("reports a non-zero bash exit as the command's output, keeping the Error label for harness failures", async () => {
+		const manager = new AsyncJobManager({});
+		const session = toolSession(process.cwd(), manager, { launch: false, async: true });
+		const protocol = new ProcProtocolHandler();
+		try {
+			await new BashTool(session).execute("exit-3", {
+				command: "printf 'bg-done\\n'; exit 3",
+				async: true,
+				pty: false,
+			});
+			const [job] = manager.getAllJobs({ ownerId: "Main" });
+			if (!job) throw new Error("no bash job started");
+			await job.promise;
+			const crashedId = manager.register(
+				"bash",
+				"crashed job",
+				async () => {
+					throw new Error("spawn failed");
+				},
+				{ id: "crashed-job", ownerId: "Main" },
+			);
+			await manager.getJob(crashedId)?.promise;
+
+			const exited = (await protocol.resolve(parseInternalUrl(`proc://${job.id}`), { session })).content;
+			expect(exited.split("\n")[0]).toBe(`${job.id} [bash] — failed (exit 3) — ${job.label}`);
+			expect(exited).toContain("bg-done");
+			expect(exited).not.toContain("Error:");
+			const crashed = (await protocol.resolve(parseInternalUrl(`proc://${crashedId}`), { session })).content;
+			expect(crashed).toBe(`${crashedId} [bash] — failed — crashed job\nError: spawn failed`);
+			const listing = (await protocol.resolve(parseInternalUrl("proc://"), { session })).content;
+			expect(listing).toContain(`${job.id} [bash] failed (exit 3) in `);
+			expect(listing).toContain(`${crashedId} [bash] failed in `);
+		} finally {
+			await manager.dispose({ timeoutMs: 2_000 });
+		}
+	}, 20_000);
+
 	it("answers a read of a write-only action with the write that performs it, leaving the job running", async () => {
 		const manager = new AsyncJobManager({});
 		const pending = Promise.withResolvers<string>();

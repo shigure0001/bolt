@@ -217,6 +217,9 @@ class _RunnerState:
         # processes inheriting stdout). With overlapping requests the most
         # recently started one wins — strictly better than dropping the bytes.
         self.capture_rid: str | None = None
+        # Request whose user code currently runs; the interrupt watchdog
+        # targets it (see ``_start_interrupt_watchdog``).
+        self.interrupt_rid: str | None = None
 
 
 _CURRENT_RID: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -1884,6 +1887,68 @@ def _start_parent_watchdog() -> None:
     thread.start()
 
 
+# Out-of-band interrupt channel (Windows). The host cannot SIGINT a Windows
+# process (``kill("SIGINT")`` is TerminateProcess there) and ``_serve_windows``
+# must not read stdin while a cell runs, so the host instead creates an empty
+# marker file ``<base>.<request id>``. The base path arrives once through the
+# environment; ``_INTERRUPT_BASE`` is None when the channel is disabled.
+_INTERRUPT_BASE: str | None = os.environ.pop("OMP_PYTHON_INTERRUPT_PATH", None) or None
+_INTERRUPT_POLL_SECONDS = 0.05
+_INTERRUPT_ARMED = threading.Event()
+
+
+def _interrupt_marker(rid: str) -> str:
+    return f"{_INTERRUPT_BASE}.{rid}"
+
+
+def _sweep_stale_interrupts(keep_rid: str) -> None:
+    """Delete markers of requests that already settled (host cancelled too late)."""
+    if not _INTERRUPT_BASE:
+        return
+    directory, prefix = os.path.split(_INTERRUPT_BASE)
+    keep = f"{prefix}.{keep_rid}"
+    try:
+        names = os.listdir(directory or ".")
+    except OSError:
+        return
+    for name in names:
+        if name.startswith(f"{prefix}.") and name != keep:
+            try:
+                os.unlink(os.path.join(directory, name))
+            except OSError:
+                pass
+
+
+def _start_interrupt_watchdog() -> None:
+    """Turn a host marker file into a Ctrl-C for the running cell.
+
+    ``signal.raise_signal(SIGINT)`` takes the exact path of a real Ctrl-C: it
+    wakes ``time.sleep`` and other interruptible waits in the main thread and
+    surfaces as ``KeyboardInterrupt`` in the cell, which settles the request as
+    cancelled while the process and its namespace live on. The thread polls
+    the filesystem only; it never reads the control pipe (see
+    ``_serve_windows``). Idle between cells.
+    """
+    if not _INTERRUPT_BASE:
+        return
+
+    def watch() -> None:
+        while True:
+            _INTERRUPT_ARMED.wait()
+            rid = _STATE.interrupt_rid
+            if rid is not None:
+                try:
+                    os.unlink(_interrupt_marker(rid))
+                except OSError:
+                    pass  # Absent, or the host still holds it open: retry next tick.
+                else:
+                    if _STATE.interrupt_rid == rid:
+                        signal.raise_signal(signal.SIGINT)
+            time.sleep(_INTERRUPT_POLL_SECONDS)
+
+    threading.Thread(target=watch, name="omp-interrupt-watchdog", daemon=True).start()
+
+
 # ---------------------------------------------------------------------------
 # Request dispatch
 # ---------------------------------------------------------------------------
@@ -1957,6 +2022,9 @@ async def _handle_request_async(req: dict) -> None:
         else:
             _begin_exec_sigint()
         execution_started = True
+        _sweep_stale_interrupts(rid)
+        _STATE.interrupt_rid = rid
+        _INTERRUPT_ARMED.set()
         try:
             await _exec_source_async(
                 transformed,
@@ -1975,6 +2043,8 @@ async def _handle_request_async(req: dict) -> None:
             status = "error"
             _emit_error(rid, exc, source_filename=filename)
         finally:
+            _INTERRUPT_ARMED.clear()
+            _STATE.interrupt_rid = None
             _end_exec_sigint()
             try:
                 _flush_matplotlib_figures()
@@ -2161,6 +2231,7 @@ async def _main_async() -> None:
     sys.stderr = _StreamProxy("stderr")
     _install_idle_sigint()
     _start_parent_watchdog()
+    _start_interrupt_watchdog()
     _start_capture_drain()
 
     stdin = _CONTROL_IN

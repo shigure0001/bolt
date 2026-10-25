@@ -210,6 +210,31 @@ describe.skipIf(!SHOULD_RUN)("python runner subprocess", () => {
 		}
 	});
 
+	it("keeps the kernel process and its variables after a cell times out", async () => {
+		using tempDir = TempDir.createSync("@python-runner-timeout-survival-");
+		const options = { cwd: tempDir.path(), sessionId: "timeout-survival", kernelMode: "session" as const };
+		const defined = await executePython("import os\nkept = 41\nprint(os.getpid())", options);
+		expect(defined.exitCode).toBe(0);
+		const pid = defined.output.trim();
+
+		const started = Date.now();
+		const timedOut = await executePython("import time\ntime.sleep(30)", { ...options, timeoutMs: 500 });
+		expect(timedOut.cancelled).toBe(true);
+		expect(Date.now() - started).toBeLessThan(10_000);
+		expect(timedOut.output).toContain("state preserved");
+		expect(timedOut.output).not.toContain("killed");
+
+		// Same process, same namespace: the timeout interrupted the cell, not the kernel.
+		const after = await executePython("import os\nprint(os.getpid(), kept + 1)", options);
+		expect(after.exitCode).toBe(0);
+		expect(after.output.trim()).toBe(`${pid} 42`);
+
+		// `reset: true` is still the way to get a fresh kernel.
+		const reset = await executePython("print('kept' in globals())", { ...options, reset: true });
+		expect(reset.exitCode).toBe(0);
+		expect(reset.output.trim()).toBe("False");
+	}, 60_000);
+
 	it("executes file-backed cells in the retained namespace with script import semantics", async () => {
 		using tempDir = TempDir.createSync("@python-runner-file-");
 		const scriptDir = path.join(tempDir.path(), "scripts");

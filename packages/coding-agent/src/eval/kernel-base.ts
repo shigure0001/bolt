@@ -1,4 +1,5 @@
 import type { EvalStatusEvent, EvalView } from "@oh-my-pi/pi-tui/tools/eval";
+import { ToolError } from "@oh-my-pi/pi-tui/tools/tool-errors";
 import { isRecord, logger, readLines, Snowflake } from "@oh-my-pi/pi-utils";
 import type { Subprocess } from "bun";
 import { type EvalDisplayOutput, evalImageMetadata } from "./types";
@@ -33,8 +34,9 @@ export interface KernelExecuteResult {
 	reply?: unknown;
 	/**
 	 * True when the kernel subprocess was killed as part of settling this
-	 * execution (e.g. SIGINT was ignored and we escalated to shutdown, or the
-	 * kernel died unexpectedly). When false, the kernel remains reusable.
+	 * execution (e.g. the kernel died unexpectedly or was shut down). A cell
+	 * that ignores its interrupt is released without killing the kernel, so its
+	 * state survives; see {@link BaseKernel.isBusy} for a still-running cell.
 	 */
 	kernelKilled?: boolean;
 }
@@ -66,8 +68,23 @@ export interface BaseKernelOptions<TExecuteOptions extends KernelExecuteOptions 
 	traceIpc: boolean;
 	/** Wire payload asking the runner to exit cleanly. */
 	exitPayload: string;
-	/** How long to wait after SIGINT before escalating to subprocess termination. */
+	/**
+	 * How long to wait after an interrupt request before releasing a cell that
+	 * did not settle. The kernel is never killed for this: the cell is left
+	 * running and the kernel stays busy until its late `done` frame arrives.
+	 */
 	interruptEscalationMs: number;
+	/**
+	 * How long a new request waits for an abandoned cell's late `done` frame
+	 * before failing with a `reset: true` hint. Defaults to 2s.
+	 */
+	lateDoneWaitMs?: number;
+	/**
+	 * Replaces SIGINT as the interrupt mechanism for the running request
+	 * `msgId`. Set where SIGINT cannot be delivered to the runner (Windows: it
+	 * terminates the process).
+	 */
+	interruptRequest?: (msgId: string) => Promise<void> | void;
 	/** Default grace period applied by {@link BaseKernel.shutdown}. */
 	shutdownGraceMs: number;
 	/** Serializes an execution request into the runner's wire protocol. */
@@ -108,6 +125,9 @@ interface PendingExecution {
 	escalationTimer?: NodeJS.Timeout;
 	finalize?: () => void;
 }
+
+/** Default wait for an abandoned cell's late `done` frame before a new request is refused. */
+const DEFAULT_LATE_DONE_WAIT_MS = 2_000;
 
 export function getRemainingTimeMs(deadlineMs?: number): number | undefined {
 	if (deadlineMs === undefined) return undefined;
@@ -194,6 +214,9 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 	#shutdownInFlight: Promise<KernelShutdownResult> | null = null;
 	#exitedPromise: Promise<number> | null = null;
 	#pending = new Map<string, PendingExecution>();
+	/** Requests released to their caller (interrupt ignored) whose late `done` frame has not arrived. */
+	readonly #abandoned = new Set<string>();
+	#idleWaiters: Array<() => void> = [];
 	readonly #options: BaseKernelOptions<TExecuteOptions>;
 
 	constructor(id: string, options: BaseKernelOptions<TExecuteOptions>) {
@@ -230,7 +253,40 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 
 	#markDead(): void {
 		this.#alive = false;
+		this.#abandoned.clear();
+		this.#notifyIdle();
 		this.#died.resolve();
+	}
+
+	/** True while a cell that was released after ignoring its interrupt is still running. */
+	isBusy(): boolean {
+		return this.#abandoned.size > 0;
+	}
+
+	#notifyIdle(): void {
+		if (this.#abandoned.size > 0) return;
+		const waiters = this.#idleWaiters;
+		this.#idleWaiters = [];
+		for (const wake of waiters) wake();
+	}
+
+	/** Wait briefly for abandoned cells to finish; true when the kernel is idle afterwards. */
+	async #waitForIdle(signal: AbortSignal | undefined): Promise<boolean> {
+		if (this.#abandoned.size === 0) return true;
+		const { promise, resolve } = Promise.withResolvers<void>();
+		const timer = setTimeout(resolve, this.#options.lateDoneWaitMs ?? DEFAULT_LATE_DONE_WAIT_MS);
+		timer.unref?.();
+		this.#idleWaiters.push(resolve);
+		const onAbort = () => resolve();
+		signal?.addEventListener("abort", onAbort, { once: true });
+		try {
+			await promise;
+		} finally {
+			signal?.removeEventListener("abort", onAbort);
+			clearTimeout(timer);
+			this.#idleWaiters = this.#idleWaiters.filter(wake => wake !== resolve);
+		}
+		return this.#abandoned.size === 0;
 	}
 
 	async execute(code: string, options?: TExecuteOptions): Promise<KernelExecuteResult> {
@@ -249,6 +305,15 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 		options: TExecuteOptions | undefined,
 		interruptOnCancel: boolean,
 	): Promise<KernelExecuteResult> {
+		if (!this.isAlive()) {
+			throw new Error(`${this.#options.languageName} kernel is not running`);
+		}
+		// Tool-bridge requests (`interruptOnCancel` false) run beside cells by design; only cells are gated.
+		if (interruptOnCancel && !(await this.#waitForIdle(options?.signal)) && this.isAlive()) {
+			throw new ToolError(
+				`The previous ${this.#options.languageName} cell is still running: it ignored its interrupt after timing out or being cancelled. The kernel and its variables were kept. Wait for it to finish, or call eval with reset: true to discard the kernel and start fresh.`,
+			);
+		}
 		if (!this.isAlive()) {
 			throw new Error(`${this.#options.languageName} kernel is not running`);
 		}
@@ -290,14 +355,16 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 				finalize();
 				return;
 			}
-			void this.interrupt();
+			void this.interrupt(msgId);
 			const escalation = setTimeout(() => {
 				if (pending.settled) return;
-				logger.warn(`${this.#options.languageName} runner did not respond to SIGINT; terminating subprocess`, {
+				// Never kill the kernel for a stuck cell: its namespace is the session's state. Release the
+				// caller and track the cell as busy until its late `done` frame arrives.
+				logger.warn(`${this.#options.languageName} runner did not respond to interrupt; releasing the cell`, {
 					kernelId: this.id,
 				});
-				pending.kernelKilled = true;
-				void this.shutdown();
+				this.#abandoned.add(msgId);
+				finalize();
 			}, this.#options.interruptEscalationMs);
 			escalation.unref?.();
 			pending.escalationTimer = escalation;
@@ -368,9 +435,20 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 
 		return promise;
 	}
-	async interrupt(): Promise<void> {
+
+	/**
+	 * Ask the runner to interrupt the running request `msgId`. POSIX sends
+	 * SIGINT; kernels configured with `interruptRequest` use that channel
+	 * instead. This never terminates the process.
+	 */
+	async interrupt(msgId?: string): Promise<void> {
 		if (!this.#proc || this.#disposed) return;
 		try {
+			const interruptRequest = this.#options.interruptRequest;
+			if (interruptRequest) {
+				if (msgId !== undefined) await interruptRequest(msgId);
+				return;
+			}
 			this.#proc.kill("SIGINT");
 		} catch (err) {
 			logger.warn(`Failed to interrupt ${this.#options.languageName.toLowerCase()} runner`, {
@@ -554,6 +632,10 @@ export abstract class BaseKernel<TExecuteOptions extends KernelExecuteOptions = 
 	async #handleFrame(frame: Frame): Promise<void> {
 		const rid = frame.id;
 		if (!rid) return;
+		if (frame.type === "done" && this.#abandoned.delete(rid)) {
+			this.#notifyIdle();
+			return;
+		}
 		const pending = this.#pending.get(rid);
 		if (!pending) return;
 

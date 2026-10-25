@@ -175,6 +175,67 @@ asyncio.run(check_intent())
 		}
 	}, 15_000);
 
+	it("resolves the provider wire spelling (`tool._grep`) to the registered tool", async () => {
+		const calls: FakeCall[] = [];
+		const tools = new Map([["grep", makeFakeTool("grep", calls, { content: [{ type: "text", text: "hit" }] })]]);
+		const info = await ensurePyToolBridge();
+		const sessionId = `python-wire-name-${crypto.randomUUID()}`;
+		const unregister = registerPyToolBridge(sessionId, "run", {
+			toolSession: {
+				getToolByName: (name: string) => tools.get(name),
+				getEvalBridgeToolNames: () => [...tools.keys()],
+			} as unknown as ToolSession,
+		});
+		try {
+			const prelude = PYTHON_PRELUDE.replace(
+				"from __future__ import annotations",
+				"from __future__ import annotations\n__omp_emit_status = __omp_emit_image = lambda *args, **kwargs: None",
+			);
+			const script = `${prelude}
+__omp_run_id__ = "run"
+async def check_names():
+    print(await tool._grep(pattern="a"))
+    print(await tool.grep(pattern="b"))
+    print(hasattr(tool, "_repr_html_"), hasattr(tool, "__deepcopy__"))
+    try:
+        await tool._nope()
+    except RuntimeError as err:
+        print(err)
+asyncio.run(check_names())
+`;
+			const child = Bun.spawn([Bun.env.PYTHON ?? ($which("python3") ? "python3" : "python"), "-"], {
+				stdin: new Response(script),
+				stdout: "pipe",
+				stderr: "pipe",
+				signal: AbortSignal.timeout(10_000),
+				env: {
+					...process.env,
+					PI_TOOL_BRIDGE_URL: info.url,
+					PI_TOOL_BRIDGE_TOKEN: info.token,
+					PI_TOOL_BRIDGE_SESSION: sessionId,
+				},
+			});
+			try {
+				const [exitCode, stdout, stderr] = await Promise.all([
+					child.exited,
+					new Response(child.stdout).text(),
+					new Response(child.stderr).text(),
+				]);
+				expect({ exitCode, stdout: stdout.replaceAll("\r\n", "\n"), stderr }).toEqual({
+					exitCode: 0,
+					stdout: "hit\nhit\nFalse False\nUnknown tool: _nope. Available tools: grep.\n",
+					stderr: "",
+				});
+				expect(calls.map(c => c.args)).toEqual([{ pattern: "a" }, { pattern: "b" }]);
+			} finally {
+				child.kill();
+				await child.exited;
+			}
+		} finally {
+			unregister();
+		}
+	}, 15_000);
+
 	it("returns ok=false when no session is registered for the given id", async () => {
 		const info = await ensurePyToolBridge();
 		const res = await call(info, { session: "missing", run: "run-missing", name: "read", args: {} });

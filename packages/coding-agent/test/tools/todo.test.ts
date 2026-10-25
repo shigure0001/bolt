@@ -5,6 +5,7 @@ import { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import { initTheme, theme } from "@oh-my-pi/pi-tui/theme";
 import type { ToolSession } from "@oh-my-pi/pi-coding-agent/tools";
 import {
+	applyOpsToPhases,
 	markdownToPhases,
 	nextActionableTask,
 	phasesToMarkdown,
@@ -560,6 +561,68 @@ describe("TodoTool empty items tolerance", () => {
 		const summary = result.content.find(part => part.type === "text");
 		if (summary?.type !== "text") throw new Error("Expected text summary");
 		expect(summary.text).toContain("Missing items for append operation");
+	});
+});
+
+describe("TodoTool items on ops that do not take them", () => {
+	const seed: TodoPhase[] = [
+		{
+			name: "Work",
+			tasks: [
+				{ content: "First", status: "in_progress" },
+				{ content: "Second", status: "pending" },
+			],
+		},
+	];
+	const statuses = (session: ToolSession) => session.getTodoPhases?.()?.[0]?.tasks.map(task => task.status);
+
+	it("errors on done+items and completes nothing", async () => {
+		const session = createSession(structuredClone(seed));
+		const tool = new TodoTool(session);
+
+		const result = await tool.execute("call-1", { op: "done", items: ["only one task"] });
+
+		expect(result.isError).toBe(true);
+		const summary = result.content.find(part => part.type === "text");
+		if (summary?.type !== "text") throw new Error("Expected text summary");
+		expect(summary.text).toContain("items");
+		expect(result.details?.phases[0]?.tasks.map(task => task.status)).toEqual(["in_progress", "pending"]);
+		expect(statuses(session)).toEqual(["in_progress", "pending"]);
+	});
+
+	it("applies the same rule to /todo ops", () => {
+		const { phases, errors } = applyOpsToPhases(structuredClone(seed), [{ op: "done", items: ["x"] }]);
+
+		expect(errors).toHaveLength(1);
+		expect(phases[0]?.tasks.map(task => task.status)).toEqual(["in_progress", "pending"]);
+	});
+
+	it("keeps view with empty items successful and non-mutating", async () => {
+		const session = createSession(structuredClone(seed));
+		const tool = new TodoTool(session);
+
+		const result = await tool.execute("call-1", { op: "view", items: [] });
+
+		expect(result.isError).toBeUndefined();
+		expect(statuses(session)).toEqual(["in_progress", "pending"]);
+	});
+
+	it("errors on view+items without changing state", async () => {
+		const session = createSession(structuredClone(seed));
+		const result = await new TodoTool(session).execute("call-1", { op: "view", items: ["x"] });
+
+		expect(result.isError).toBe(true);
+		expect(statuses(session)).toEqual(["in_progress", "pending"]);
+	});
+
+	it("still accepts items for flat init and append", async () => {
+		const tool = new TodoTool(createSession());
+
+		const init = await tool.execute("call-1", { op: "init", items: ["A"] });
+		expect(init.isError).toBeUndefined();
+		const append = await tool.execute("call-2", { op: "append", phase: "Tasks", items: ["B"] });
+		expect(append.isError).toBeUndefined();
+		expect(append.details?.phases[0]?.tasks.map(task => task.content)).toEqual(["A", "B"]);
 	});
 });
 

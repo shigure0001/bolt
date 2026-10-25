@@ -32,4 +32,4 @@
 - Registered only while `tools.deferred` is non-empty.
 - Deferral applies only when the initial selection contains `load_tools`: explicit tool lists (subagent definitions, `--tools`) and restricted modes such as plan mode keep every selected tool active.
 - Pinned tools and tools already loaded are never deferred. When nothing is left to defer, `load_tools` itself is dropped.
-- Default `tools.deferred`: `task`, `eval`, `lsp`, `ask`, `wait`, `todo`, `web_search`, `github`, `mcp__*`.
+- Default `tools.deferred`: `eval`, `lsp`, `web_search`, `github`, `mcp__*`. Core tools (`task`, `todo`, `ask`, `wait`) are eager: sent up front without `load_tools`.

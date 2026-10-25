@@ -724,6 +724,47 @@ describe("table charts in assistant Markdown", () => {
 		}
 	});
 
+	it("keeps the table as plain text, with no chart rows or gap, where SIXEL would draw over it (Windows Terminal)", async () => {
+		const protocol = TERMINAL.imageProtocol;
+		const wtSession = Bun.env.WT_SESSION;
+		await initTheme(false);
+		setTerminalImageProtocol(ImageProtocol.Sixel);
+		Bun.env.WT_SESSION = "test-wt-session";
+		try {
+			const message: AssistantMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: answer }],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				stopReason: "stop",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				timestamp: 1,
+			};
+			setTableCharts("off");
+			const plain = new AssistantMessageComponent(message).render(100);
+
+			setTableCharts("always");
+			const component = new AssistantMessageComponent(message);
+			const rows = component.render(100);
+			expect(component.isTranscriptBlockPending()).toBe(false);
+			expect(rows.some(row => TERMINAL.isImageLine(row))).toBe(false);
+			expect(rows.some(row => row.includes("everything else"))).toBe(true);
+			expect(rows).toEqual(plain);
+		} finally {
+			setTerminalImageProtocol(protocol);
+			if (wtSession === undefined) delete Bun.env.WT_SESSION;
+			else Bun.env.WT_SESSION = wtSession;
+		}
+	});
+
 	it("publishes only settled rows while an answer with a table streams", async () => {
 		const protocol = TERMINAL.imageProtocol;
 		await initTheme(false);

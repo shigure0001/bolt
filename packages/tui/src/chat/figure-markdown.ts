@@ -46,6 +46,11 @@ export class FigureMarkdown extends Container {
 		this.setText(text);
 	}
 
+	/** Whether this block draws charts under its tables; fixed at construction. */
+	get charts(): boolean {
+		return this.#options.charts;
+	}
+
 	/** Replace the source; returns whether it changed. */
 	setText(text: string): boolean {
 		if (text === this.#text) return false;
