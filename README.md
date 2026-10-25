@@ -1,3 +1,17 @@
+## bolt setup (Windows / PowerShell)
+
+Paste this into a coding agent with full machine access:
+
+```text
+https://github.com/shigure0001/bolt を clone して、PowerShell で `bolt` と打てば起動する状態までセットアップして。
+- 足りないもの (git, Bun, rustup + MSVC Build Tools) はインストールする
+- リポジトリ直下で `bun install` → `bun run build:native`、次に packages/coding-agent で `bun run build` (dist/bolt.exe ができる)
+- dist/bolt.exe を %LOCALAPPDATA%\bolt\bolt.exe にコピーし、そのフォルダをユーザー PATH に追加
+- 新しい PowerShell で `bolt --smoke-test` が ok を返すことを確認
+```
+
+---
+
 <p align="center">
   <img src="https://github.com/can1357/oh-my-pi/blob/main/assets/hero.png?raw=true" alt="omp">
 </p>
